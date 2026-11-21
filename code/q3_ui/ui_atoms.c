@@ -898,6 +898,18 @@ void UI_MouseEvent( int dx, int dy )
 	else if (uis.cursory > SCREEN_HEIGHT)
 		uis.cursory = SCREEN_HEIGHT;
 
+	// WALKER: drag the slider thumb while the left button is held
+	if ( trap_Key_IsDown( K_MOUSE1 ) && uis.activemenu->cursor >= 0 && uis.activemenu->cursor < uis.activemenu->nitems ) {
+		m = (menucommon_s*)uis.activemenu->items[uis.activemenu->cursor];
+		if ( m->type == MTYPE_SLIDER && !( m->flags & ( QMF_GRAYED | QMF_INACTIVE ) ) ) {
+			sfxHandle_t sound = Menu_DefaultKey( uis.activemenu, K_MOUSE1 );
+			if ( sound ) {
+				trap_S_StartLocalSound( sound, CHAN_LOCAL_SOUND );
+			}
+			return;
+		}
+	}
+
 	// region test the active menu items
 	for (i=0; i<uis.activemenu->nitems; i++)
 	{

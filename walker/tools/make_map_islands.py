@@ -785,7 +785,7 @@ def spawn_points():
 
 def write_map():
     worldspawn = {
-        'classname': 'worldspawn', 'message': 'Islands', 'ambient': '22', '_color': '0.75 0.82 0.9',
+        'classname': 'worldspawn', 'message': 'Islands', 'ambient': '36', '_color': '0.75 0.82 0.9',
         'gridsize': '128 128 128', '_blocksize': '0 0 0',
     }
     entities = spawn_points()

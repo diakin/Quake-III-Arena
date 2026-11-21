@@ -98,7 +98,11 @@ seta r_colorbits "32"
 seta r_depthbits "24"
 seta r_vertexlight "0"
 seta r_dynamiclight "1"
-seta r_gamma "1.1"
+seta r_gamma "1.0"
+// overbright via the hardware gamma ramp is unreliable on Vista/7 (the ramp gets rejected and
+// the picture turns dark); with 0 the lightmaps are brightened in software, the same everywhere
+seta r_overBrightBits "0"
+seta r_mapOverBrightBits "2"
 seta s_volume "0.8"
 seta s_musicvolume "0.25"
 seta name "Pilot"
@@ -119,20 +123,28 @@ seta timelimit "10"
 
 # ---------------------------------------------------------------- шрифты
 def console_font():
-    """gfx/2d/bigchars: 256x256, 16x16 клеток по 16 пикселей, код символа = номер клетки."""
-    image = Image.new('RGBA', (256, 256), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
-    font = ImageFont.truetype(FONT_MONO, 14)
+    """gfx/2d/bigchars: 512x512, 16x16 клеток по 32 пикселя, код символа = номер клетки.
+    Движок рисует символ обычно в прямоугольник 8x16 (консоль, подписи в настройках), поэтому
+    глиф в квадратной клетке растянут по ширине вдвое: после сжатия он выглядит нормально.
+    Двойное разрешение против оригинала (256) убирает размытость на больших экранах."""
+    cell = 32
+    image = Image.new('RGBA', (cell * 16, cell * 16), (0, 0, 0, 0))
+    font = ImageFont.truetype(FONT_MONO, 25)
     for code in range(32, 127):
-        x, y = (code % 16) * 16, (code // 16) * 16
-        draw.text((x + 8, y + 8), chr(code), font=font, fill=(255, 255, 255, 255), anchor='mm')
-    # полоса и уголки для служебных символов консоли (10, 11 — рамка ввода)
+        piece = Image.new('L', (cell // 2, cell), 0)
+        ImageDraw.Draw(piece).text((cell // 4, cell // 2 + 1), chr(code), font=font, fill=255, anchor='mm')
+        piece = piece.resize((cell, cell), Image.LANCZOS)
+        layer = Image.new('RGBA', (cell, cell), (255, 255, 255, 0))
+        layer.putalpha(piece)
+        image.alpha_composite(layer, ((code % 16) * cell, (code // 16) * cell))
+    # полоса для служебных символов консоли (10, 11 — рамка ввода)
+    draw = ImageDraw.Draw(image)
     for code in (10, 11):
-        x, y = (code % 16) * 16, (code // 16) * 16
-        draw.rectangle((x + 2, y + 6, x + 13, y + 9), fill=(255, 255, 255, 255))
+        x, y = (code % 16) * cell, (code // 16) * cell
+        draw.rectangle((x + 4, y + 12, x + 27, y + 19), fill=(255, 255, 255, 255))
     alpha = image.split()[3]
     shadow = alpha.filter(ImageFilter.MaxFilter(3))
-    result = Image.new('RGBA', (256, 256), (0, 0, 0, 0))
+    result = Image.new('RGBA', image.size, (0, 0, 0, 0))
     result.paste((20, 20, 20, 255), mask=shadow)
     result.alpha_composite(image)
     save('gfx/2d/bigchars.tga', result)
@@ -146,13 +158,20 @@ def parse_prop_map(name):
     return [tuple(int(value) for value in match) for match in re.findall(r'\{\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\s*\}', block)]
 
 
+PROP_SCALE = 2   # шрифты меню в 512x512: таблицы propMap заданы для 256, движок делит координаты на 256
+
+
 def prop_fonts():
     """menu/art/font1_prop (+_glo): строчный шрифт меню по таблице propMap (высота 27);
-    menu/art/font2_prop: крупные заглавные по propMapB (высота 36)."""
+    menu/art/font2_prop: крупные заглавные по propMapB (высота 36).
+    Текстуры вдвое больше оригинала (512), координаты из таблиц умножены на 2."""
+    scale = PROP_SCALE
+    size = 256 * scale
     table = parse_prop_map('propMap')
-    image = Image.new('RGBA', (256, 256), (0, 0, 0, 0))
+    image = Image.new('RGBA', (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
-    font = ImageFont.truetype(FONT_BOLD, 21)
+    font_size = 21 * scale
+    font = ImageFont.truetype(FONT_BOLD, font_size)
     for code, (x, y, width) in enumerate(table):
         if width <= 0 or code == 32:
             continue
@@ -160,29 +179,28 @@ def prop_fonts():
         box = draw.textbbox((0, 0), glyph, font=font)
         glyph_width = box[2] - box[0]
         scale_font = font
-        if glyph_width > width:          # не влезает — шрифт меньше
-            scale_font = ImageFont.truetype(FONT_BOLD, max(10, int(21 * width / glyph_width)))
-        draw.text((x + width / 2, y + 27 * 0.80), glyph, font=scale_font, fill=(255, 255, 255, 255), anchor='ms')
+        if glyph_width > width * scale:          # не влезает — шрифт меньше
+            scale_font = ImageFont.truetype(FONT_BOLD, max(10, int(font_size * width * scale / glyph_width)))
+        draw.text(((x + width / 2) * scale, (y + 27 * 0.80) * scale), glyph, font=scale_font, fill=(255, 255, 255, 255), anchor='ms')
     save('menu/art/font1_prop.tga', image)
-    glow = image.split()[3].filter(ImageFilter.GaussianBlur(2.2)).point(lambda value: min(255, value * 2))
-    glow_image = Image.new('RGBA', (256, 256), (255, 255, 255, 0))
+    glow = image.split()[3].filter(ImageFilter.GaussianBlur(2.2 * scale)).point(lambda value: min(255, value * 2))
+    glow_image = Image.new('RGBA', (size, size), (255, 255, 255, 0))
     glow_image.putalpha(glow)
     save('menu/art/font1_prop_glo.tga', glow_image)
 
     table_b = parse_prop_map('propMapB')
-    image = Image.new('RGBA', (256, 256), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
-    font = ImageFont.truetype(FONT_TITLE, 46)
+    image = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    font = ImageFont.truetype(FONT_TITLE, 46 * scale)
     for index, (x, y, width) in enumerate(table_b):
         glyph = chr(ord('A') + index)
-        cell = Image.new('L', (80, 64), 0)
+        cell = Image.new('L', (80 * scale, 64 * scale), 0)
         cell_draw = ImageDraw.Draw(cell)
-        cell_draw.text((40, 56), glyph, font=font, fill=255, anchor='ms')
+        cell_draw.text((40 * scale, 56 * scale), glyph, font=font, fill=255, anchor='ms')
         box = cell.getbbox()
-        piece = cell.crop(box).resize((max(1, width - 2), 32), Image.LANCZOS)   # глиф растянут на всю клетку
+        piece = cell.crop(box).resize((max(1, (width - 2) * scale), 32 * scale), Image.LANCZOS)   # глиф растянут на всю клетку
         layer = Image.new('RGBA', piece.size, (255, 255, 255, 0))
         layer.putalpha(piece)
-        image.alpha_composite(layer, (x + 1, y + 2))
+        image.alpha_composite(layer, ((x + 1) * scale, (y + 2) * scale))
     save('menu/art/font2_prop.tga', image)
 
 
@@ -266,9 +284,11 @@ levelShotDetail
 }
 """)
     # курсор
-    cursor = Image.new('RGBA', (32, 32), (0, 0, 0, 0))
+    # курсор: меню рисует картинку 32x32 центром в точке мыши, поэтому кончик стрелки — в центре
+    cursor = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
     draw = ImageDraw.Draw(cursor)
-    draw.polygon([(2, 2), (26, 12), (15, 15), (12, 26)], fill=ACCENT + (255,), outline=(20, 20, 20, 255))
+    draw.polygon([(32, 32), (60, 44), (46, 47), (44, 61)], fill=ACCENT + (255,), outline=(20, 20, 20, 255))
+    draw.line([(32, 32), (60, 44), (46, 47), (44, 61), (32, 32)], fill=(20, 20, 20, 255), width=2)
     save('menu/art/3_cursor2.tga', cursor)
     # кнопки
     labels = {

@@ -151,7 +151,9 @@ void GLimp_SetGamma( unsigned char red[256], unsigned char green[256], unsigned 
 	// Win2K puts this odd restriction on gamma ramps...
 	vinfo.dwOSVersionInfoSize = sizeof(vinfo);
 	GetVersionEx( &vinfo );
-	if ( vinfo.dwMajorVersion == 5 && vinfo.dwPlatformId == VER_PLATFORM_WIN32_NT ) {
+	// WALKER: Vista and Windows 7 reject such ramps too (SetDeviceGammaRamp fails and the
+	// brightness stops changing), so clamp on every NT version from Win2K up
+	if ( vinfo.dwMajorVersion >= 5 && vinfo.dwPlatformId == VER_PLATFORM_WIN32_NT ) {
 		Com_DPrintf( "performing W2K gamma clamp.\n" );
 		for ( j = 0 ; j < 3 ; j++ ) {
 			for ( i = 0 ; i < 128 ; i++ ) {

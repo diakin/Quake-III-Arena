@@ -122,6 +122,11 @@ TAB - счёт, ~ - консоль, ESC - меню, F12 - снимок экра�
   win32/win_glimp.c      заголовок окна WALKER
   win32/winquake.rc      своя иконка walker.ico (рисует walker/tools/make_icon.py)
   renderer/tr_image.c    GL_CLAMP_TO_EDGE вместо GL_CLAMP (убирает швы на небе и спрайтах)
+  renderer/tr_init.c     r_overBrightBits 0 по умолчанию: освещение не зависит от
+                         аппаратной гаммы (Vista/7 отклоняют такие таблицы, картинка темнеет)
+  win32/win_gamma.c      ограничение таблицы гаммы и для Vista/7, иначе яркость перестаёт меняться
+  q3_ui/ui_atoms.c       ползунки в меню можно тянуть мышью
+  q3_ui/ui_qmenu.c       пункты меню в оранжевой гамме вместо красной
   game/bg_pmove.c        без прыжков
   game/g_client.c        только автопушка, боезапас бесконечный
   game/g_main.c          g_speed 110
