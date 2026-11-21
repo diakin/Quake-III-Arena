@@ -58,6 +58,7 @@ int Sys_Milliseconds (void)
 Sys_SnapVector
 ================
 */
+#ifdef _MSC_VER
 long fastftol( float f ) {
 	static int tmp;
 	__asm fld f
@@ -92,6 +93,19 @@ void Sys_SnapVector( float *v )
 	*v = fastftol(*v);
 	*/
 }
+#else
+// gcc (MinGW): the same rounding as fistp in the default FPU mode
+long fastftol( float f ) {
+	return lrintf( f );
+}
+
+void Sys_SnapVector( float *v )
+{
+	v[0] = (float)lrintf( v[0] );
+	v[1] = (float)lrintf( v[1] );
+	v[2] = (float)lrintf( v[2] );
+}
+#endif
 
 
 /*
@@ -108,6 +122,7 @@ void Sys_SnapVector( float *v )
 **
 ** --------------------------------------------------------------------------------
 */
+#ifdef _MSC_VER
 static void CPUID( int func, unsigned regs[4] )
 {
 	unsigned regEAX, regEBX, regECX, regEDX;
@@ -231,12 +246,13 @@ static int IsMMX( void )
 		return qtrue;
 	return qfalse;
 }
+#endif // _MSC_VER
 
 int Sys_GetProcessorId( void )
 {
 #if defined _M_ALPHA
 	return CPUID_AXP;
-#elif !defined _M_IX86
+#elif !defined _M_IX86 || !defined _MSC_VER	// MinGW defines _M_IX86 but has no MSVC asm
 	return CPUID_GENERIC;
 #else
 

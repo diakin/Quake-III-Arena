@@ -490,6 +490,13 @@ vm_t *VM_Create( const char *module, int (*systemCalls)(int *),
 		interpret = VMI_COMPILED;
 	}
 
+#ifdef NO_VM_COMPILED
+	// this build has no x86 code generator (vm_x86.c needs MSVC or Linux gcc asm)
+	if ( interpret >= VMI_COMPILED ) {
+		interpret = VMI_BYTECODE;
+	}
+#endif
+
 	// load the image
 	Com_sprintf( filename, sizeof(filename), "vm/%s.qvm", vm->name );
 	Com_Printf( "Loading vm file %s.\n", filename );
@@ -826,7 +833,7 @@ void VM_LogSyscalls( int *args ) {
 
 
 
-#ifdef oDLL_ONLY // bk010215 - for DLL_ONLY dedicated servers/builds w/o VM
+#if defined( oDLL_ONLY ) || defined( NO_VM_COMPILED ) // bk010215 - for DLL_ONLY dedicated servers/builds w/o VM
 int	VM_CallCompiled( vm_t *vm, int *args ) {
   return(0); 
 }
