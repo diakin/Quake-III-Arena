@@ -695,6 +695,12 @@ void UI_RemoveBots_Cache( void );
 void UI_RemoveBotsMenu( void );
 
 //
+// ui_selectbots.c (WALKER)
+//
+void UI_SelectBots_Cache( void );
+void UI_SelectBotsMenu( void );
+
+//
 // ui_teamorders.c
 //
 extern void UI_TeamOrdersMenu( void );

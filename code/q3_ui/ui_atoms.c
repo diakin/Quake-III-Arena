@@ -997,6 +997,7 @@ void UI_Cache_f( void ) {
 	TeamMain_Cache();
 	UI_AddBots_Cache();
 	UI_RemoveBots_Cache();
+	UI_SelectBots_Cache();
 	UI_SetupMenu_Cache();
 //	UI_LoadConfig_Cache();
 //	UI_SaveConfigMenu_Cache();

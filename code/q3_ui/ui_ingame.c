@@ -132,7 +132,7 @@ void InGame_Event( void *ptr, int notification ) {
 		break;
 
 	case ID_ADDBOTS:
-		UI_AddBotsMenu();
+		UI_SelectBotsMenu();	// WALKER: one menu to add and remove bots
 		break;
 
 	case ID_REMOVEBOTS:
@@ -195,14 +195,14 @@ void InGame_MenuInit( void ) {
 	s_ingame.addbots.generic.y			= y;
 	s_ingame.addbots.generic.id			= ID_ADDBOTS;
 	s_ingame.addbots.generic.callback	= InGame_Event; 
-	s_ingame.addbots.string				= "ADD BOTS";
+	s_ingame.addbots.string				= "BOTS";
 	s_ingame.addbots.color				= color_red;
 	s_ingame.addbots.style				= UI_CENTER|UI_SMALLFONT;
 	if( !trap_Cvar_VariableValue( "sv_running" ) || !trap_Cvar_VariableValue( "bot_enable" ) || (trap_Cvar_VariableValue( "g_gametype" ) == GT_SINGLE_PLAYER)) {
 		s_ingame.addbots.generic.flags |= QMF_GRAYED;
 	}
 
-	y += INGAME_MENU_VERTICAL_SPACING;
+	// WALKER: REMOVE BOTS is part of the BOTS menu now
 	s_ingame.removebots.generic.type		= MTYPE_PTEXT;
 	s_ingame.removebots.generic.flags		= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
 	s_ingame.removebots.generic.x			= 320;
@@ -310,7 +310,6 @@ void InGame_MenuInit( void ) {
 	Menu_AddItem( &s_ingame.menu, &s_ingame.frame );
 	Menu_AddItem( &s_ingame.menu, &s_ingame.team );
 	Menu_AddItem( &s_ingame.menu, &s_ingame.addbots );
-	Menu_AddItem( &s_ingame.menu, &s_ingame.removebots );
 	Menu_AddItem( &s_ingame.menu, &s_ingame.teamorders );
 	Menu_AddItem( &s_ingame.menu, &s_ingame.setup );
 	Menu_AddItem( &s_ingame.menu, &s_ingame.server );
