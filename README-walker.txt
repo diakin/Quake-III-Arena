@@ -120,6 +120,7 @@ TAB - счёт, ~ - консоль, ESC - меню, F12 - снимок экра�
                          файлы из папки имеют приоритет над pk3 той же папки
   qcommon/common.c       CD-ключ пишется в basewalker
   win32/win_glimp.c      заголовок окна WALKER
+  win32/winquake.rc      своя иконка walker.ico (рисует walker/tools/make_icon.py)
   renderer/tr_image.c    GL_CLAMP_TO_EDGE вместо GL_CLAMP (убирает швы на небе и спрайтах)
   game/bg_pmove.c        без прыжков
   game/g_client.c        только автопушка, боезапас бесконечный
