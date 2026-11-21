@@ -122,32 +122,51 @@ seta timelimit "10"
 
 
 # ---------------------------------------------------------------- шрифты
-def console_font():
-    """gfx/2d/bigchars: 512x512, 16x16 клеток по 32 пикселя, код символа = номер клетки.
-    Движок рисует символ обычно в прямоугольник 8x16 (консоль, подписи в настройках), поэтому
-    глиф в квадратной клетке растянут по ширине вдвое: после сжатия он выглядит нормально.
-    Двойное разрешение против оригинала (256) убирает размытость на больших экранах."""
-    cell = 32
-    image = Image.new('RGBA', (cell * 16, cell * 16), (0, 0, 0, 0))
-    font = ImageFont.truetype(FONT_MONO, 25)
-    for code in range(32, 127):
-        piece = Image.new('L', (cell // 2, cell), 0)
-        ImageDraw.Draw(piece).text((cell // 4, cell // 2 + 1), chr(code), font=font, fill=255, anchor='mm')
-        piece = piece.resize((cell, cell), Image.LANCZOS)
-        layer = Image.new('RGBA', (cell, cell), (255, 255, 255, 0))
-        layer.putalpha(piece)
-        image.alpha_composite(layer, ((code % 16) * cell, (code // 16) * cell))
-    # полоса для служебных символов консоли (10, 11 — рамка ввода)
-    draw = ImageDraw.Draw(image)
-    for code in (10, 11):
-        x, y = (code % 16) * cell, (code // 16) * cell
-        draw.rectangle((x + 4, y + 12, x + 27, y + 19), fill=(255, 255, 255, 255))
+def outlined(image, color=(16, 16, 16, 255), radius=3):
+    """белые глифы с тёмной обводкой: читаются и на светлом небе."""
     alpha = image.split()[3]
-    shadow = alpha.filter(ImageFilter.MaxFilter(3))
+    shadow = alpha.filter(ImageFilter.MaxFilter(radius))
     result = Image.new('RGBA', image.size, (0, 0, 0, 0))
-    result.paste((20, 20, 20, 255), mask=shadow)
+    result.paste(color, mask=shadow)
     result.alpha_composite(image)
-    save('gfx/2d/bigchars.tga', result)
+    return result
+
+
+def console_font():
+    """Два шрифта с раскладкой 16x16 символов (код символа = номер клетки).
+
+    gfx/2d/bigchars (512x1024, клетка 32x64): для cgame и меню. Они рисуют символы в
+    виртуальных координатах 640x480, чаще всего 8x16, поэтому клетка вытянута 1:2 и глиф
+    не искажается; текстура с mip-уровнями, чтобы при уменьшении не рябило.
+
+    gfx/2d/consolechars (128x256, клетка 8x16): для консоли и сообщений в левом верхнем углу.
+    Движок рисует их в настоящих пикселях экрана 8x16, поэтому глиф нарисован пиксель
+    в пиксель и не масштабируется."""
+    cell_width, cell_height = 32, 64
+    image = Image.new('RGBA', (cell_width * 16, cell_height * 16), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.truetype(FONT_MONO, 50)
+    for code in range(32, 127):
+        x, y = (code % 16) * cell_width, (code // 16) * cell_height
+        draw.text((x + cell_width / 2, y + cell_height * 0.52), chr(code), font=font, fill=(255, 255, 255, 255), anchor='mm')
+    for code in (10, 11):
+        x, y = (code % 16) * cell_width, (code // 16) * cell_height
+        draw.rectangle((x + 2, y + 26, x + 29, y + 37), fill=(255, 255, 255, 255))
+    save('gfx/2d/bigchars.tga', outlined(image, radius=5))
+
+    small = Image.new('RGBA', (8 * 16, 16 * 16), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(small)
+    font = ImageFont.truetype(FONT_MONO, 13)
+    for code in range(32, 127):
+        x, y = (code % 16) * 8, (code // 16) * 16
+        draw.text((x + 4, y + 8), chr(code), font=font, fill=(255, 255, 255, 255), anchor='mm')
+    for code in (10, 11):
+        x, y = (code % 16) * 8, (code // 16) * 16
+        draw.rectangle((x, y + 7, x + 7, y + 8), fill=(255, 255, 255, 255))
+    # чёткие края: полупрозрачные пиксели доводим до непрозрачных или убираем
+    alpha = small.split()[3].point(lambda value: 255 if value > 110 else (value * 2 if value > 40 else 0))
+    small.putalpha(alpha)
+    save('gfx/2d/consolechars.tga', outlined(small, radius=3))
 
 
 def parse_prop_map(name):
@@ -271,6 +290,16 @@ console
 		map menu/art/menuback.jpg
 		tcMod scroll 0.02 0
 		rgbGen const ( 0.55 0.55 0.55 )
+	}
+}
+gfx/2d/bigchars
+{
+	nopicmip
+	{
+		map gfx/2d/bigchars.tga
+		blendfunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA
+		rgbgen vertex
+		alphagen vertex
 	}
 }
 levelShotDetail
@@ -733,7 +762,6 @@ sprites/plasma1
 
 def main():
     write('default.cfg', DEFAULT_CFG)
-    write('scripts/bots.txt', '// no bot characters yet\n')
     console_font()
     prop_fonts()
     menu_art()
