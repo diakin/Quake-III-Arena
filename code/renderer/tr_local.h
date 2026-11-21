@@ -757,6 +757,11 @@ typedef struct model_s {
 #define	MAX_MOD_KNOWN	1024
 
 void		R_ModelInit (void);
+
+// tr_model_glb.c
+qboolean	R_IsGLB( const void *buffer, int length );
+void		*R_ConvertGLB( const char *modelName, const void *buffer, int length, int *outSize, void **handle );
+void		R_FreeGLB( void *handle );
 model_t		*R_GetModelByHandle( qhandle_t hModel );
 int			R_LerpTag( orientation_t *tag, qhandle_t handle, int startFrame, int endFrame, 
 					 float frac, const char *tagName );

@@ -31,6 +31,22 @@ static qboolean R_LoadMD4 (model_t *mod, void *buffer, const char *name );
 model_t	*loadmodel;
 
 /*
+** R_GLBAlternateName
+**
+** "models/foo/lower.md3" -> "models/foo/lower.glb"
+*/
+static qboolean R_GLBAlternateName( const char *name, char *out, int outSize ) {
+	int		length = strlen( name );
+
+	if ( length < 5 || length >= outSize || Q_stricmp( name + length - 4, ".md3" ) ) {
+		return qfalse;
+	}
+	Q_strncpyz( out, name, outSize );
+	strcpy( out + length - 4, ".glb" );
+	return qtrue;
+}
+
+/*
 ** R_GetModelByHandle
 */
 model_t	*R_GetModelByHandle( qhandle_t index ) {
@@ -133,6 +149,8 @@ qhandle_t RE_RegisterModel( const char *name ) {
 
 	for ( lod = MD3_MAX_LODS - 1 ; lod >= 0 ; lod-- ) {
 		char filename[1024];
+		char glbName[MAX_QPATH];
+		int fileLength;
 
 		strcpy( filename, name );
 
@@ -146,16 +164,36 @@ qhandle_t RE_RegisterModel( const char *name ) {
 			strcat( filename, namebuf );
 		}
 
-		ri.FS_ReadFile( filename, (void **)&buf );
+		fileLength = ri.FS_ReadFile( filename, (void **)&buf );
 		if ( !buf ) {
-			continue;
+			// no .md3 file: look for a glTF binary with the same name
+			if ( R_GLBAlternateName( filename, glbName, sizeof( glbName ) ) ) {
+				fileLength = ri.FS_ReadFile( glbName, (void **)&buf );
+				if ( buf ) {
+					Q_strncpyz( filename, glbName, sizeof( filename ) );
+				}
+			}
+			if ( !buf ) {
+				continue;
+			}
 		}
-		
+
 		loadmodel = mod;
-		
+
 		ident = LittleLong(*(unsigned *)buf);
 		if ( ident == MD4_IDENT ) {
 			loaded = R_LoadMD4( mod, buf, name );
+		} else if ( R_IsGLB( buf, fileLength ) ) {
+			void	*md3, *conversion;
+			int		md3Size;
+
+			md3 = R_ConvertGLB( filename, buf, fileLength, &md3Size, &conversion );
+			if ( md3 ) {
+				loaded = R_LoadMD3( mod, lod, md3, name );
+				R_FreeGLB( conversion );		// before buf: temp hunk is a stack
+			} else {
+				loaded = qfalse;
+			}
 		} else {
 			if ( ident != MD3_IDENT ) {
 				ri.Printf (PRINT_WARNING,"RE_RegisterModel: unknown fileid for %s\n", name);

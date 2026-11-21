@@ -149,7 +149,13 @@ typedef unsigned short UINT16;
 typedef unsigned int UINT16;
 #endif /* HAVE_UNSIGNED_SHORT */
 
+#if defined __MINGW32__
+#ifndef _BASETSD_H_		/* windows.h already defines INT32 as int */
+typedef int INT32;
+#endif
+#else
 typedef long INT32;
+#endif
 
 /* INT16 must hold at least the values -32768..32767. */
 

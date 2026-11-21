@@ -98,7 +98,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 
 // this is the define for determining if we have an asm version of a C function
-#if (defined _M_IX86 || defined __i386__) && !defined __sun__  && !defined __LCC__
+// MinGW (gcc on Windows) cannot compile the MSVC inline assembler, so it uses the C versions
+#if (defined _M_IX86 || defined __i386__) && !defined __sun__  && !defined __LCC__ && !defined __MINGW32__
 #define id386	1
 #else
 #define id386	0
