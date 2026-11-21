@@ -254,7 +254,7 @@ static void CG_Obituary( entityState_t *ent ) {
 			message = "was pummeled by";
 			break;
 		case MOD_MACHINEGUN:
-			message = "was machinegunned by";
+			message = "was shot down by";	// WALKER
 			break;
 		case MOD_SHOTGUN:
 			message = "was gunned down by";

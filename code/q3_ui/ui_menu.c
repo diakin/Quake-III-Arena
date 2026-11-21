@@ -97,7 +97,7 @@ void Main_MenuEvent (void* ptr, int event) {
 
 	switch( ((menucommon_s*)ptr)->id ) {
 	case ID_SINGLEPLAYER:
-		UI_SPLevelMenu();
+		UI_StartServerMenu( qfalse );	// WALKER: skirmish against bots instead of the Q3 ladder
 		break;
 
 	case ID_MULTIPLAYER:

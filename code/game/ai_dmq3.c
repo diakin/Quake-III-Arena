@@ -1740,6 +1740,7 @@ void BotUpdateInventory(bot_state_t *bs) {
 	//ammo
 	bs->inventory[INVENTORY_SHELLS] = bs->cur_ps.ammo[WP_SHOTGUN];
 	bs->inventory[INVENTORY_BULLETS] = bs->cur_ps.ammo[WP_MACHINEGUN];
+	if (bs->inventory[INVENTORY_BULLETS] < 0) bs->inventory[INVENTORY_BULLETS] = 200;	// WALKER: unlimited ammo
 	bs->inventory[INVENTORY_GRENADES] = bs->cur_ps.ammo[WP_GRENADE_LAUNCHER];
 	bs->inventory[INVENTORY_CELLS] = bs->cur_ps.ammo[WP_PLASMAGUN];
 	bs->inventory[INVENTORY_LIGHTNINGAMMO] = bs->cur_ps.ammo[WP_LIGHTNING];
@@ -2207,6 +2208,11 @@ float BotAggression(bot_state_t *bs) {
 	}
 	//if the enemy is located way higher than the bot
 	if (bs->inventory[ENEMY_HEIGHT] > 200) return 0;
+	// WALKER: every robot carries only its autocannon, so the weapon checks
+	// below never pass; fight unless the robot is badly damaged
+	if (bs->inventory[INVENTORY_HEALTH] < 30) return 20;
+	return 80;
+#if 0
 	//if the bot is very low on health
 	if (bs->inventory[INVENTORY_HEALTH] < 60) return 0;
 	//if the bot is low on health
@@ -2237,6 +2243,7 @@ float BotAggression(bot_state_t *bs) {
 			bs->inventory[INVENTORY_SHELLS] > 10) return 50;
 	//otherwise the bot is not feeling too good
 	return 0;
+#endif
 }
 
 /*
@@ -2251,10 +2258,7 @@ float BotFeelingBad(bot_state_t *bs) {
 	if (bs->inventory[INVENTORY_HEALTH] < 40) {
 		return 100;
 	}
-	if (bs->weaponnum == WP_MACHINEGUN) {
-		return 90;
-	}
-	if (bs->inventory[INVENTORY_HEALTH] < 60) {
+	if (bs->inventory[INVENTORY_HEALTH] < 60) {	// WALKER: the autocannon is the normal weapon
 		return 80;
 	}
 	return 0;

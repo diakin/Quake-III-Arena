@@ -9,9 +9,11 @@ WALKER - игра про шагающих роботов на движке Quake
 - карта wk_islands "Islands": острова с мшистыми руинами в мелкой воде, скалы по краям,
   башня с кольцевой платформой, стартовая ферма с ракетой, вертолётные площадки,
   платформы на опорах, маяки A-E (пока только как ориентиры, захвата нет);
+- боты: 8 пилотов (Anvil, Bastion, Cinder, Drake, Ember, Flint, Granite, Hornet) с разным
+  характером, три окраски робота (стандартная, desert, urban);
 - свои шрифты, меню, прицелы, HUD, эффекты и синтезированные звуки.
 
-Пока нет: ботов (одиночная игра из меню не работает), захвата маяков, выбора роботов.
+Пока нет: захвата маяков, выбора роботов.
 
 
 Установка
@@ -28,10 +30,26 @@ WALKER - игра про шагающих роботов на движке Quake
 
 3. Запуск сразу на карту:
      quake3.exe +map wk_islands
-   Или из меню: MULTIPLAYER -> START SERVER -> Islands.
+   Или из меню: SINGLE PLAYER (бой с ботами) или MULTIPLAYER -> START SERVER -> Islands.
 
 Движок теперь ищет данные в папке basewalker (BASEGAME в code/qcommon/qcommon.h) и не
 требует CD-ключа и файлов Quake III.
+
+
+Боты
+----
+
+SINGLE PLAYER открывает экран настройки боя: карта, затем список ботов и их уровень
+(Bot Skill), кнопка FIGHT. По умолчанию bot_minplayers 6: если игроков меньше шести,
+сервер сам добавляет ботов (по одному раз в 10 секунд). Отключить: bot_minplayers 0.
+
+Команды консоли:
+  addbot Anvil 3        добавить бота (уровень 1-5)
+  kick Anvil            убрать бота
+  team spectator        стать зрителем; follow Anvil - смотреть за ботом
+
+Ботам нечего подбирать (на карте нет предметов), поэтому они ходят между маяками A-E
+и точками появления и вступают в бой с теми, кого видят.
 
 
 Управление
@@ -46,7 +64,7 @@ TAB - счёт, ~ - консоль, ESC - меню, F12 - снимок экра�
 
 Данные создаются скриптами (Linux или Windows с Python 3, numpy, scipy, Pillow):
 
-  walker/tools/build_all.sh <папка с cpp, rcc, q3asm> <q3map>
+  walker/tools/build_all.sh <папка с cpp, rcc, q3asm> <q3map> <bspc>
 
 Что делает каждый скрипт:
   make_basedata.py    default.cfg, шрифты, меню, прицелы, цифры HUD, иконки, эффекты
@@ -54,12 +72,21 @@ TAB - счёт, ~ - консоль, ESC - меню, F12 - снимок экра�
                       взрывы, звуки меню
   make_map_islands.py карта: текстуры, небо, шейдеры, рельеф (сетка 64 ед. из треугольных
                       брашей), вода, постройки, точки появления; пишет .map для q3map
+  make_botfiles.py    файлы ботов: характеры, оружие, фразы, scripts/bots.txt,
+                      окраски робота desert и urban
   build_qvm.sh        qagame.qvm, cgame.qvm, ui.qvm (lcc + q3asm из этого репозитория)
 
 Инструменты собираются из исходников репозитория:
   lcc:   cd lcc && make BUILDDIR=<папка> rcc cpp
   q3asm: q3asm/q3asm.c + q3asm/cmdlib.c
   q3map: q3map/*.c + common/*.c (правки в common/cmdlib.c позволяют собрать его gcc под Linux)
+  bspc:  code/bspc - файлы из списка GAME_OBJS в code/bspc/Makefile, флаги
+         -DLINUX -DBSPC -Dstricmp=strcasecmp
+
+Навигация ботов (AAS) строится bspc после компиляции карты:
+  bspc -cfg walker/maps/aas_walker.cfg -bsp2aas wk_islands.bsp
+В aas_walker.cfg размеры робота, скорость 110 и запрет прыжков (боты не строят маршрутов,
+где нужно прыгать). Расчёт около минуты.
 
 Компиляция карты: q3map wk_islands.map; q3map -vis wk_islands.map; q3map -light wk_islands.map
 (свет считается около 5 минут). Путь к .map должен содержать папку quake*/basewalker,
@@ -88,6 +115,13 @@ TAB - счёт, ~ - консоль, ESC - меню, F12 - снимок экра�
   cgame/cg_draw.c        прицел виден и в виде от третьего лица
   cgame/cg_weapons.c     вспышка выстрела у tag_weapon робота, если нет модели оружия
   cgame/cg_playerstate.c нет предупреждения о боезапасе при бесконечных патронах
-  q3_ui/ui_menu.c        заголовок WALKER, без проверки CD-ключа, свои цвета
+  q3_ui/ui_menu.c        заголовок WALKER, без проверки CD-ключа, свои цвета;
+                         SINGLE PLAYER открывает бой с ботами вместо лестницы Q3
+  q3_ui/ui_startserver.c имена ботов по умолчанию для командных игр
+  game/ai_dmq3.c         боты с одной автопушкой не отступают (агрессия зависит от
+                         повреждений), бесконечный боезапас понятен ботам
+  game/ai_dmnet.c        без предметов боты идут к маякам и точкам появления
+  cgame/cg_event.c       сообщение об уничтожении "was shot down by"
+  bspc/l_bsp_hl.c        исправлена строка, которую не принимает современный gcc
 
 Лицензии: LICENSES.md.

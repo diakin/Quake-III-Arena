@@ -1,7 +1,7 @@
 #!/bin/sh
 # Full build of the WALKER game data: base data, sounds, robot model, QVMs and the wk_islands map.
 #
-#   walker/tools/build_all.sh <dir with lcc tools: cpp rcc q3asm> <q3map binary>
+#   walker/tools/build_all.sh <dir with lcc tools: cpp rcc q3asm> <q3map binary> <bspc binary>
 #
 # Result: walker/dist/basewalker/pak0.pk3 (base data, model, QVMs)
 #         walker/dist/basewalker/wk_islands.pk3 (map)
@@ -11,6 +11,7 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 TOOLS="$ROOT/walker/tools"
 LCC=$(cd "$1" && pwd)
 Q3MAP=$(cd "$(dirname "$2")" && pwd)/$(basename "$2")
+BSPC=$(cd "$(dirname "$3")" && pwd)/$(basename "$3")
 STAGE=${WALKER_STAGE:-/tmp/walker_stage}
 DIST="$ROOT/walker/dist/basewalker"
 
@@ -21,6 +22,7 @@ mkdir -p "$STAGE/base" "$STAGE/map" "$STAGE/quake3/basewalker" "$DIST"
 echo "== base data"
 python3 "$TOOLS/make_basedata.py" "$STAGE/base"
 python3 "$TOOLS/make_sounds.py" "$STAGE/base"
+python3 "$TOOLS/make_botfiles.py" "$STAGE/base" "$ROOT/code"
 mkdir -p "$STAGE/base/models/players"
 cp -r "$ROOT/assets/baseq3/models/players/walker" "$STAGE/base/models/players/"
 
@@ -35,8 +37,10 @@ cd "$STAGE/quake3/basewalker/maps"
 "$Q3MAP" wk_islands.map
 "$Q3MAP" -vis wk_islands.map
 "$Q3MAP" -light wk_islands.map
+# bot navigation (AAS): robot box, no jumps
+"$BSPC" -cfg "$ROOT/walker/maps/aas_walker.cfg" -bsp2aas "$STAGE/quake3/basewalker/maps/wk_islands.bsp"
 mkdir -p "$STAGE/map/maps" "$STAGE/map/levelshots"
-cp wk_islands.bsp "$STAGE/map/maps/"
+cp wk_islands.bsp wk_islands.aas "$STAGE/map/maps/"
 cp "$ROOT/walker/maps/levelshots/wk_islands.jpg" "$STAGE/map/levelshots/"
 
 echo "== pk3"
