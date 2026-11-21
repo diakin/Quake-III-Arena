@@ -1276,10 +1276,11 @@ static void Controls_MenuInit( void )
 	s_controls.player.generic.type      = MTYPE_BITMAP;
 	s_controls.player.generic.flags     = QMF_INACTIVE;
 	s_controls.player.generic.ownerdraw = Controls_DrawPlayer;
-	s_controls.player.generic.x	        = 400;
-	s_controls.player.generic.y	        = -40;
-	s_controls.player.width	            = 32*10;
-	s_controls.player.height            = 56*10;
+	// WALKER: preview box inside the screen; UI_DrawPlayer fits the real model into it
+	s_controls.player.generic.x = 390;
+	s_controls.player.generic.y = 64;
+	s_controls.player.width = 240;
+	s_controls.player.height = 380;
 
 	s_controls.walkforward.generic.type	     = MTYPE_ACTION;
 	s_controls.walkforward.generic.flags     = QMF_LEFT_JUSTIFY|QMF_PULSEIFFOCUS|QMF_GRAYED|QMF_HIDDEN;

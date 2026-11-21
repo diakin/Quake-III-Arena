@@ -684,6 +684,41 @@ float	UI_MachinegunSpinAngle( playerInfo_t *pi ) {
 
 /*
 ===============
+UI_PlayerModelExtent
+
+WALKER: bounds of the whole model (legs, torso on tag_torso, head on tag_head)
+instead of a fixed human-sized box, so wide robots are framed correctly
+===============
+*/
+static void UI_PlayerModelExtent( playerInfo_t *pi, vec3_t mins, vec3_t maxs ) {
+	vec3_t			partMins, partMaxs, offset;
+	orientation_t	tag;
+	int				axis;
+
+	trap_R_ModelBounds( pi->legsModel, mins, maxs );
+	if ( mins[2] >= maxs[2] ) {
+		VectorSet( mins, -16, -16, -24 );
+		VectorSet( maxs, 16, 16, 32 );
+		return;
+	}
+	trap_CM_LerpTag( &tag, pi->legsModel, 0, 0, 1.0f, "tag_torso" );
+	VectorCopy( tag.origin, offset );
+	trap_R_ModelBounds( pi->torsoModel, partMins, partMaxs );
+	for ( axis = 0; axis < 3; axis++ ) {
+		if ( partMins[axis] + offset[axis] < mins[axis] ) mins[axis] = partMins[axis] + offset[axis];
+		if ( partMaxs[axis] + offset[axis] > maxs[axis] ) maxs[axis] = partMaxs[axis] + offset[axis];
+	}
+	trap_CM_LerpTag( &tag, pi->torsoModel, 0, 0, 1.0f, "tag_head" );
+	VectorAdd( offset, tag.origin, offset );
+	trap_R_ModelBounds( pi->headModel, partMins, partMaxs );
+	for ( axis = 0; axis < 3; axis++ ) {
+		if ( partMins[axis] + offset[axis] < mins[axis] ) mins[axis] = partMins[axis] + offset[axis];
+		if ( partMaxs[axis] + offset[axis] > maxs[axis] ) maxs[axis] = partMaxs[axis] + offset[axis];
+	}
+}
+
+/*
+===============
 UI_DrawPlayer
 ===============
 */
@@ -741,10 +776,25 @@ void UI_DrawPlayer( float x, float y, float w, float h, playerInfo_t *pi, int ti
 	refdef.fov_y = atan2( refdef.height, xx );
 	refdef.fov_y *= ( 360 / M_PI );
 
-	// calculate distance so the player nearly fills the box
-	len = 0.7 * ( maxs[2] - mins[2] );		
-	origin[0] = len / tan( DEG2RAD(refdef.fov_x) * 0.5 );
-	origin[1] = 0.5 * ( mins[1] + maxs[1] );
+	// WALKER: distance so the whole model (it turns, so use its widest horizontal
+	// extent) fits the box both ways with a margin
+	UI_PlayerModelExtent( pi, mins, maxs );
+	{
+		float	radius, height, alongX, alongY;
+		int		axis;
+
+		radius = 0;
+		for ( axis = 0; axis < 2; axis++ ) {
+			if ( fabs( mins[axis] ) > radius ) radius = fabs( mins[axis] );
+			if ( fabs( maxs[axis] ) > radius ) radius = fabs( maxs[axis] );
+		}
+		height = maxs[2] - mins[2];
+		alongX = radius / ( 0.85f * tan( DEG2RAD(refdef.fov_x) * 0.5 ) );
+		alongY = 0.5f * height / ( 0.85f * tan( DEG2RAD(refdef.fov_y) * 0.5 ) );
+		len = alongX > alongY ? alongX : alongY;
+	}
+	origin[0] = len + 0.5f * ( maxs[0] - mins[0] );
+	origin[1] = 0;
 	origin[2] = -0.5 * ( mins[2] + maxs[2] );
 
 	refdef.time = dp_realtime;
@@ -816,8 +866,8 @@ void UI_DrawPlayer( float x, float y, float w, float h, playerInfo_t *pi, int ti
 	//
 	// add the gun
 	//
-	if ( pi->currentWeapon != WP_NONE ) {
-		memset( &gun, 0, sizeof(gun) );
+	memset( &gun, 0, sizeof(gun) );
+	if ( pi->currentWeapon != WP_NONE && pi->weaponModel ) {	// WALKER: the robot has no separate gun model
 		gun.hModel = pi->weaponModel;
 		VectorCopy( origin, gun.lightingOrigin );
 		UI_PositionEntityOnTag( &gun, &torso, pi->torsoModel, "tag_weapon");
@@ -828,7 +878,7 @@ void UI_DrawPlayer( float x, float y, float w, float h, playerInfo_t *pi, int ti
 	//
 	// add the spinning barrel
 	//
-	if ( pi->realWeapon == WP_MACHINEGUN || pi->realWeapon == WP_GAUNTLET || pi->realWeapon == WP_BFG ) {
+	if ( ( pi->realWeapon == WP_MACHINEGUN || pi->realWeapon == WP_GAUNTLET || pi->realWeapon == WP_BFG ) && pi->barrelModel ) {
 		vec3_t	angles;
 
 		memset( &barrel, 0, sizeof(barrel) );

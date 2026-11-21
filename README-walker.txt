@@ -133,6 +133,10 @@ TAB - счёт, ~ - консоль, ESC - меню, F12 - снимок экра�
   ui_setup.c,            уровни ботов: Recruit, Regular, Veteran, Elite, Ace
   ui_startserver.c, ui_servers2.c, ui_addbots.c
   q3asm/q3asm.c          при ошибках сборки возвращает код ошибки (make останавливается)
+  q3_ui/ui_players.c     превью робота в меню подгоняется под настоящие размеры модели,
+                         без отдельной модели оружия не рисуются оси вместо пушки
+  q3_ui/ui_playermodel.c, ui_playersettings.c, ui_controls2.c - окно превью в пределах экрана;
+                         убран пункт EFFECTS (цвет следа рейлгана)
   cgame/cg_servercmds.c  надпись FIGHT! вдвое меньше и потому чётче
   q3_ui/ui_qmenu.c       пункты меню в оранжевой гамме вместо красной
   game/bg_pmove.c        без прыжков

@@ -437,10 +437,11 @@ static void PlayerSettings_MenuInit( void ) {
 	s_playersettings.player.generic.type		= MTYPE_BITMAP;
 	s_playersettings.player.generic.flags		= QMF_INACTIVE;
 	s_playersettings.player.generic.ownerdraw	= PlayerSettings_DrawPlayer;
-	s_playersettings.player.generic.x			= 400;
-	s_playersettings.player.generic.y			= -40;
-	s_playersettings.player.width				= 32*10;
-	s_playersettings.player.height				= 56*10;
+	// WALKER: preview box inside the screen; UI_DrawPlayer fits the real model into it
+	s_playersettings.player.generic.x = 390;
+	s_playersettings.player.generic.y = 64;
+	s_playersettings.player.width = 240;
+	s_playersettings.player.height = 380;
 
 	s_playersettings.back.generic.type			= MTYPE_BITMAP;
 	s_playersettings.back.generic.name			= ART_BACK0;
@@ -466,7 +467,7 @@ static void PlayerSettings_MenuInit( void ) {
 
 	Menu_AddItem( &s_playersettings.menu, &s_playersettings.name );
 	Menu_AddItem( &s_playersettings.menu, &s_playersettings.handicap );
-	Menu_AddItem( &s_playersettings.menu, &s_playersettings.effects );
+	// WALKER: no "effects" item, it sets the railgun trail colour and robots have no railgun
 	Menu_AddItem( &s_playersettings.menu, &s_playersettings.model );
 	Menu_AddItem( &s_playersettings.menu, &s_playersettings.back );
 
