@@ -53,7 +53,7 @@ vec4_t color_dim	    = {0.00f, 0.00f, 0.00f, 0.25f};
 vec4_t pulse_color          = {1.00f, 1.00f, 1.00f, 1.00f};
 vec4_t text_color_disabled  = {0.50f, 0.50f, 0.50f, 1.00f};	// light gray
 vec4_t text_color_normal    = {1.00f, 0.43f, 0.00f, 1.00f};	// light orange
-vec4_t text_color_highlight = {1.00f, 1.00f, 0.00f, 1.00f};	// bright yellow
+vec4_t text_color_highlight = {1.00f, 0.95f, 0.75f, 1.00f};	// WALKER: warm white (was bright yellow)
 vec4_t listbar_color        = {1.00f, 0.43f, 0.00f, 0.30f};	// transluscent orange
 vec4_t text_color_status    = {1.00f, 1.00f, 1.00f, 1.00f};	// bright white	
 
@@ -1713,7 +1713,7 @@ Menu_Cache
 */
 void Menu_Cache( void )
 {
-	uis.charset			= trap_R_RegisterShader( "gfx/2d/bigchars" );	// WALKER: with mipmaps, the font is larger than it is drawn
+	uis.charset			= trap_R_RegisterShaderNoMip( "gfx/2d/bigchars" );
 	uis.charsetProp		= trap_R_RegisterShaderNoMip( "menu/art/font1_prop.tga" );
 	uis.charsetPropGlow	= trap_R_RegisterShaderNoMip( "menu/art/font1_prop_glo.tga" );
 	uis.charsetPropB	= trap_R_RegisterShaderNoMip( "menu/art/font2_prop.tga" );

@@ -247,6 +247,56 @@ def text_button(name, label, active):
     save(f'menu/art/{name}.tga', image)
 
 
+def side_bracket():
+    """боковая рамка меню (frame2_l, frame1_r): тонкая скоба у внешнего края экрана и лёгкая
+    тень к краю; середина прозрачная, чтобы не мешать тексту. Рисуется для левой стороны,
+    правая — зеркально."""
+    width, height = 256, 512
+    pixels = np.zeros((height, width, 4), dtype=np.uint8)
+    ramp = np.clip(1 - np.arange(width) / 90, 0, 1) ** 1.5
+    pixels[..., :3] = (8, 11, 14)
+    pixels[..., 3] = (ramp * 110).astype(np.uint8)[None, :]
+    image = Image.fromarray(pixels, 'RGBA')
+    draw = ImageDraw.Draw(image)
+    steel = (110, 128, 138, 220)
+    edge = 14
+    draw.line([(edge, 30), (edge, height - 30)], fill=steel, width=3)
+    draw.line([(edge + 9, 60), (edge + 9, height - 60)], fill=(70, 84, 92, 200), width=2)
+    for y in (30, height - 32):
+        draw.line([(edge, y), (edge + 60, y)], fill=steel, width=3)
+    draw.rectangle((edge - 4, height // 2 - 40, edge + 4, height // 2 + 40), fill=ACCENT + (255,))
+    for y in range(90, height - 90, 32):
+        draw.line([(edge + 9, y), (edge + 17, y)], fill=(90, 104, 112, 200), width=2)
+    return image
+
+
+def outline_frame(width, height, color, thickness, accent=False):
+    """рамка без заливки (выбор карты, соперника)."""
+    image = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    half = thickness // 2
+    draw.rectangle((half, half, width - 1 - half, height - 1 - half), outline=color + (255,), width=thickness)
+    if accent:
+        corner = width // 5
+        for x0, y0, dx, dy in [(0, 0, 1, 1), (width - 1, 0, -1, 1), (0, height - 1, 1, -1), (width - 1, height - 1, -1, -1)]:
+            draw.line([(x0, y0 + dy * corner), (x0, y0), (x0 + dx * corner, y0)], fill=(255, 220, 140, 255), width=thickness + 4)
+    return image
+
+
+def framed_panel(width, height, fill_alpha):
+    """панель диалогов и внутриигрового меню: тёмная заливка, стальная кромка, оранжевые углы."""
+    image = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    bevel = 18
+    polygon = [(bevel, 2), (width - 3, 2), (width - 3, height - 3 - bevel), (width - 3 - bevel, height - 3), (2, height - 3), (2, 2 + bevel)]
+    draw.polygon(polygon, fill=(14, 18, 22, fill_alpha))
+    draw.line(polygon + [polygon[0]], fill=(96, 112, 122, 255), width=3)
+    draw.line([(2, 2 + bevel + 30), (2, 2 + bevel), (bevel, 2), (bevel + 40, 2)], fill=ACCENT + (255,), width=5)
+    draw.line([(width - 3, height - 3 - bevel - 30), (width - 3, height - 3 - bevel), (width - 3 - bevel, height - 3),
+               (width - 3 - bevel - 40, height - 3)], fill=ACCENT + (255,), width=5)
+    return image
+
+
 def menu_art():
     # фон меню: тёмное небо, силуэт скал и шагающего робота, сетка
     width, height = 1024, 512
@@ -302,6 +352,24 @@ gfx/2d/bigchars
 		alphagen vertex
 	}
 }
+white
+{
+	{
+		map $whiteimage
+		blendfunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA
+		rgbgen vertex
+		alphagen vertex
+	}
+}
+menubacknologo
+{
+	nopicmip
+	nomipmaps
+	{
+		map menu/art/menuback.jpg
+		rgbgen const ( 0.6 0.6 0.6 )
+	}
+}
 levelShotDetail
 {
 	nopicmip
@@ -354,10 +422,18 @@ levelShotDetail
         image = Image.new('RGBA', (16, 32), (0, 0, 0, 0))
         ImageDraw.Draw(image).rectangle((3, 4, 12, 27), fill=color + (255,))
         save(f'menu/art/{name}.tga', image)
-    for name in ['frame1_l', 'frame1_r', 'frame2_l', 'cut_frame', 'addbotframe', 'player_models_ports', 'maps_select',
-                 'maps_selected', 'opponents_select', 'opponents_selected']:
-        border = ACCENT if name.endswith('selected') else (70, 84, 92)
-        save(f'menu/art/{name}.tga', panel(256, 256, border=border, fill=(14, 18, 22, 150)))
+    side_frame = side_bracket()
+    save('menu/art/frame2_l.tga', side_frame)
+    save('menu/art/frame1_l.tga', side_frame)
+    save('menu/art/frame1_r.tga', side_frame.transpose(Image.FLIP_LEFT_RIGHT))
+    dialog = framed_panel(256, 256, fill_alpha=230)
+    save('menu/art/cut_frame.tga', dialog)
+    save('menu/art/addbotframe.tga', dialog)
+    save('menu/art/player_models_ports.tga', framed_panel(256, 256, fill_alpha=70))
+    save('menu/art/maps_select.tga', outline_frame(256, 256, (84, 98, 106), 3, accent=False))
+    save('menu/art/opponents_select.tga', outline_frame(256, 256, STEEL, 4, accent=False))
+    save('menu/art/maps_selected.tga', outline_frame(256, 256, ACCENT, 8, accent=True))
+    save('menu/art/opponents_selected.tga', outline_frame(256, 256, ACCENT, 8, accent=True))
     unknown = panel(128, 96, fill=(30, 36, 40, 255))
     ImageDraw.Draw(unknown).text((64, 48), '?', font=ImageFont.truetype(FONT_BOLD, 40), fill=STEEL + (255,), anchor='mm')
     save('menu/art/unknownmap.tga', unknown)

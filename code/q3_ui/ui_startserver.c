@@ -682,11 +682,11 @@ static const char *playerTeam_list[] = {
 };
 
 static const char *botSkill_list[] = {
-	"I Can Win",
-	"Bring It On",
-	"Hurt Me Plenty",
-	"Hardcore",
-	"Nightmare!",
+	"Recruit",
+	"Regular",
+	"Veteran",
+	"Elite",
+	"Ace",
 	0
 };
 
@@ -1466,7 +1466,7 @@ static void ServerOptions_MenuInit( qboolean multiplayer ) {
 	Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.next );
 	Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.go );
 
-	Menu_AddItem( &s_serveroptions.menu, (void*) &s_serveroptions.punkbuster );
+	// WALKER: no PunkBuster
 	
 	ServerOptions_SetMenuItems();
 }

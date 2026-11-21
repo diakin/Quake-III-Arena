@@ -1042,6 +1042,6 @@ int main( int argc, char **argv ) {
 	end = I_FloatTime ();
 	printf ("%5.0f seconds elapsed\n", end-start);
 
-	return 0;
+	return errorCount ? 1 : 0;	// WALKER: let make stop on assembler errors
 }
 

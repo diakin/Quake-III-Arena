@@ -236,11 +236,11 @@ UI_AddBotsMenu_Init
 =================
 */
 static const char *skillNames[] = {
-	"I Can Win",
-	"Bring It On",
-	"Hurt Me Plenty",
-	"Hardcore",
-	"Nightmare!",
+	"Recruit",
+	"Regular",
+	"Veteran",
+	"Elite",
+	"Ace",
 	0
 };
 

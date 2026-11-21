@@ -128,7 +128,11 @@ TAB - счёт, ~ - консоль, ESC - меню, F12 - снимок экра�
   client/cl_main.c       консоль и сообщения в углу рисуются своим шрифтом gfx/2d/consolechars
                          (8x16 пиксель в пиксель)
   q3_ui/ui_atoms.c       ползунки в меню можно тянуть мышью
-  q3_ui/ui_qmenu.c       шрифт меню с mip-уровнями (он крупнее, чем рисуется)
+  q3_ui/ui_qmenu.c       выделенный пункт тёплым белым вместо жёлтого
+  q3_ui/ui_menu.c,       убраны пункты Quake: CINEMATICS, MODS, CD KEY, PunkBuster;
+  ui_setup.c,            уровни ботов: Recruit, Regular, Veteran, Elite, Ace
+  ui_startserver.c, ui_servers2.c, ui_addbots.c
+  q3asm/q3asm.c          при ошибках сборки возвращает код ошибки (make останавливается)
   cgame/cg_servercmds.c  надпись FIGHT! вдвое меньше и потому чётче
   q3_ui/ui_qmenu.c       пункты меню в оранжевой гамме вместо красной
   game/bg_pmove.c        без прыжков

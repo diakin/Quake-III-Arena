@@ -1563,6 +1563,7 @@ static void ArenaServers_MenuInit( void ) {
 	Menu_AddItem( &g_arenaservers.menu, (void*) &g_arenaservers.up );
 	Menu_AddItem( &g_arenaservers.menu, (void*) &g_arenaservers.down );
 
+	// WALKER: no PunkBuster filter and logo
 	Menu_AddItem( &g_arenaservers.menu, (void*) &g_arenaservers.remove );
 	Menu_AddItem( &g_arenaservers.menu, (void*) &g_arenaservers.back );
 	Menu_AddItem( &g_arenaservers.menu, (void*) &g_arenaservers.specify );
@@ -1570,8 +1571,6 @@ static void ArenaServers_MenuInit( void ) {
 	Menu_AddItem( &g_arenaservers.menu, (void*) &g_arenaservers.create );
 	Menu_AddItem( &g_arenaservers.menu, (void*) &g_arenaservers.go );
 
-	Menu_AddItem( &g_arenaservers.menu, (void*) &g_arenaservers.punkbuster );
-	Menu_AddItem( &g_arenaservers.menu, (void*) &g_arenaservers.pblogo );
 	
 	ArenaServers_LoadFavorites();
 

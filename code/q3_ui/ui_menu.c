@@ -315,7 +315,7 @@ void UI_MainMenu( void ) {
 	s_main.menu.wrapAround = qtrue;
 	s_main.menu.showlogo = qtrue;
 
-	y = 134;
+	y = 171;	// WALKER: five items, centered
 	s_main.singleplayer.generic.type		= MTYPE_PTEXT;
 	s_main.singleplayer.generic.flags		= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
 	s_main.singleplayer.generic.x			= 320;
@@ -359,7 +359,7 @@ void UI_MainMenu( void ) {
 	s_main.demos.color						= text_color_normal;
 	s_main.demos.style						= style;
 
-	y += MAIN_MENU_VERTICAL_SPACING;
+	// WALKER: no cinematics menu
 	s_main.cinematics.generic.type			= MTYPE_PTEXT;
 	s_main.cinematics.generic.flags			= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
 	s_main.cinematics.generic.x				= 320;
@@ -384,7 +384,7 @@ void UI_MainMenu( void ) {
 		s_main.teamArena.style					= style;
 	}
 
-	y += MAIN_MENU_VERTICAL_SPACING;
+	// WALKER: no mods menu
 	s_main.mods.generic.type			= MTYPE_PTEXT;
 	s_main.mods.generic.flags			= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
 	s_main.mods.generic.x				= 320;
@@ -410,11 +410,9 @@ void UI_MainMenu( void ) {
 	Menu_AddItem( &s_main.menu,	&s_main.multiplayer );
 	Menu_AddItem( &s_main.menu,	&s_main.setup );
 	Menu_AddItem( &s_main.menu,	&s_main.demos );
-	Menu_AddItem( &s_main.menu,	&s_main.cinematics );
 	if (teamArena) {
 		Menu_AddItem( &s_main.menu,	&s_main.teamArena );
 	}
-	Menu_AddItem( &s_main.menu,	&s_main.mods );
 	Menu_AddItem( &s_main.menu,	&s_main.exit );             
 
 	trap_Key_SetCatcher( KEYCATCH_UI );
