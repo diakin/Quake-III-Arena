@@ -84,7 +84,10 @@ seta cg_drawCrosshair "4"
 seta cg_crosshairSize "28"
 seta cg_simpleItems "0"
 seta cg_marks "1"
-seta cg_shadows "1"
+// 2: real shadows of the robots (stencil); 1: a round spot, for very weak video cards
+seta cg_shadows "2"
+seta r_stencilbits "8"
+seta r_textureMode "GL_LINEAR_MIPMAP_LINEAR"
 seta cg_gibs "0"
 seta cg_brassTime "0"
 seta com_blood "0"
@@ -297,6 +300,74 @@ def framed_panel(width, height, fill_alpha):
     return image
 
 
+def hangar_art():
+    """фон ангара: зал в перспективе, светильники под потолком, поворотный круг в центре."""
+    width, height = 1024, 512
+    vanish_x, vanish_y = width / 2, height * 0.42
+    y, x = np.mgrid[0:height, 0:width].astype(float)
+    base = np.zeros((height, width, 3))
+    # стены и потолок: тёмная сталь, светлее к центру
+    distance = np.hypot((x - vanish_x) / width, (y - vanish_y) / height)
+    base[:] = np.array([34, 42, 50])[None, None, :] * (1.15 - 0.6 * distance[..., None])
+    noise = (fft_like_noise(height, width, 3) * 10)[..., None]
+    image = Image.fromarray(np.clip(base + noise, 0, 255).astype(np.uint8))
+    draw = ImageDraw.Draw(image, 'RGBA')
+    back = (300, 70, 724, 300)                       # дальняя стена
+    draw.rectangle(back, fill=(44, 54, 62, 255), outline=(70, 84, 92, 255), width=3)
+    for panel_x in range(back[0], back[2], 53):
+        draw.line([(panel_x, back[1]), (panel_x, back[3])], fill=(30, 36, 42, 255), width=2)
+    draw.rectangle((back[0], 200, back[2], 214), fill=(200, 160, 40, 255))
+    for stripe in range(back[0], back[2], 28):
+        draw.polygon([(stripe, 214), (stripe + 14, 214), (stripe + 28, 200), (stripe + 14, 200)], fill=(30, 28, 24, 255))
+    # пол: решётка к точке схода
+    floor_top = back[3]
+    draw.polygon([(back[0], floor_top), (back[2], floor_top), (width, height), (0, height)], fill=(40, 46, 50, 255))
+    for step in range(-12, 13):
+        draw.line([(vanish_x + step * 35, floor_top), (vanish_x + step * 120, height)], fill=(56, 64, 70, 255), width=2)
+    row = floor_top
+    gap = 8
+    while row < height:
+        draw.line([(0, row), (width, row)], fill=(56, 64, 70, 255), width=2)
+        gap *= 1.35
+        row += gap
+    # потолочные балки и светильники
+    for beam in range(4):
+        top = 10 + beam * 16
+        draw.line([(back[0] - 120 + beam * 30, top + 40), (back[2] + 120 - beam * 30, top + 40)], fill=(26, 30, 34, 255), width=8)
+        for lamp in range(5):
+            lamp_x = back[0] + 30 + lamp * 90
+            draw.rectangle((lamp_x - 22, top + 30, lamp_x + 22, top + 36), fill=(255, 236, 190, 255))
+    glow = Image.new('L', (width, height), 0)
+    glow_draw = ImageDraw.Draw(glow)
+    for lamp in range(5):
+        glow_draw.ellipse((back[0] + 30 + lamp * 90 - 70, 20, back[0] + 30 + lamp * 90 + 70, 120), fill=90)
+    glow = glow.filter(ImageFilter.GaussianBlur(30))
+    image = Image.composite(Image.new('RGB', (width, height), (255, 230, 180)), image, glow.point(lambda value: value // 2))
+    draw = ImageDraw.Draw(image, 'RGBA')
+    # поворотный круг под роботом
+    center_x, center_y = width / 2, 318
+    draw.ellipse((center_x - 250, center_y - 42, center_x + 250, center_y + 42), fill=(30, 34, 38, 255), outline=ACCENT + (255,), width=4)
+    draw.ellipse((center_x - 200, center_y - 32, center_x + 200, center_y + 32), outline=(90, 104, 112, 255), width=2)
+    # боковые колонны
+    for column_x in (90, 934):
+        draw.rectangle((column_x - 26, 0, column_x + 26, height), fill=(28, 32, 36, 255), outline=(70, 84, 92, 255), width=2)
+        for mark in range(40, height, 70):
+            draw.rectangle((column_x - 26, mark, column_x + 26, mark + 10), fill=(200, 160, 40, 230))
+    save('menu/art/hangar.jpg', image)
+
+
+def fft_like_noise(height, width, seed):
+    local = np.random.default_rng(seed)
+    white = local.normal(0, 1, (height, width))
+    spectrum = np.fft.fft2(white)
+    freq_y = np.fft.fftfreq(height)[:, None]
+    freq_x = np.fft.fftfreq(width)[None, :]
+    radius = np.hypot(freq_x, freq_y)
+    radius[0, 0] = 1
+    field = np.real(np.fft.ifft2(spectrum / radius ** 1.4))
+    return field / (np.abs(field).max() or 1)
+
+
 def menu_art():
     # фон меню: тёмное небо, силуэт скал и шагающего робота, сетка
     width, height = 1024, 512
@@ -462,6 +533,15 @@ menubacknologo
 		rgbgen const ( 0.6 0.6 0.6 )
 	}
 }
+menu/art/hangar
+{
+	nopicmip
+	nomipmaps
+	{
+		map menu/art/hangar.jpg
+		rgbgen identity
+	}
+}
 levelShotDetail
 {
 	nopicmip
@@ -484,6 +564,7 @@ levelShotDetail
         'accept': 'ACCEPT', 'back': 'BACK', 'create': 'CREATE', 'delete': 'DELETE', 'fight': 'FIGHT', 'load': 'LOAD',
         'menu': 'MENU', 'model': 'MODEL', 'next': 'NEXT', 'play': 'PLAY', 'refresh': 'REFRESH', 'replay': 'REPLAY',
         'reset': 'RESET', 'save': 'SAVE', 'skirmish': 'SKIRMISH', 'specify': 'SPECIFY', 'narrow': 'FILTER',
+        'pilot': 'PILOT',
     }
     for name, label in labels.items():
         text_button(f'{name}_0', label, False)
@@ -991,6 +1072,7 @@ def main():
     console_font()
     prop_fonts()
     menu_art()
+    hangar_art()
     crosshairs()
     numbers()
     icons()

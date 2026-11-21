@@ -95,7 +95,9 @@ TAB - счёт, ~ - консоль, ESC - меню, F12 - снимок экра�
   import_splash.py    шаги по воде из записи walker/sounds/footsteps_water.mp3
                       (режет на отдельные шаги, splash1-4.wav)
   make_botfiles.py    файлы ботов: характеры, оружие, фразы, scripts/bots.txt,
-                      окраски робота desert и urban
+                      окраски робота desert и urban, материалы робота
+                      (scripts/walker_player.shader: блик краски, отражения металла,
+                      светящиеся детали)
   build_qvm.sh        qagame.qvm, cgame.qvm, ui.qvm (lcc + q3asm из этого репозитория)
 
 Инструменты lcc и q3asm собирает code/Makefile.qvm (папка code/build-qvm-tools).
@@ -138,6 +140,9 @@ TAB - счёт, ~ - консоль, ESC - меню, F12 - снимок экра�
   ui_setup.c,            уровни ботов: Recruit, Regular, Veteran, Elite, Ace
   ui_startserver.c, ui_servers2.c, ui_addbots.c
   q3asm/q3asm.c          при ошибках сборки возвращает код ошибки (make останавливается)
+  q3_ui/ui_hangar.c      ангар (прототип): 5 роботов в боксах, крупный вид выбранного робота,
+                         вращение мышью или стрелками, кнопка PILOT выбирает робота
+  renderer/tr_init.c     r_ambientScale 0.45, r_directedScale 1.4: модели контрастнее
   q3_ui/ui_selectbots.c  новое меню BOTS (Esc в игре): все боты списком, щелчок добавляет
                          бота в бой или убирает; заменяет ADD BOTS и REMOVE BOTS
   q3_ui/ui_players.c     превью робота в меню подгоняется под настоящие размеры модели,

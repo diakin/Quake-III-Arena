@@ -942,8 +942,8 @@ void R_Register( void )
 
 	r_primitives = ri.Cvar_Get( "r_primitives", "0", CVAR_ARCHIVE );
 
-	r_ambientScale = ri.Cvar_Get( "r_ambientScale", "0.6", CVAR_CHEAT );
-	r_directedScale = ri.Cvar_Get( "r_directedScale", "1", CVAR_CHEAT );
+	r_ambientScale = ri.Cvar_Get( "r_ambientScale", "0.45", CVAR_CHEAT );	// WALKER: more contrast on models
+	r_directedScale = ri.Cvar_Get( "r_directedScale", "1.4", CVAR_CHEAT );	// WALKER: stronger sun on models
 
 	//
 	// temporary variables that can change at any time

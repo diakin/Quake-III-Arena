@@ -40,6 +40,7 @@ MAIN MENU
 #define ID_TEAMARENA		15
 #define ID_MODS					16
 #define ID_EXIT					17
+#define ID_HANGAR				18	// WALKER
 
 #define MAIN_BANNER_MODEL				"models/mapobjects/banner/banner5.md3"
 #define MAIN_MENU_VERTICAL_SPACING		34
@@ -49,6 +50,7 @@ typedef struct {
 	menuframework_s	menu;
 
 	menutext_s		singleplayer;
+	menutext_s		hangar;		// WALKER
 	menutext_s		multiplayer;
 	menutext_s		setup;
 	menutext_s		demos;
@@ -96,6 +98,10 @@ void Main_MenuEvent (void* ptr, int event) {
 	}
 
 	switch( ((menucommon_s*)ptr)->id ) {
+	case ID_HANGAR:
+		UI_HangarMenu();
+		break;
+
 	case ID_SINGLEPLAYER:
 		UI_StartServerMenu( qfalse );	// WALKER: skirmish against bots instead of the Q3 ladder
 		break;
@@ -315,7 +321,7 @@ void UI_MainMenu( void ) {
 	s_main.menu.wrapAround = qtrue;
 	s_main.menu.showlogo = qtrue;
 
-	y = 171;	// WALKER: five items, centered
+	y = 154;	// WALKER: six items, centered
 	s_main.singleplayer.generic.type		= MTYPE_PTEXT;
 	s_main.singleplayer.generic.flags		= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
 	s_main.singleplayer.generic.x			= 320;
@@ -325,6 +331,17 @@ void UI_MainMenu( void ) {
 	s_main.singleplayer.string				= "SINGLE PLAYER";
 	s_main.singleplayer.color				= text_color_normal;
 	s_main.singleplayer.style				= style;
+
+	y += MAIN_MENU_VERTICAL_SPACING;
+	s_main.hangar.generic.type				= MTYPE_PTEXT;
+	s_main.hangar.generic.flags				= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
+	s_main.hangar.generic.x					= 320;
+	s_main.hangar.generic.y					= y;
+	s_main.hangar.generic.id				= ID_HANGAR;
+	s_main.hangar.generic.callback			= Main_MenuEvent;
+	s_main.hangar.string					= "HANGAR";
+	s_main.hangar.color						= text_color_normal;
+	s_main.hangar.style						= style;
 
 	y += MAIN_MENU_VERTICAL_SPACING;
 	s_main.multiplayer.generic.type			= MTYPE_PTEXT;
@@ -407,6 +424,7 @@ void UI_MainMenu( void ) {
 	s_main.exit.style						= style;
 
 	Menu_AddItem( &s_main.menu,	&s_main.singleplayer );
+	Menu_AddItem( &s_main.menu,	&s_main.hangar );
 	Menu_AddItem( &s_main.menu,	&s_main.multiplayer );
 	Menu_AddItem( &s_main.menu,	&s_main.setup );
 	Menu_AddItem( &s_main.menu,	&s_main.demos );

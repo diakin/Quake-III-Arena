@@ -42,7 +42,7 @@ UI="q3_ui/ui_main.c q3_ui/ui_gameinfo.c q3_ui/ui_atoms.c q3_ui/ui_cinematics.c q
  q3_ui/ui_options.c q3_ui/ui_display.c q3_ui/ui_sound.c q3_ui/ui_network.c q3_ui/ui_playermodel.c q3_ui/ui_players.c
  q3_ui/ui_playersettings.c q3_ui/ui_preferences.c q3_ui/ui_qmenu.c q3_ui/ui_serverinfo.c q3_ui/ui_servers2.c
  q3_ui/ui_sparena.c q3_ui/ui_specifyserver.c q3_ui/ui_sppostgame.c q3_ui/ui_splevel.c q3_ui/ui_spskill.c
- q3_ui/ui_startserver.c q3_ui/ui_team.c q3_ui/ui_video.c q3_ui/ui_addbots.c q3_ui/ui_removebots.c q3_ui/ui_selectbots.c q3_ui/ui_teamorders.c
+ q3_ui/ui_startserver.c q3_ui/ui_team.c q3_ui/ui_video.c q3_ui/ui_addbots.c q3_ui/ui_removebots.c q3_ui/ui_selectbots.c q3_ui/ui_hangar.c q3_ui/ui_teamorders.c
  q3_ui/ui_loadconfig.c q3_ui/ui_saveconfig.c q3_ui/ui_cdkey.c q3_ui/ui_mods.c game/bg_misc.c game/bg_lib.c game/q_math.c game/q_shared.c"
 
 compile game $GAME

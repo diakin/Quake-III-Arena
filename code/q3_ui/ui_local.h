@@ -701,6 +701,12 @@ void UI_SelectBots_Cache( void );
 void UI_SelectBotsMenu( void );
 
 //
+// ui_hangar.c (WALKER)
+//
+void UI_Hangar_Cache( void );
+void UI_HangarMenu( void );
+
+//
 // ui_teamorders.c
 //
 extern void UI_TeamOrdersMenu( void );
