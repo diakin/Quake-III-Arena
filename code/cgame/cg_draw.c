@@ -1928,9 +1928,7 @@ static void CG_DrawCrosshair(void) {
 		return;
 	}
 
-	if ( cg.renderingThirdPerson ) {
-		return;
-	}
+	// WALKER: the crosshair is drawn in third person too
 
 	// set color based on health
 	if ( cg_crosshairHealth.integer ) {

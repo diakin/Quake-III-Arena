@@ -47,6 +47,10 @@ void CG_CheckAmmo( void ) {
 		if ( ! ( weapons & ( 1 << i ) ) ) {
 			continue;
 		}
+		if ( cg.snap->ps.ammo[i] < 0 ) {	// WALKER: unlimited ammo, never warn
+			cg.lowAmmoWarning = 0;
+			return;
+		}
 		switch ( i ) {
 		case WP_ROCKET_LAUNCHER:
 		case WP_GRENADE_LAUNCHER:

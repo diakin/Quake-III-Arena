@@ -775,8 +775,10 @@ image_t *R_CreateImage( const char *name, const byte *pic, int width, int height
 								&image->uploadWidth,
 								&image->uploadHeight );
 
-	qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, glWrapClampMode );
-	qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, glWrapClampMode );
+	// WALKER: GL_CLAMP blends in the black border color at the edges (seams in skyboxes
+	// and sprites on many drivers); clamp to the edge texels instead (OpenGL 1.2)
+	qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, glWrapClampMode == GL_CLAMP ? GL_CLAMP_TO_EDGE : glWrapClampMode );
+	qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, glWrapClampMode == GL_CLAMP ? GL_CLAMP_TO_EDGE : glWrapClampMode );
 
 	qglBindTexture( GL_TEXTURE_2D, 0 );
 

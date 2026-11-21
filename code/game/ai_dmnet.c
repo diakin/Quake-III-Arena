@@ -272,6 +272,52 @@ int BotReachedGoal(bot_state_t *bs, bot_goal_t *goal) {
 
 /*
 ==================
+BotWalkerRoamGoal
+
+WALKER: maps have no items to collect, so when there is no item goal the bot
+walks to a beacon (target_location) or to a random spawn point.
+==================
+*/
+static int BotWalkerRoamGoal(bot_state_t *bs, bot_goal_t *goal) {
+	gentity_t *ent;
+	vec3_t candidates[64];
+	int numcandidates, i, attempt, pick, areanum;
+
+	numcandidates = 0;
+	for (i = MAX_CLIENTS; i < level.num_entities && numcandidates < 64; i++) {
+		ent = &g_entities[i];
+		if (!ent->inuse || !ent->classname) continue;
+		if (!Q_stricmp(ent->classname, "target_location")) {
+			// beacons count three times: they are where the fights are
+			for (attempt = 0; attempt < 3 && numcandidates < 64; attempt++) {
+				VectorCopy(ent->s.origin, candidates[numcandidates++]);
+			}
+		}
+		else if (!Q_stricmp(ent->classname, "info_player_deathmatch")) {
+			VectorCopy(ent->s.origin, candidates[numcandidates++]);
+		}
+	}
+	if (!numcandidates) return qfalse;
+	for (attempt = 0; attempt < 8; attempt++) {
+		pick = rand() % numcandidates;
+		if (Distance(candidates[pick], bs->origin) < 200) continue;
+		areanum = BotPointAreaNum(candidates[pick]);
+		if (!areanum || !trap_AAS_AreaReachability(areanum)) continue;
+		memset(goal, 0, sizeof(bot_goal_t));
+		VectorCopy(candidates[pick], goal->origin);
+		goal->areanum = areanum;
+		VectorSet(goal->mins, -48, -48, -48);
+		VectorSet(goal->maxs, 48, 48, 48);
+		goal->entitynum = -1;
+		goal->flags = GFL_ROAM;
+		trap_BotPushGoal(bs->gs, goal);
+		return qtrue;
+	}
+	return qfalse;
+}
+
+/*
+==================
 BotGetItemLongTermGoal
 ==================
 */
@@ -302,6 +348,9 @@ int BotGetItemLongTermGoal(bot_state_t *bs, int tfl, bot_goal_t *goal) {
 			BotAI_Print(PRT_MESSAGE, "%1.1f: new long term goal %s\n", FloatTime(), buf);
             */
 			bs->ltg_time = FloatTime() + 20;
+		}
+		else if (BotWalkerRoamGoal(bs, goal)) {	// WALKER: no items on the map
+			bs->ltg_time = FloatTime() + 40;
 		}
 		else {//the bot gets sorta stuck with all the avoid timings, shouldn't happen though
 			//

@@ -472,7 +472,7 @@ static void CG_MapRestart( void ) {
 		}
 	}
 #endif
-	trap_Cvar_Set("cg_thirdPerson", "0");
+	// WALKER: the game is played in third person, do not switch it off on map restart
 }
 
 #define MAX_VOICEFILESIZE	16384

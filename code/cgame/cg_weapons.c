@@ -1260,6 +1260,26 @@ void CG_AddPlayerWeapon( refEntity_t *parent, playerState_t *ps, centity_t *cent
 
 	gun.hModel = weapon->weaponModel;
 	if (!gun.hModel) {
+		// WALKER: the guns are part of the robot model; draw only a muzzle flash
+		// sprite and light at the torso tag_weapon
+		if ( cg.time - cent->muzzleFlashTime <= MUZZLE_FLASH_TIME && parent->hModel ) {
+			CG_PositionEntityOnTag( &gun, parent, parent->hModel, "tag_weapon" );
+			memset( &flash, 0, sizeof( flash ) );
+			flash.reType = RT_SPRITE;
+			VectorMA( gun.origin, 6, gun.axis[0], flash.origin );
+			flash.radius = 9 + ( rand() & 7 );
+			flash.rotation = rand() % 360;
+			flash.customShader = cgs.media.plasmaBallShader;
+			flash.shaderRGBA[0] = 255;
+			flash.shaderRGBA[1] = 220;
+			flash.shaderRGBA[2] = 160;
+			flash.shaderRGBA[3] = 255;
+			trap_R_AddRefEntityToScene( &flash );
+			if ( weapon->flashDlightColor[0] || weapon->flashDlightColor[1] || weapon->flashDlightColor[2] ) {
+				trap_R_AddLightToScene( flash.origin, 200 + ( rand() & 31 ), weapon->flashDlightColor[0],
+					weapon->flashDlightColor[1], weapon->flashDlightColor[2] );
+			}
+		}
 		return;
 	}
 
