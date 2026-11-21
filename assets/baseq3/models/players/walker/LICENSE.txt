@@ -1,0 +1,11 @@
+Модель игрока walker (шагающий робот) для Quake III Arena
+Автор: diakin — https://github.com/diakin/Quake-III-Arena
+
+Лицензия: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
+https://creativecommons.org/licenses/by-sa/4.0/
+
+Можно копировать, раздавать и изменять, в том числе в других проектах,
+при условии указания автора и распространения изменённой модели под той же лицензией.
+
+Walker player model for Quake III Arena. Author: diakin.
+Licensed under CC BY-SA 4.0: https://creativecommons.org/licenses/by-sa/4.0/
