@@ -150,13 +150,39 @@ def stomp(variant, metallic=1.0):
     return reverb(mix(thud * 1.4, impact * 0.8, clank * 0.35, hiss, servo), 0.3, 0.25)
 
 
-def splash(variant):
-    seconds = 0.8
+def bubble(seconds, frequency, rise):
+    """пузырёк: короткий тон с быстрым подъёмом частоты (так звучит лопающаяся капля)."""
     t = time(seconds)
-    body = band(noise(seconds), 300, 2500) * envelope(seconds, 0.01, 0.25)
-    spray = band(noise(seconds), 2500, 9000) * envelope(seconds, 0.02, 0.35) * 0.5
-    plop = np.sin(2 * np.pi * (180 - 80 * t + variant * 10) * t) * envelope(seconds, 0.003, 0.08) * 0.5
-    return mix(body, spray, plop, stomp(variant, 0.3)[:len(t)] * 0.5)
+    sweep = frequency * (1 + rise * t / seconds)
+    return np.sin(2 * np.pi * np.cumsum(sweep) / RATE) * np.exp(-t / (seconds / 4))
+
+
+def splash(variant, heavy=1.0):
+    """всплеск: шлепок по воде, шум брызг и рой капель-пузырьков. Без тонального удара,
+    иначе звучит как барабан. heavy — сколько добавить глухого «шлепка» массы робота."""
+    local = np.random.default_rng(700 + variant)
+    seconds = 0.6
+    t = time(seconds)
+    # шлепок: широкополосный шум 0-40 мс
+    slap = band(noise(seconds), 500, 5000) * np.exp(-t / 0.018) * 1.2
+    # толща воды: низкий шум с неровной огибающей (бурление)
+    churn = band(noise(seconds), 150, 1400, 3)
+    wobble = band(local.normal(0, 1, len(t)), 0, 30)
+    wobble = 0.6 + 0.4 * wobble / (np.abs(wobble).max() or 1)
+    churn *= np.clip(t / 0.02, 0, 1) * np.exp(-t / 0.1) * wobble * 0.9
+    # брызги: высокий шипящий шум, чуть позже шлепка
+    spray = band(noise(seconds), 2500, 9500) * np.clip((t - 0.01) / 0.03, 0, 1) * np.exp(-t / 0.14) * 0.45
+    # капли падают обратно: пузырьки по всему хвосту
+    drops = np.zeros_like(t)
+    for _ in range(int(local.integers(28, 40))):
+        start = int(local.uniform(0.03, 0.45) ** 1.3 * RATE)
+        length = local.uniform(0.012, 0.04)
+        piece = bubble(length, local.uniform(700, 2600), local.uniform(0.6, 1.6)) * local.uniform(0.05, 0.25)
+        piece = piece * (1 - start / len(t))
+        drops[start:start + len(piece)] += piece[:len(drops) - start]
+    # глухой шлепок массы робота по дну: шум, а не тон
+    thud = band(noise(seconds), 40, 220, 3) * np.exp(-t / 0.07) * 0.5 * heavy
+    return reverb(mix(slap, churn, spray, drops, thud), 0.2, 0.15)
 
 
 def servo(seconds, low, high):
