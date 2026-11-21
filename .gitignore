@@ -1,6 +1,6 @@
 code/build-mingw/
 code/build-qvm-*/
-walker/dist/quake3.exe
+walker/dist/Walker.exe
 walker/dist/basewalker/vm/*.qvm
 walker/dist/basewalker/vm/*.map
 walker/dist/basewalker/q3config.cfg

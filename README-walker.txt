@@ -24,17 +24,17 @@ WALKER - игра про шагающих роботов на движке Quake
 
 1. Сборка (из папки code):
      mingw32-make -f Makefile.mingw
-   Цели: all (по умолчанию) = engine + qvm; engine - только quake3.exe;
+   Цели: all (по умолчанию) = engine + qvm; engine - только Walker.exe;
    qvm - только игровые модули; clean - удалить результаты сборки.
 
    Порядок внутри all:
-   - engine: code/*.c -> code/build-mingw/*.o -> walker/dist/quake3.exe
+   - engine: code/*.c -> code/build-mingw/*.o -> walker/dist/Walker.exe
    - qvm (code/Makefile.qvm): сначала инструменты из исходников репозитория
      (lcc/: lburg, rcc, cpp; q3asm/) в code/build-qvm-tools, затем
      code/game, code/cgame, code/q3_ui -> walker/dist/basewalker/vm/qagame.qvm, cgame.qvm, ui.qvm
 
 2. Готовая папка игры - walker/dist:
-     quake3.exe
+     Walker.exe
      basewalker/pak0.pk3        (данные, в репозитории)
      basewalker/wk_islands.pk3  (карта, в репозитории)
      basewalker/vm/*.qvm        (только что собранные модули)
@@ -42,7 +42,7 @@ WALKER - игра про шагающих роботов на движке Quake
    собранные QVM заменяют старые копии из pak0.pk3.
 
 3. Запуск (рабочая папка - walker/dist, движок ищет basewalker в текущей папке):
-     quake3.exe +map wk_islands
+     Walker.exe +map wk_islands
    Или из меню: SINGLE PLAYER (бой с ботами) или MULTIPLAYER -> START SERVER -> Islands.
 
 После правки любого .h пересобирается всё (так проще и надёжнее, чем отслеживать зависимости).

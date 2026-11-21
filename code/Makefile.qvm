@@ -10,7 +10,7 @@
 #
 # Result: ../walker/dist/basewalker/vm/qagame.qvm, cgame.qvm, ui.qvm
 # The tools run on the build machine, so they are compiled with HOSTCC (default gcc),
-# even when Makefile.mingw cross-compiles quake3.exe.
+# even when Makefile.mingw cross-compiles Walker.exe.
 
 HOSTCC ?= gcc
 HOSTCFLAGS = -O1 -w -fcommon -std=gnu89

@@ -1,8 +1,8 @@
-# Makefile for WALKER with MinGW (32-bit gcc): quake3.exe and the game modules (QVM).
+# Makefile for WALKER with MinGW (32-bit gcc): Walker.exe and the game modules (QVM).
 #
 # Windows (from the "code" directory, 32-bit MinGW in PATH):
-#   mingw32-make -f Makefile.mingw          quake3.exe + QVM (target all)
-#   mingw32-make -f Makefile.mingw engine   quake3.exe only
+#   mingw32-make -f Makefile.mingw          Walker.exe + QVM (target all)
+#   mingw32-make -f Makefile.mingw engine   Walker.exe only
 #   mingw32-make -f Makefile.mingw qvm      QVM only (see Makefile.qvm)
 #   mingw32-make -f Makefile.mingw clean
 #
@@ -10,7 +10,7 @@
 #   make -f Makefile.mingw CC=i686-w64-mingw32-gcc WINDRES=i686-w64-mingw32-windres
 #
 # Result: a ready game folder ../walker/dist:
-#   quake3.exe, basewalker/pak0.pk3, basewalker/wk_islands.pk3, basewalker/vm/*.qvm
+#   Walker.exe, basewalker/pak0.pk3, basewalker/wk_islands.pk3, basewalker/vm/*.qvm
 #
 # Notes:
 #  - the compiler must produce 32-bit code (i686); the engine is not 64-bit clean
@@ -27,7 +27,7 @@ endif
 WINDRES ?= windres
 
 BUILD_DIR = build-mingw
-TARGET = ../walker/dist/quake3.exe
+TARGET = ../walker/dist/Walker.exe
 
 WARNINGS ?= -w
 CFLAGS = -O2 -fno-strict-aliasing -fcommon $(WARNINGS) \
@@ -105,7 +105,7 @@ $(BUILD_DIR):
 ifeq ($(OS),Windows_NT)
 clean:
 	-if exist $(BUILD_DIR) rmdir /s /q $(BUILD_DIR)
-	-del /q ..\walker\dist\quake3.exe 2>nul
+	-del /q ..\walker\dist\Walker.exe 2>nul
 	$(MAKE) -f Makefile.qvm clean
 else
 clean:
