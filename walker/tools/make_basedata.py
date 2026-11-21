@@ -342,6 +342,98 @@ console
 		rgbGen const ( 0.55 0.55 0.55 )
 	}
 }
+medal_excellent
+{
+	nopicmip
+	{
+		clampmap menu/medals/medal_excellent.tga
+		blendfunc blend
+		rgbgen vertex
+		alphagen vertex
+	}
+}
+medal_impressive
+{
+	nopicmip
+	{
+		clampmap menu/medals/medal_impressive.tga
+		blendfunc blend
+		rgbgen vertex
+		alphagen vertex
+	}
+}
+medal_gauntlet
+{
+	nopicmip
+	{
+		clampmap menu/medals/medal_gauntlet.tga
+		blendfunc blend
+		rgbgen vertex
+		alphagen vertex
+	}
+}
+medal_defend
+{
+	nopicmip
+	{
+		clampmap menu/medals/medal_defend.tga
+		blendfunc blend
+		rgbgen vertex
+		alphagen vertex
+	}
+}
+medal_assist
+{
+	nopicmip
+	{
+		clampmap menu/medals/medal_assist.tga
+		blendfunc blend
+		rgbgen vertex
+		alphagen vertex
+	}
+}
+medal_capture
+{
+	nopicmip
+	{
+		clampmap menu/medals/medal_capture.tga
+		blendfunc blend
+		rgbgen vertex
+		alphagen vertex
+	}
+}
+sprites/balloon3
+{
+	nopicmip
+	{
+		clampmap sprites/balloon3.tga
+		blendfunc blend
+	}
+}
+sprites/foe
+{
+	nopicmip
+	{
+		clampmap sprites/foe.tga
+		blendfunc blend
+	}
+}
+lagometer
+{
+	nopicmip
+	{
+		map gfx/2d/lag.tga
+		blendfunc blend
+	}
+}
+disconnected
+{
+	nopicmip
+	{
+		map gfx/2d/net.tga
+		blendfunc blend
+	}
+}
 gfx/2d/bigchars
 {
 	nopicmip
@@ -540,6 +632,64 @@ def misc_2d():
         image = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
         ImageDraw.Draw(image).text((32, 32), glyph, font=ImageFont.truetype(FONT_BOLD, 16), fill=(240, 80, 60, 255), anchor='mm')
         save(f'gfx/2d/{name}.tga', image)
+
+
+# ---------------------------------------------------------------- награды и значки над игроками
+def badge(symbol):
+    """медаль: шестиугольный жетон с оранжевой кромкой и символом."""
+    size = 256
+    image = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    center = size / 2
+    hexagon = [(center + 118 * math.cos(math.radians(60 * index + 30)), center + 118 * math.sin(math.radians(60 * index + 30))) for index in range(6)]
+    inner = [(center + 100 * math.cos(math.radians(60 * index + 30)), center + 100 * math.sin(math.radians(60 * index + 30))) for index in range(6)]
+    draw.polygon(hexagon, fill=ACCENT + (255,))
+    draw.polygon(inner, fill=(26, 32, 38, 255))
+    light = (240, 232, 210, 255)
+    if symbol == 'chevrons':
+        for offset in (-28, 28):
+            draw.line([(center - 52, center + 30 + offset), (center, center - 22 + offset), (center + 52, center + 30 + offset)], fill=light, width=22)
+    elif symbol == 'target':
+        draw.ellipse((center - 60, center - 60, center + 60, center + 60), outline=light, width=14)
+        draw.ellipse((center - 14, center - 14, center + 14, center + 14), fill=ACCENT + (255,))
+        for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+            draw.line([(center + dx * 40, center + dy * 40), (center + dx * 82, center + dy * 82)], fill=light, width=14)
+    elif symbol == 'cross':
+        draw.line([(center - 55, center - 55), (center + 55, center + 55)], fill=light, width=26)
+        draw.line([(center + 55, center - 55), (center - 55, center + 55)], fill=light, width=26)
+    elif symbol == 'shield':
+        draw.polygon([(center - 55, center - 60), (center + 55, center - 60), (center + 55, center), (center, center + 70), (center - 55, center)], fill=light)
+        draw.polygon([(center - 30, center - 38), (center + 30, center - 38), (center + 30, center - 4), (center, center + 36), (center - 30, center - 4)], fill=ACCENT + (255,))
+    elif symbol == 'arrows':
+        draw.polygon([(center - 70, center - 50), (center - 10, center), (center - 70, center + 50)], fill=light)
+        draw.polygon([(center + 70, center - 50), (center + 10, center), (center + 70, center + 50)], fill=light)
+    elif symbol == 'flag':
+        draw.line([(center - 45, center - 65), (center - 45, center + 70)], fill=light, width=14)
+        draw.polygon([(center - 40, center - 65), (center + 65, center - 40), (center - 40, center - 10)], fill=ACCENT + (255,))
+    return image.resize((128, 128), Image.LANCZOS)
+
+
+def rewards_and_sprites():
+    for name, symbol in [('excellent', 'chevrons'), ('impressive', 'target'), ('gauntlet', 'cross'),
+                         ('defend', 'shield'), ('assist', 'arrows'), ('capture', 'flag'), ('frags', 'chevrons'),
+                         ('victory', 'chevrons'), ('accuracy', 'target')]:
+        save(f'menu/medals/medal_{name}.tga', badge(symbol))
+    # облачко над говорящим игроком
+    size = 128
+    bubble = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(bubble)
+    draw.rounded_rectangle((8, 16, 120, 92), 26, fill=(240, 236, 224, 235), outline=(30, 30, 30, 255), width=5)
+    draw.polygon([(40, 88), (64, 88), (34, 118)], fill=(240, 236, 224, 235), outline=(30, 30, 30, 255))
+    draw.rectangle((38, 84, 62, 92), fill=(240, 236, 224, 235))
+    for x in (40, 64, 88):
+        draw.ellipse((x - 8, 46, x + 8, 62), fill=(40, 40, 40, 255))
+    save('sprites/balloon3.tga', bubble)
+    # метка союзника над головой (командные игры)
+    marker = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
+    ImageDraw.Draw(marker).polygon([(8, 10), (56, 10), (32, 52)], fill=(90, 220, 120, 230), outline=(10, 40, 20, 255))
+    save('sprites/foe.tga', marker)
+    # фон лагометра
+    save('gfx/2d/lag.tga', Image.new('RGBA', (64, 64), (10, 14, 18, 150)))
 
 
 # ---------------------------------------------------------------- эффекты
@@ -846,6 +996,7 @@ def main():
     icons()
     misc_2d()
     effects()
+    rewards_and_sprites()
     count = sum(len(files) for _, _, files in os.walk(OUT))
     print('base data files:', count)
 

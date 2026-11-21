@@ -215,6 +215,19 @@ def beep(frequency, seconds=0.08, shape='sine'):
     return tone * envelope(seconds, 0.003, seconds * 0.6)
 
 
+def chime(notes, step=0.11, tail=0.35):
+    """сигнал из нескольких тонов (награды, смена лидера): без голоса, только тоны."""
+    total = step * (len(notes) - 1) + tail
+    result = np.zeros(int(total * RATE))
+    for index, frequency in enumerate(notes):
+        t = time(tail)
+        tone = (np.sin(2 * np.pi * frequency * t) + 0.35 * np.sin(2 * np.pi * frequency * 2 * t) +
+                0.15 * np.sin(2 * np.pi * frequency * 3 * t)) * np.exp(-t / (tail / 3))
+        start = int(index * step * RATE)
+        result[start:start + len(tone)] += tone[:len(result) - start]
+    return reverb(result, 0.25, 0.25)
+
+
 def main():
     for index in range(1, 5):
         save(f'weapons/machinegun/machgf{index}b.wav', cannon_shot(index))
@@ -273,6 +286,19 @@ def main():
     save('feedback/prepare.wav', alarm(2, 700), 0.6)
     save('feedback/1_minute.wav', alarm(2, 990), 0.6)
     save('feedback/5_minute.wav', alarm(1, 990), 0.6)
+    # награды и события счёта
+    for name, notes in [('excellent', [660, 880]), ('first_excellent', [660, 880, 1100]),
+                        ('impressive', [784, 988, 1175]), ('first_impressive', [784, 988, 1175, 1568]),
+                        ('humiliation', [330, 262]), ('first_gauntlet', [330, 262, 196]),
+                        ('defense', [523, 659]), ('assist', [587, 740]), ('denied', [440, 349]),
+                        ('takenlead', [523, 659, 784]), ('lostlead', [784, 659, 523]), ('tiedlead', [659, 659]),
+                        ('1_frag', [880]), ('2_frags', [880, 880]), ('3_frags', [880, 880, 880]),
+                        ('redleads', [523, 784]), ('blueleads', [587, 880]), ('teamstied', [659, 659]),
+                        ('prepare_team', [440, 554, 659]), ('sudden_death', [880, 660, 880, 660]),
+                        ('voc_youwin', [523, 659, 784, 1047]), ('voc_youlose', [440, 392, 330, 262]),
+                        ('voc_holyshit', [1047, 1319, 1568]), ('vote_now', [700, 700]),
+                        ('vote_passed', [600, 900]), ('vote_failed', [600, 400])]:
+        save(f'feedback/{name}.wav', chime(notes), 0.6)
     # фон карты: ветер над водой
     seconds = 8.0
     t = time(seconds)
