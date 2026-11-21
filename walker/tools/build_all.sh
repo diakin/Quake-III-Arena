@@ -22,6 +22,10 @@ mkdir -p "$STAGE/base" "$STAGE/map" "$STAGE/quake3/basewalker" "$DIST"
 echo "== base data"
 python3 "$TOOLS/make_basedata.py" "$STAGE/base"
 python3 "$TOOLS/make_sounds.py" "$STAGE/base"
+# steps in water from a recording, if there is one (replaces the synthesized splash1-4)
+if [ -f "$ROOT/walker/sounds/footsteps_water.mp3" ]; then
+  python3 "$TOOLS/import_splash.py" "$ROOT/walker/sounds/footsteps_water.mp3" "$STAGE/base"
+fi
 python3 "$TOOLS/make_botfiles.py" "$STAGE/base" "$ROOT/code"
 mkdir -p "$STAGE/base/models/players"
 cp -r "$ROOT/assets/baseq3/models/players/walker" "$STAGE/base/models/players/"

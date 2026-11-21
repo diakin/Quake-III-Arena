@@ -158,6 +158,10 @@ typedef struct {
 	float			barrelAngle;
 	int				barrelTime;
 	qboolean		barrelSpinning;
+
+	// WALKER: footsteps follow the leg animation (see CG_PlayerFootsteps)
+	int				footstepAnim;
+	int				footstepFrame;
 } playerEntity_t;
 
 //=================================================

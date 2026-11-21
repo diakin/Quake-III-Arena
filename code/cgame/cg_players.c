@@ -1223,6 +1223,67 @@ static void CG_ClearLerpFrame( clientInfo_t *ci, lerpFrame_t *lf, int animationN
 
 /*
 ===============
+CG_PlayerFootsteps
+
+WALKER: a footstep sound when a foot touches the ground in the leg animation.
+The walk, run and back cycles of the walker put one foot down on the first
+frame and the other in the middle of the cycle. A splash is played if the
+feet are in water.
+===============
+*/
+static qboolean CG_FrameCrossed( int previous, int current, int contact, int numFrames ) {
+	int		travelled, offset;
+
+	travelled = ( current - previous + numFrames ) % numFrames;
+	offset = ( contact - previous + numFrames ) % numFrames;
+	return ( offset > 0 && offset <= travelled );
+}
+
+static void CG_PlayerFootsteps( centity_t *cent, clientInfo_t *ci ) {
+	lerpFrame_t	*legs;
+	int			anim, numFrames, current, previous, foot, contact, type;
+	vec3_t		feet;
+
+	legs = &cent->pe.legs;
+	anim = legs->animationNumber & ~ANIM_TOGGLEBIT;
+	if ( !legs->animation || ( anim != LEGS_WALK && anim != LEGS_RUN && anim != LEGS_BACK && anim != LEGS_WALKCR ) ) {
+		cent->pe.footstepAnim = -1;
+		return;
+	}
+	numFrames = legs->animation->numFrames;
+	current = legs->frame - legs->animation->firstFrame;
+	if ( numFrames < 2 || current < 0 || current >= numFrames ) {
+		return;
+	}
+	previous = cent->pe.footstepFrame;
+	if ( cent->pe.footstepAnim != anim ) {
+		previous = -1;		// a new cycle has started, wait for the next contact
+	}
+	cent->pe.footstepAnim = anim;
+	cent->pe.footstepFrame = current;
+	if ( previous < 0 || previous == current || !cg_footsteps.integer ) {
+		return;
+	}
+
+	for ( foot = 0; foot < 2; foot++ ) {
+		contact = foot ? ( numFrames + 1 ) / 2 : 0;
+		if ( !CG_FrameCrossed( previous, current, contact, numFrames ) ) {
+			continue;
+		}
+		VectorCopy( cent->lerpOrigin, feet );
+		feet[2] += MINS_Z + 2;
+		if ( CG_PointContents( feet, cent->currentState.number ) & ( CONTENTS_WATER | CONTENTS_SLIME ) ) {
+			type = FOOTSTEP_SPLASH;
+		} else {
+			type = ci->footsteps;
+		}
+		// own channel for every step: a running robot steps faster than a splash dies away
+		trap_S_StartSound( NULL, cent->currentState.number, CHAN_AUTO, cgs.media.footsteps[type][rand() & 3] );
+	}
+}
+
+/*
+===============
 CG_PlayerAnimation
 ===============
 */
@@ -1257,6 +1318,8 @@ static void CG_PlayerAnimation( centity_t *cent, int *legsOld, int *legs, float 
 	*legsOld = cent->pe.legs.oldFrame;
 	*legs = cent->pe.legs.frame;
 	*legsBackLerp = cent->pe.legs.backlerp;
+
+	CG_PlayerFootsteps( cent, ci );	// WALKER
 
 	CG_RunLerpFrame( ci, &cent->pe.torso, cent->currentState.torsoAnim, speedScale );
 

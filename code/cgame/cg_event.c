@@ -492,33 +492,14 @@ void CG_EntityEvent( centity_t *cent, vec3_t position ) {
 	//
 	// movement generated events
 	//
+	// WALKER: footstep sounds are played by CG_PlayerFootsteps when a foot of the
+	// leg animation touches the ground; the movement code's step timer does not
+	// match the robot's stride, so these events are ignored
 	case EV_FOOTSTEP:
-		DEBUGNAME("EV_FOOTSTEP");
-		if (cg_footsteps.integer) {
-			trap_S_StartSound (NULL, es->number, CHAN_BODY, 
-				cgs.media.footsteps[ ci->footsteps ][rand()&3] );
-		}
-		break;
 	case EV_FOOTSTEP_METAL:
-		DEBUGNAME("EV_FOOTSTEP_METAL");
-		if (cg_footsteps.integer) {
-			trap_S_StartSound (NULL, es->number, CHAN_BODY, 
-				cgs.media.footsteps[ FOOTSTEP_METAL ][rand()&3] );
-		}
-		break;
 	case EV_FOOTSPLASH:
-		DEBUGNAME("EV_FOOTSPLASH");
-		if (cg_footsteps.integer) {
-			trap_S_StartSound (NULL, es->number, CHAN_BODY, 
-				cgs.media.footsteps[ FOOTSTEP_SPLASH ][rand()&3] );
-		}
-		break;
 	case EV_FOOTWADE:
-		DEBUGNAME("EV_FOOTWADE");
-		if (cg_footsteps.integer) {
-			trap_S_StartSound (NULL, es->number, CHAN_BODY, 
-				cgs.media.footsteps[ FOOTSTEP_SPLASH ][rand()&3] );
-		}
+		DEBUGNAME("EV_FOOTSTEP");
 		break;
 	case EV_SWIM:
 		DEBUGNAME("EV_SWIM");
