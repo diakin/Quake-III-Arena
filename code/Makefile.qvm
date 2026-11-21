@@ -1,0 +1,136 @@
+# Game modules (QVM) for WALKER: qagame.qvm, cgame.qvm, ui.qvm.
+#
+# Builds the tools from this repository first (lcc: lburg, rcc, cpp; q3asm),
+# then compiles code/game, code/cgame, code/q3_ui to bytecode.
+#
+# Windows (from the "code" directory, MinGW gcc and mingw32-make in PATH):
+#   mingw32-make -f Makefile.qvm
+# Linux:
+#   make -f Makefile.qvm
+#
+# Result: ../walker/dist/basewalker/vm/qagame.qvm, cgame.qvm, ui.qvm
+# The tools run on the build machine, so they are compiled with HOSTCC (default gcc),
+# even when Makefile.mingw cross-compiles quake3.exe.
+
+HOSTCC ?= gcc
+HOSTCFLAGS = -O1 -w -fcommon -std=gnu89
+
+TOOLDIR = build-qvm-tools
+GAMEDIR = build-qvm-game
+CGAMEDIR = build-qvm-cgame
+UIDIR = build-qvm-ui
+VMDIR = ../walker/dist/basewalker/vm
+
+ifeq ($(OS),Windows_NT)
+SHELL = cmd.exe
+EXE = .exe
+RUN = $(subst /,\,$(1))
+MKDIR = if not exist $(subst /,\,$(1)) mkdir $(subst /,\,$(1))
+CLEAN = if exist $(1) rmdir /s /q $(1)
+CLEANFILES = del /q $(subst /,\,$(1)) 2>nul
+else
+EXE =
+RUN = ./$(1)
+MKDIR = mkdir -p $(1)
+CLEAN = rm -rf $(1)
+CLEANFILES = rm -f $(1)
+endif
+
+LBURG = $(TOOLDIR)/lburg$(EXE)
+RCC = $(TOOLDIR)/rcc$(EXE)
+CPP = $(TOOLDIR)/cpp$(EXE)
+Q3ASM = $(TOOLDIR)/q3asm$(EXE)
+
+all: $(VMDIR)/qagame.qvm $(VMDIR)/cgame.qvm $(VMDIR)/ui.qvm
+
+tools: $(RCC) $(CPP) $(Q3ASM)
+
+# ---------------------------------------------------------------- tools
+
+LCC = ../lcc
+
+$(LBURG): $(LCC)/lburg/lburg.c $(LCC)/lburg/gram.c $(LCC)/lburg/lburg.h | $(TOOLDIR)
+	$(HOSTCC) $(HOSTCFLAGS) -I$(LCC)/lburg -o $@ $(LCC)/lburg/lburg.c $(LCC)/lburg/gram.c
+
+# machine descriptions turned into C by lburg
+LBURG_GEN = dagcheck alpha mips sparc x86 x86linux
+LBURG_SRC = $(addprefix $(TOOLDIR)/,$(addsuffix .c,$(LBURG_GEN)))
+
+$(TOOLDIR)/%.c: $(LCC)/src/%.md $(LBURG)
+	$(call RUN,$(LBURG)) $< $@
+
+RCC_SRC = alloc bind dag decl enode error expr event init inits input lex list main output \
+	prof profio simp stmt string sym trace tree types null symbolic gen bytecode stab
+RCC_FILES = $(addprefix $(LCC)/src/,$(addsuffix .c,$(RCC_SRC)))
+
+$(RCC): $(RCC_FILES) $(LBURG_SRC) $(wildcard $(LCC)/src/*.h) | $(TOOLDIR)
+	$(HOSTCC) $(HOSTCFLAGS) -I$(LCC)/src -o $@ $(RCC_FILES) $(LBURG_SRC)
+
+CPP_SRC = cpp lex nlist tokens macro eval include hideset getopt unix
+CPP_FILES = $(addprefix $(LCC)/cpp/,$(addsuffix .c,$(CPP_SRC)))
+
+$(CPP): $(CPP_FILES) $(LCC)/cpp/cpp.h | $(TOOLDIR)
+	$(HOSTCC) $(HOSTCFLAGS) -I$(LCC)/cpp -o $@ $(CPP_FILES)
+
+$(Q3ASM): ../q3asm/q3asm.c ../q3asm/cmdlib.c ../q3asm/cmdlib.h | $(TOOLDIR)
+	$(HOSTCC) -O2 -w -o $@ ../q3asm/q3asm.c ../q3asm/cmdlib.c
+
+# ---------------------------------------------------------------- game modules
+
+GAME_SRC = g_main bg_misc bg_lib bg_pmove bg_slidemove q_math q_shared \
+	ai_dmnet ai_dmq3 ai_team ai_main ai_chat ai_cmd ai_vcmd \
+	g_active g_arenas g_bot g_client g_cmds g_combat g_items g_mem g_misc g_missile g_mover \
+	g_session g_spawn g_svcmds g_target g_team g_trigger g_utils g_weapon
+
+CGAME_SRC = cg_main cg_consolecmds cg_draw cg_drawtools cg_effects cg_ents cg_event cg_info \
+	cg_localents cg_marks cg_players cg_playerstate cg_predict cg_scoreboard cg_servercmds \
+	cg_snapshot cg_view cg_weapons bg_slidemove bg_pmove bg_lib bg_misc q_math q_shared
+
+UI_SRC = ui_main ui_gameinfo ui_atoms ui_cinematics ui_connect ui_controls2 ui_demo2 ui_mfield \
+	ui_credits ui_menu ui_ingame ui_confirm ui_setup ui_options ui_display ui_sound ui_network \
+	ui_playermodel ui_players ui_playersettings ui_preferences ui_qmenu ui_serverinfo ui_servers2 \
+	ui_sparena ui_specifyserver ui_sppostgame ui_splevel ui_spskill ui_startserver ui_team \
+	ui_video ui_addbots ui_removebots ui_teamorders ui_loadconfig ui_saveconfig ui_cdkey ui_mods \
+	bg_misc bg_lib q_math q_shared
+
+GAME_ASM = $(addprefix $(GAMEDIR)/,$(addsuffix .asm,$(GAME_SRC)))
+CGAME_ASM = $(addprefix $(CGAMEDIR)/,$(addsuffix .asm,$(CGAME_SRC)))
+UI_ASM = $(addprefix $(UIDIR)/,$(addsuffix .asm,$(UI_SRC)))
+
+vpath %.c game cgame q3_ui
+
+# any header change rebuilds the modules: simple and always correct
+QVM_HEADERS = $(wildcard game/*.h cgame/*.h q3_ui/*.h ui/*.h)
+QVM_CPPFLAGS = -D__STDC__=1 -D__LCC__ -DQ3_VM -Icgame -Igame -Iq3_ui
+
+define compile_rule
+$(1)/%.asm: %.c $$(QVM_HEADERS) $$(CPP) $$(RCC) | $(1)
+	$$(call RUN,$$(CPP)) $$(QVM_CPPFLAGS) $$< $$(@:.asm=.i)
+	$$(call RUN,$$(RCC)) -target=bytecode -g $$(@:.asm=.i) $$@
+endef
+$(eval $(call compile_rule,$(GAMEDIR)))
+$(eval $(call compile_rule,$(CGAMEDIR)))
+$(eval $(call compile_rule,$(UIDIR)))
+
+$(VMDIR)/qagame.qvm: $(GAME_ASM) game/g_syscalls.asm $(Q3ASM) | $(VMDIR)
+	$(call RUN,$(Q3ASM)) -o $(basename $@) $(GAME_ASM:.asm=) game/g_syscalls
+
+$(VMDIR)/cgame.qvm: $(CGAME_ASM) cgame/cg_syscalls.asm $(Q3ASM) | $(VMDIR)
+	$(call RUN,$(Q3ASM)) -o $(basename $@) $(CGAME_ASM:.asm=) cgame/cg_syscalls
+
+$(VMDIR)/ui.qvm: $(UI_ASM) ui/ui_syscalls.asm $(Q3ASM) | $(VMDIR)
+	$(call RUN,$(Q3ASM)) -o $(basename $@) $(UI_ASM:.asm=) ui/ui_syscalls
+
+$(TOOLDIR) $(GAMEDIR) $(CGAMEDIR) $(UIDIR) $(VMDIR):
+	$(call MKDIR,$@)
+
+clean:
+	-$(call CLEAN,$(GAMEDIR))
+	-$(call CLEAN,$(CGAMEDIR))
+	-$(call CLEAN,$(UIDIR))
+	-$(call CLEANFILES,$(VMDIR)/*.qvm $(VMDIR)/*.map)
+
+cleantools:
+	-$(call CLEAN,$(TOOLDIR))
+
+.PHONY: all tools clean cleantools

@@ -1,17 +1,25 @@
-# Makefile for quake3.exe with MinGW (32-bit gcc).
+# Makefile for WALKER with MinGW (32-bit gcc): quake3.exe and the game modules (QVM).
 #
 # Windows (from the "code" directory, 32-bit MinGW in PATH):
-#   mingw32-make -f Makefile.mingw
+#   mingw32-make -f Makefile.mingw          quake3.exe + QVM (target all)
+#   mingw32-make -f Makefile.mingw engine   quake3.exe only
+#   mingw32-make -f Makefile.mingw qvm      QVM only (see Makefile.qvm)
+#   mingw32-make -f Makefile.mingw clean
 #
 # Cross compile on Linux:
 #   make -f Makefile.mingw CC=i686-w64-mingw32-gcc WINDRES=i686-w64-mingw32-windres
 #
-# Result: build-mingw/quake3.exe
+# Result: a ready game folder ../walker/dist:
+#   quake3.exe, basewalker/pak0.pk3, basewalker/wk_islands.pk3, basewalker/vm/*.qvm
 #
 # Notes:
 #  - the compiler must produce 32-bit code (i686); the engine is not 64-bit clean
 #  - vm_x86.c is not built: its code generator uses MSVC or Linux gcc assembler,
 #    so this build runs game QVMs in the interpreter (NO_VM_COMPILED)
+
+ifeq ($(OS),Windows_NT)
+SHELL = cmd.exe
+endif
 
 ifeq ($(origin CC),default)
 CC = gcc
@@ -19,7 +27,7 @@ endif
 WINDRES ?= windres
 
 BUILD_DIR = build-mingw
-TARGET = $(BUILD_DIR)/quake3.exe
+TARGET = ../walker/dist/quake3.exe
 
 WARNINGS ?= -w
 CFLAGS = -O2 -fno-strict-aliasing -fcommon $(WARNINGS) \
@@ -72,12 +80,20 @@ RES = $(BUILD_DIR)/winquake.res
 
 $(BOTLIB_OBJS): CFLAGS += -DBOTLIB
 
-all: $(TARGET)
+all: engine qvm
+
+engine: $(TARGET)
+
+qvm:
+	$(MAKE) -f Makefile.qvm
+
+# any header change rebuilds everything: slower, but never leaves stale objects
+HEADERS = $(wildcard */*.h)
 
 $(TARGET): $(ENGINE_OBJS) $(BOTLIB_OBJS) $(RES)
 	$(CC) $(LDFLAGS) -o $@ $(ENGINE_OBJS) $(BOTLIB_OBJS) $(RES) $(LIBS)
 
-$(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
+$(BUILD_DIR)/%.o: %.c $(HEADERS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(RES): win32/winquake.rc | $(BUILD_DIR)
@@ -86,7 +102,15 @@ $(RES): win32/winquake.rc | $(BUILD_DIR)
 $(BUILD_DIR):
 	-mkdir $(BUILD_DIR)
 
+ifeq ($(OS),Windows_NT)
 clean:
-	-$(RM) $(ENGINE_OBJS) $(BOTLIB_OBJS) $(RES) $(TARGET)
+	-if exist $(BUILD_DIR) rmdir /s /q $(BUILD_DIR)
+	-del /q ..\walker\dist\quake3.exe 2>nul
+	$(MAKE) -f Makefile.qvm clean
+else
+clean:
+	-rm -rf $(BUILD_DIR) $(TARGET)
+	$(MAKE) -f Makefile.qvm clean
+endif
 
-.PHONY: all clean
+.PHONY: all engine qvm clean

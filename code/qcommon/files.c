@@ -2477,17 +2477,6 @@ static void FS_AddGameDirectory( const char *path, const char *dir ) {
 	
 	Q_strncpyz( fs_gamedir, dir, sizeof( fs_gamedir ) );
 
-	//
-	// add the directory to the search path
-	//
-	search = Z_Malloc (sizeof(searchpath_t));
-	search->dir = Z_Malloc( sizeof( *search->dir ) );
-
-	Q_strncpyz( search->dir->path, path, sizeof( search->dir->path ) );
-	Q_strncpyz( search->dir->gamedir, dir, sizeof( search->dir->gamedir ) );
-	search->next = fs_searchpaths;
-	fs_searchpaths = search;
-
 	// find all pak files in this directory
 	pakfile = FS_BuildOSPath( path, dir, "" );
 	pakfile[ strlen(pakfile) - 1 ] = 0;	// strip the trailing slash
@@ -2517,6 +2506,16 @@ static void FS_AddGameDirectory( const char *path, const char *dir ) {
 		search->next = fs_searchpaths;
 		fs_searchpaths = search;
 	}
+
+	// WALKER: the directory is added after the pk3 files, so loose files
+	// (freshly built vm/*.qvm, edited scripts) override the same files in the paks
+	search = Z_Malloc (sizeof(searchpath_t));
+	search->dir = Z_Malloc( sizeof( *search->dir ) );
+
+	Q_strncpyz( search->dir->path, path, sizeof( search->dir->path ) );
+	Q_strncpyz( search->dir->gamedir, dir, sizeof( search->dir->gamedir ) );
+	search->next = fs_searchpaths;
+	fs_searchpaths = search;
 
 	// done
 	Sys_FreeFileList( pakfiles );

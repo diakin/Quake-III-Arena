@@ -16,21 +16,38 @@ WALKER - игра про шагающих роботов на движке Quake
 Пока нет: захвата маяков, выбора роботов.
 
 
-Установка
----------
+Сборка и запуск
+---------------
 
-1. Собрать quake3.exe (32-битный MinGW, из папки code):
+Нужен 32-битный MinGW (gcc, windres, mingw32-make). 64-битный компилятор не подходит:
+ни движок, ни компилятор lcc не рассчитаны на 64 бита.
+
+1. Сборка (из папки code):
      mingw32-make -f Makefile.mingw
-   Результат: code/build-mingw/quake3.exe
+   Цели: all (по умолчанию) = engine + qvm; engine - только quake3.exe;
+   qvm - только игровые модули; clean - удалить результаты сборки.
 
-2. Сложить в одну папку:
-     WALKER/quake3.exe
-     WALKER/basewalker/pak0.pk3        (из walker/dist/basewalker)
-     WALKER/basewalker/wk_islands.pk3  (из walker/dist/basewalker)
+   Порядок внутри all:
+   - engine: code/*.c -> code/build-mingw/*.o -> walker/dist/quake3.exe
+   - qvm (code/Makefile.qvm): сначала инструменты из исходников репозитория
+     (lcc/: lburg, rcc, cpp; q3asm/) в code/build-qvm-tools, затем
+     code/game, code/cgame, code/q3_ui -> walker/dist/basewalker/vm/qagame.qvm, cgame.qvm, ui.qvm
 
-3. Запуск сразу на карту:
+2. Готовая папка игры - walker/dist:
+     quake3.exe
+     basewalker/pak0.pk3        (данные, в репозитории)
+     basewalker/wk_islands.pk3  (карта, в репозитории)
+     basewalker/vm/*.qvm        (только что собранные модули)
+   Файлы из папки basewalker имеют приоритет над теми же файлами внутри pk3, поэтому
+   собранные QVM заменяют старые копии из pak0.pk3.
+
+3. Запуск (рабочая папка - walker/dist, движок ищет basewalker в текущей папке):
      quake3.exe +map wk_islands
    Или из меню: SINGLE PLAYER (бой с ботами) или MULTIPLAYER -> START SERVER -> Islands.
+
+После правки любого .h пересобирается всё (так проще и надёжнее, чем отслеживать зависимости).
+pk3 с данными пересобираются отдельно (Python, см. "Пересборка данных"), для обычной
+работы с кодом это не нужно.
 
 Движок теперь ищет данные в папке basewalker (BASEGAME в code/qcommon/qcommon.h) и не
 требует CD-ключа и файлов Quake III.
@@ -76,9 +93,7 @@ TAB - счёт, ~ - консоль, ESC - меню, F12 - снимок экра�
                       окраски робота desert и urban
   build_qvm.sh        qagame.qvm, cgame.qvm, ui.qvm (lcc + q3asm из этого репозитория)
 
-Инструменты собираются из исходников репозитория:
-  lcc:   cd lcc && make BUILDDIR=<папка> rcc cpp
-  q3asm: q3asm/q3asm.c + q3asm/cmdlib.c
+Инструменты lcc и q3asm собирает code/Makefile.qvm (папка code/build-qvm-tools).
   q3map: q3map/*.c + common/*.c (правки в common/cmdlib.c позволяют собрать его gcc под Linux)
   bspc:  code/bspc - файлы из списка GAME_OBJS в code/bspc/Makefile, флаги
          -DLINUX -DBSPC -Dstricmp=strcasecmp
@@ -101,7 +116,8 @@ TAB - счёт, ~ - консоль, ESC - меню, F12 - снимок экра�
 -------------------------------------------------------------
 
   qcommon/qcommon.h      BASEGAME "basewalker"
-  qcommon/files.c        нет демо-режима и проверки productid; basewalker вместо baseq3
+  qcommon/files.c        нет демо-режима и проверки productid; basewalker вместо baseq3;
+                         файлы из папки имеют приоритет над pk3 той же папки
   qcommon/common.c       CD-ключ пишется в basewalker
   win32/win_glimp.c      заголовок окна WALKER
   renderer/tr_image.c    GL_CLAMP_TO_EDGE вместо GL_CLAMP (убирает швы на небе и спрайтах)
