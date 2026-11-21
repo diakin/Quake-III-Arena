@@ -62,9 +62,11 @@ Creative Commons «С указанием авторства — С сохран�
 - `make_botfiles.py` — файлы ботов (характеры, настройки оружия, фразы) и окраски робота desert и urban;
   заголовки `chars.h` и `inv.h` копируются из `code/game` (GPL v2).
 
-Исключение — звук шагов по воде: он вырезан из записи `walker/sounds/footsteps_water.mp3`
-(скрипт `import_splash.py`). Запись предоставил автор проекта; её источник и лицензию нужно
-указать здесь перед публичной раздачей игры.
+Исключение — звук шагов по воде (`sound/player/footsteps/splash1-4.wav`): он вырезан скриптом
+`import_splash.py` из записи `walker/sounds/footsteps_water.mp3`:
+«20110903_splashing.walk.wav», автор dobroide, https://freesound.org/s/127610/ ,
+лицензия Creative Commons Attribution 4.0 (CC BY 4.0). Изменения: нарезка на отдельные шаги
+и понижение высоты. Подробности — в `walker/sounds/README.txt`.
 
 Сами скрипты — часть исходников проекта и распространяются под GPL v2. Созданные ими данные
 (`walker/dist/basewalker/*.pk3`, `walker/maps/levelshots/`) — под CC BY-SA 4.0, как и модель walker.

@@ -14,7 +14,7 @@ SOURCE = sys.argv[1]
 OUT = sys.argv[2]
 RATE = 22050
 PITCH = 0.88          # 1.0 — как в записи; меньше — ниже и тяжелее
-MAX_STEP = 0.6        # секунды на шаг
+MAX_STEP = 0.42       # секунды на шаг
 
 
 def load(path):
@@ -27,26 +27,28 @@ def load(path):
 
 
 def find_steps(samples):
-    """начала шагов: громкость резко поднимается после тишины."""
+    """начала шагов: резкий подъём громкости над фоном (журчание воды между шагами).
+    Возвращает [(отсчёт начала, насколько шаг громче фона в дБ), ...]."""
     hop = int(0.01 * RATE)
     frames = len(samples) // hop
     level = np.array([np.sqrt(np.mean(samples[index * hop:(index + 1) * hop] ** 2)) for index in range(frames)])
     level_db = 20 * np.log10(level + 1e-9)
-    loud = level_db.max() - 18
-    quiet = level_db.max() - 40
-    starts = []
-    armed = True
-    for index in range(frames):
-        if armed and level_db[index] > loud:
-            # отступаем назад до начала подъёма
+    steps = []
+    last = -1000
+    for index in range(100, frames - 10):
+        floor = np.percentile(level_db[index - 100:index], 20)      # фон за последнюю секунду
+        rise = level_db[index] - level_db[index - 3]
+        if level_db[index] - floor > 14 and rise > 8 and index - last > 35:
             begin = index
-            while begin > 0 and level_db[begin - 1] > quiet and index - begin < 8:
+            while begin > index - 4 and level_db[begin - 1] - floor > 6:
                 begin -= 1
-            starts.append(begin * hop)
-            armed = False
-        elif not armed and level_db[index] < quiet:
-            armed = True
-    return starts
+            peak = level_db[index:index + 10].max()
+            tail = np.median(level_db[index + 15:index + 40]) if index + 40 < frames else peak
+            # отчётливый шаг: высоко над фоном и быстро затихает (не сплошное бултыхание)
+            clarity = ( peak - floor ) + ( peak - tail )
+            steps.append((begin * hop, clarity))
+            last = index
+    return steps
 
 
 def cut_step(samples, start, next_start):
@@ -76,17 +78,18 @@ def save(path, piece):
 
 def main():
     samples = load(SOURCE)
-    starts = find_steps(samples)
-    if len(starts) < 2:
-        sys.exit('не найдено шагов в записи')
-    steps = [cut_step(samples, start, starts[index + 1] if index + 1 < len(starts) else len(samples))
-             for index, start in enumerate(starts)]
-    # четыре самых длинных и громких шага, без последнего (запись обычно затихает)
-    candidates = steps[:-1] if len(steps) > 4 else steps
-    ranked = sorted(range(len(candidates)), key=lambda index: -np.sum(candidates[index] ** 2))[:4]
-    for number, index in enumerate(sorted(ranked), 1):
-        save(os.path.join(OUT, 'sound', 'player', 'footsteps', f'splash{number}.wav'), pitch_down(candidates[index]))
-    print(f'steps found: {len(starts)}, written: {len(ranked)}')
+    steps = find_steps(samples)
+    if len(steps) < 4:
+        sys.exit('в записи меньше четырёх отчётливых шагов')
+    starts = [start for start, _ in steps]
+    # четыре самых отчётливых шага
+    best = sorted(range(len(steps)), key=lambda index: -steps[index][1])[:4]
+    for number, index in enumerate(sorted(best), 1):
+        next_start = starts[index + 1] if index + 1 < len(starts) else len(samples)
+        piece = cut_step(samples, starts[index], next_start)
+        save(os.path.join(OUT, 'sound', 'player', 'footsteps', f'splash{number}.wav'), pitch_down(piece))
+        print(f'splash{number}: {starts[index] / RATE:.2f} s, clarity {steps[index][1]:.0f} dB')
+    print(f'steps found: {len(steps)}')
 
 
 main()
