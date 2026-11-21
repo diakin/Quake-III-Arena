@@ -178,13 +178,15 @@ UINT wm_BroadcastCommand = -1;
 void _printf( const char *format, ... ) {
 	va_list argptr;
   char text[4096];
+#ifdef WIN32
   ATOM a;
+#endif
 
 	va_start (argptr,format);
 	vsprintf (text, format, argptr);
 	va_end (argptr);
 
-  printf(text);
+  printf("%s", text);
 
 #ifdef WIN32
   if (!lookedForServer) {
@@ -555,6 +557,21 @@ int Q_stricmp (const char *s1, const char *s2)
 	return Q_strncasecmp (s1, s2, 99999);
 }
 
+
+#ifndef WIN32
+/* strlwr exists only in the MSVC runtime */
+char *strlwr (char *start)
+{
+	char	*in;
+	in = start;
+	while (*in)
+	{
+		*in = tolower(*in);
+		in++;
+	}
+	return start;
+}
+#endif
 
 char *strupr (char *start)
 {

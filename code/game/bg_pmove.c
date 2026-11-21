@@ -357,6 +357,7 @@ PM_CheckJump
 =============
 */
 static qboolean PM_CheckJump( void ) {
+	return qfalse;		// WALKER: walking robots do not jump
 	if ( pm->ps->pm_flags & PMF_RESPAWNED ) {
 		return qfalse;		// don't allow jump until all buttons are up
 	}

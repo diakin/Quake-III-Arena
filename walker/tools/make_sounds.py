@@ -1,0 +1,262 @@
+"""Звуки игры WALKER, синтезированные с нуля (numpy + scipy): лицензионно чистые, свои.
+
+python3 walker/tools/make_sounds.py <папка вывода>
+
+WAV 22050 Гц, 16 бит, моно. Имена — те, что ожидают cgame и меню.
+"""
+import os, sys, wave
+import numpy as np
+from scipy import signal
+
+OUT = sys.argv[1]
+RATE = 22050
+rng = np.random.default_rng(26)
+
+
+def save(path, samples, gain=0.9):
+    samples = np.asarray(samples, dtype=np.float64)
+    peak = np.max(np.abs(samples)) or 1.0
+    data = (samples / peak * gain * 32767).astype(np.int16)
+    full = os.path.join(OUT, 'sound', path)
+    os.makedirs(os.path.dirname(full), exist_ok=True)
+    with wave.open(full, 'wb') as file:
+        file.setnchannels(1)
+        file.setsampwidth(2)
+        file.setframerate(RATE)
+        file.writeframes(data.tobytes())
+
+
+def time(seconds):
+    return np.arange(int(seconds * RATE)) / RATE
+
+
+def noise(seconds):
+    return rng.normal(0, 1, int(seconds * RATE))
+
+
+def band(samples, low, high, order=2):
+    nyquist = RATE / 2
+    if low <= 0:
+        b, a = signal.butter(order, high / nyquist, 'low')
+    elif high >= nyquist:
+        b, a = signal.butter(order, low / nyquist, 'high')
+    else:
+        b, a = signal.butter(order, [low / nyquist, high / nyquist], 'band')
+    return signal.lfilter(b, a, samples)
+
+
+def envelope(seconds, attack, decay, curve=4.0):
+    t = time(seconds)
+    rise = np.clip(t / max(attack, 1e-4), 0, 1)
+    fall = np.exp(-np.maximum(t - attack, 0) / decay * curve / 4)
+    return rise * fall
+
+
+def resonator(seconds, frequencies, decay, amplitudes=None):
+    t = time(seconds)
+    result = np.zeros_like(t)
+    for index, frequency in enumerate(frequencies):
+        amplitude = 1.0 if amplitudes is None else amplitudes[index]
+        result += amplitude * np.sin(2 * np.pi * frequency * t + rng.random() * 6) * np.exp(-t / (decay * (1 - index * 0.08)))
+    return result
+
+
+def pad(samples, seconds):
+    result = np.zeros(int(seconds * RATE))
+    result[:min(len(samples), len(result))] = samples[:len(result)]
+    return result
+
+
+def mix(*parts):
+    length = max(len(part) for part in parts)
+    return sum(pad(part, length / RATE) for part in parts)
+
+
+def reverb(samples, room=0.18, wet=0.25):
+    impulse_length = int(room * 2 * RATE)
+    impulse = rng.normal(0, 1, impulse_length) * np.exp(-np.arange(impulse_length) / (room * RATE / 3))
+    impulse = band(impulse, 200, 6000)
+    tail = signal.fftconvolve(samples, impulse)[:len(samples) + impulse_length]
+    tail = tail / (np.max(np.abs(tail)) or 1) * np.max(np.abs(samples))
+    return mix(samples, tail * wet)
+
+
+# ---------------------------------------------------------------- оружие
+def cannon_shot(variant):
+    seconds = 0.55
+    crack = band(noise(seconds), 1800, 9000) * envelope(seconds, 0.001, 0.025)
+    body = band(noise(seconds), 90, 900) * envelope(seconds, 0.002, 0.12)
+    t = time(seconds)
+    boom = np.sin(2 * np.pi * (70 + 40 * np.exp(-t * 30) + variant * 3) * t) * envelope(seconds, 0.002, 0.16)
+    clack = resonator(seconds, [1450 + variant * 40, 2300, 3700], 0.02) * envelope(seconds, 0.0, 0.03)
+    clack = np.roll(clack, int(0.07 * RATE))
+    return reverb(mix(crack * 0.7, body * 0.9, boom * 1.2, clack * 0.25), 0.25, 0.3)
+
+
+def ricochet(variant):
+    seconds = 0.45
+    t = time(seconds)
+    hit = band(noise(seconds), 700, 6000) * envelope(seconds, 0.0005, 0.03)
+    sweep = np.sin(2 * np.pi * np.cumsum(2600 - 1700 * t / seconds + variant * 300) / RATE) * envelope(seconds, 0.01, 0.25) * 0.35
+    ping = resonator(seconds, [1900 + variant * 250, 3100, 4700], 0.08, [1, 0.5, 0.3]) * 0.4
+    return mix(hit, sweep, ping)
+
+
+def bullet_by():
+    seconds = 0.4
+    t = time(seconds)
+    whoosh = band(noise(seconds), 800, 5000) * np.exp(-((t - 0.15) / 0.07) ** 2)
+    return whoosh
+
+
+def rocket_launch():
+    seconds = 1.0
+    blast = band(noise(seconds), 60, 2500) * envelope(seconds, 0.005, 0.3)
+    hiss = band(noise(seconds), 1500, 8000) * envelope(seconds, 0.05, 0.5) * 0.4
+    return reverb(mix(blast, hiss), 0.3, 0.3)
+
+
+def rocket_fly():
+    seconds = 1.5
+    roar = band(noise(seconds), 200, 3000)
+    t = time(seconds)
+    roar *= 0.8 + 0.2 * np.sin(2 * np.pi * 9 * t)
+    return roar
+
+
+def explosion(seconds=1.8, low=40):
+    t = time(seconds)
+    rumble = band(noise(seconds), low, 700, 3) * envelope(seconds, 0.004, 0.8)
+    crack = band(noise(seconds), 1200, 8000) * envelope(seconds, 0.001, 0.05)
+    thump = np.sin(2 * np.pi * (55 + 60 * np.exp(-t * 12)) * t) * envelope(seconds, 0.003, 0.35)
+    debris = np.zeros_like(t)
+    for _ in range(14):
+        start = int(rng.uniform(0.15, seconds * 0.8) * RATE)
+        piece = resonator(0.12, [rng.uniform(900, 3500)], 0.03) * rng.uniform(0.05, 0.2)
+        debris[start:start + len(piece)] += piece[:len(debris) - start]
+    return reverb(mix(rumble * 1.3, crack * 0.6, thump * 1.2, debris), 0.6, 0.35)
+
+
+# ---------------------------------------------------------------- робот
+def stomp(variant, metallic=1.0):
+    seconds = 0.9
+    t = time(seconds)
+    thud = np.sin(2 * np.pi * (38 + variant * 3 + 30 * np.exp(-t * 25)) * t) * envelope(seconds, 0.004, 0.22)
+    impact = band(noise(seconds), 60, 600, 3) * envelope(seconds, 0.002, 0.1)
+    clank = resonator(seconds, [310 + variant * 20, 780 + variant * 35, 1650], 0.12, [0.6, 0.4, 0.25]) * metallic
+    clank *= envelope(seconds, 0.001, 0.2)
+    hiss = band(noise(seconds), 2500, 9000) * np.exp(-((t - 0.28 - variant * 0.02) / 0.09) ** 2) * 0.12
+    servo = np.sin(2 * np.pi * (180 + 60 * t) * t) * np.exp(-((t - 0.45) / 0.12) ** 2) * 0.06
+    return reverb(mix(thud * 1.4, impact * 0.8, clank * 0.35, hiss, servo), 0.3, 0.25)
+
+
+def splash(variant):
+    seconds = 0.8
+    t = time(seconds)
+    body = band(noise(seconds), 300, 2500) * envelope(seconds, 0.01, 0.25)
+    spray = band(noise(seconds), 2500, 9000) * envelope(seconds, 0.02, 0.35) * 0.5
+    plop = np.sin(2 * np.pi * (180 - 80 * t + variant * 10) * t) * envelope(seconds, 0.003, 0.08) * 0.5
+    return mix(body, spray, plop, stomp(variant, 0.3)[:len(t)] * 0.5)
+
+
+def servo(seconds, low, high):
+    t = time(seconds)
+    frequency = low + (high - low) * np.sin(np.pi * t / seconds) ** 2
+    tone = signal.sawtooth(2 * np.pi * np.cumsum(frequency) / RATE) * 0.3 + np.sin(2 * np.pi * np.cumsum(frequency * 2) / RATE) * 0.2
+    return band(tone, 100, 4000) * envelope(seconds, 0.05, seconds * 0.8)
+
+
+def alarm(beeps, frequency=880):
+    parts = []
+    for index in range(beeps):
+        t = time(0.12)
+        parts.append(np.sin(2 * np.pi * frequency * t) * envelope(0.12, 0.005, 0.1))
+        parts.append(np.zeros(int(0.06 * RATE)))
+    return np.concatenate(parts)
+
+
+def metal_hit(strength):
+    seconds = 0.6
+    hit = band(noise(seconds), 300, 5000) * envelope(seconds, 0.001, 0.04)
+    ring = resonator(seconds, [420, 1130, 2210, 3400], 0.18 * strength, [1, 0.6, 0.4, 0.2])
+    return mix(hit * strength, ring * 0.4)
+
+
+# ---------------------------------------------------------------- интерфейс
+def beep(frequency, seconds=0.08, shape='sine'):
+    t = time(seconds)
+    tone = np.sin(2 * np.pi * frequency * t) if shape == 'sine' else signal.square(2 * np.pi * frequency * t) * 0.4
+    return tone * envelope(seconds, 0.003, seconds * 0.6)
+
+
+def main():
+    for index in range(1, 5):
+        save(f'weapons/machinegun/machgf{index}b.wav', cannon_shot(index))
+        save(f'player/footsteps/mech{index}.wav', stomp(index))
+        for alias in ('step', 'boot', 'flesh', 'energy'):
+            save(f'player/footsteps/{alias}{index}.wav', stomp(index), 0.8)
+        save(f'player/footsteps/metal{index}.wav', stomp(index, 1.6))
+        save(f'player/footsteps/clank{index}.wav', stomp(index, 1.8))
+        save(f'player/footsteps/splash{index}.wav', splash(index))
+    for index in range(1, 4):
+        save(f'weapons/machinegun/ric{index}.wav', ricochet(index))
+    save('weapons/machinegun/buletby1.wav', bullet_by(), 0.6)
+    save('weapons/rocket/rocklf1a.wav', rocket_launch())
+    save('weapons/rocket/rockfly.wav', rocket_fly(), 0.6)
+    save('weapons/rocket/rocklx1a.wav', explosion(1.6))
+    save('weapons/change.wav', mix(metal_hit(0.5)[: int(0.3 * RATE)], servo(0.35, 300, 600)), 0.7)
+    save('weapons/noammo.wav', mix(beep(300, 0.06, 'square'), metal_hit(0.2)[: int(0.1 * RATE)]), 0.6)
+    save('player/land1.wav', stomp(2, 1.4))
+    save('player/talk.wav', beep(1200, 0.1), 0.5)
+    save('player/watr_in.wav', splash(3))
+    save('player/watr_out.wav', splash(1))
+    save('player/watr_un.wav', band(noise(0.8), 100, 800) * envelope(0.8, 0.05, 0.5), 0.6)
+    save('player/gibimp1.wav', metal_hit(1.0))
+    save('player/gibimp2.wav', metal_hit(0.8))
+    save('player/gibimp3.wav', metal_hit(0.6))
+    save('player/gibsplt1.wav', explosion(1.2, 60))
+    # голос робота: удары по корпусу, тревога, сервоприводы, взрыв
+    robot = 'player/walker/'
+    save(robot + 'death1.wav', explosion(2.0))
+    save(robot + 'death2.wav', mix(explosion(2.0, 50), metal_hit(1.0)))
+    save(robot + 'death3.wav', mix(np.concatenate([alarm(2, 660), np.zeros(int(0.1 * RATE))]), np.roll(pad(explosion(1.8), 2.4), int(0.35 * RATE))))
+    save(robot + 'pain25_1.wav', mix(metal_hit(1.0), np.roll(pad(alarm(3, 990), 1.0), int(0.15 * RATE))))
+    save(robot + 'pain50_1.wav', mix(metal_hit(0.9), np.roll(pad(alarm(2, 880), 1.0), int(0.15 * RATE))))
+    save(robot + 'pain75_1.wav', mix(metal_hit(0.8), np.roll(pad(alarm(1, 780), 1.0), int(0.15 * RATE))))
+    save(robot + 'pain100_1.wav', metal_hit(0.7))
+    save(robot + 'jump1.wav', servo(0.5, 200, 500))
+    save(robot + 'fall1.wav', stomp(3, 1.6))
+    save(robot + 'falling1.wav', servo(0.8, 400, 200))
+    save(robot + 'gasp.wav', band(noise(0.6), 2000, 8000) * envelope(0.6, 0.02, 0.4), 0.5)
+    save(robot + 'drown.wav', alarm(4, 500))
+    save(robot + 'taunt.wav', mix(servo(0.9, 250, 700), np.roll(pad(beep(600, 0.4, 'square'), 0.9), int(0.3 * RATE))))
+    # меню и сигналы
+    save('misc/menu1.wav', mix(beep(880), np.roll(pad(beep(1320), 0.2), int(0.05 * RATE))), 0.5)
+    save('misc/menu2.wav', beep(1100, 0.05), 0.35)
+    save('misc/menu3.wav', mix(beep(660), np.roll(pad(beep(440), 0.2), int(0.05 * RATE))), 0.5)
+    save('misc/menu4.wav', beep(160, 0.18, 'square'), 0.5)
+    save('misc/silence.wav', np.zeros(int(0.1 * RATE)) + 1e-6, 0.0)
+    save('feedback/hit.wav', beep(1500, 0.05), 0.5)
+    save('feedback/hithi.wav', beep(1800, 0.05), 0.5)
+    save('feedback/hitlo.wav', beep(1200, 0.05), 0.5)
+    save('feedback/hit_teammate.wav', beep(300, 0.12, 'square'), 0.5)
+    save('feedback/three.wav', beep(700, 0.15), 0.7)
+    save('feedback/two.wav', beep(700, 0.15), 0.7)
+    save('feedback/one.wav', beep(700, 0.15), 0.7)
+    save('feedback/fight.wav', mix(beep(1050, 0.5), servo(0.5, 300, 900) * 0.4), 0.8)
+    save('feedback/prepare.wav', alarm(2, 700), 0.6)
+    save('feedback/1_minute.wav', alarm(2, 990), 0.6)
+    save('feedback/5_minute.wav', alarm(1, 990), 0.6)
+    # фон карты: ветер над водой
+    seconds = 8.0
+    t = time(seconds)
+    wind = band(noise(seconds), 150, 1200) * (0.6 + 0.4 * np.sin(2 * np.pi * t / seconds) ** 2)
+    fade = int(0.5 * RATE)
+    wind[:fade] *= np.linspace(0, 1, fade) ** 0.5
+    wind[-fade:] *= np.linspace(1, 0, fade) ** 0.5
+    save('world/wind_loop.wav', wind, 0.5)
+    count = sum(len(files) for _, _, files in os.walk(os.path.join(OUT, 'sound')))
+    print('sounds:', count)
+
+
+main()

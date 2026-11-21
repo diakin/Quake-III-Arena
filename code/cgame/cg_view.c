@@ -248,7 +248,7 @@ static void CG_OffsetThirdPersonView( void ) {
 
 	VectorCopy( cg.refdef.vieworg, view );
 
-	view[2] += 8;
+	view[2] += 30;		// WALKER: camera above the robot, looking over its shoulders
 
 	cg.refdefViewAngles[PITCH] *= 0.5;
 
