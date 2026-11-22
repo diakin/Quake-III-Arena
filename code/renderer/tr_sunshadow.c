@@ -481,8 +481,17 @@ qboolean RB_SunShadowVolumes( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 	qglStencilFunc( GL_ALWAYS, 0, 255 );
 	qglEnable( GL_CULL_FACE );
 
-	qglDisableClientState( GL_COLOR_ARRAY );
+	// only the vertex array may stay on: the arrays of the last shader are much shorter
+	// than the volumes, and the driver would read far past their end. The original
+	// DrawMultitextured leaves the texture coordinate array of the second unit on.
+	if ( qglActiveTextureARB ) {
+		GL_SelectTexture( 1 );
+		qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		qglDisable( GL_TEXTURE_2D );
+		GL_SelectTexture( 0 );
+	}
 	qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+	qglDisableClientState( GL_COLOR_ARRAY );
 	qglVertexPointer( 3, GL_FLOAT, 0, volumeVerts );
 
 	// depth fail: the back faces behind the scene count up, then the front faces
