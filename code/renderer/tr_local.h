@@ -203,7 +203,8 @@ typedef enum {
 	CGEN_LIGHTING_DIFFUSE,
 	CGEN_FOG,				// standard fog
 	CGEN_CONST,				// fixed color
-	CGEN_ONE_MINUS_PORTAL	// WALKER: white near the camera, black at portalRange and further
+	CGEN_ONE_MINUS_PORTAL,	// WALKER: white near the camera, black at portalRange and further
+	CGEN_WATER_RIPPLE		// WALKER: ripple strength by r_waterRipple and distance (rgbWave: near, far, scale, mode)
 } colorGen_t;
 
 typedef enum {
@@ -1076,6 +1077,7 @@ extern	cvar_t	*r_intensity;
 extern	cvar_t	*r_lockpvs;
 extern	cvar_t	*r_noportals;
 extern	cvar_t	*r_drawfog;
+extern	cvar_t	*r_waterRipple;
 extern	cvar_t	*r_portalOnly;
 
 extern	cvar_t	*r_subdivisions;

@@ -804,6 +804,34 @@ static void ComputeColors( shaderStage_t *pStage )
 		case CGEN_ONE_MINUS_ENTITY:
 			RB_CalcColorFromOneMinusEntity( ( unsigned char * ) tess.svars.colors );
 			break;
+		case CGEN_WATER_RIPPLE:
+			for ( i = 0; i < tess.numVertexes; i++ )
+			{
+				vec3_t	toVertex;
+				float	strength, value;
+
+				VectorSubtract( tess.xyz[i], backEnd.viewParms.or.origin, toVertex );
+				strength = ( VectorLength( toVertex ) - pStage->rgbWave.base ) / ( pStage->rgbWave.amplitude - pStage->rgbWave.base );
+				strength = strength <= 0 ? 0 : ( strength >= 1 ? 1 : strength * strength * ( 3 - 2 * strength ) );
+				strength *= r_waterRipple->value;
+				if ( strength > 1 ) {
+					strength = 1;
+				}
+				if ( pStage->rgbWave.frequency ) {
+					// additive glints
+					value = strength * pStage->rgbWave.phase * 255;
+					value = value > 255 ? 255 : value;
+					tess.svars.colors[i][0] = tess.svars.colors[i][1] = tess.svars.colors[i][2] = (byte)value;
+					tess.svars.colors[i][3] = 255;
+				} else {
+					// dst * ( 2k * tex + 1 - k ) = dst * ( 1 + k * ( 2 * tex - 1 ) )
+					value = strength * 2 * 255;
+					value = value > 255 ? 255 : value;
+					tess.svars.colors[i][0] = tess.svars.colors[i][1] = tess.svars.colors[i][2] = (byte)value;
+					tess.svars.colors[i][3] = (byte)( strength * 255 );
+				}
+			}
+			break;
 		case CGEN_ONE_MINUS_PORTAL:
 			for ( i = 0; i < tess.numVertexes; i++ )
 			{

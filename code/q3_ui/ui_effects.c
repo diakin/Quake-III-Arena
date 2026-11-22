@@ -9,6 +9,7 @@ and texture quality take effect after APPLY (vid_restart).
   SHOW FPS            cg_drawFPS
   WATER REFLECTIONS   r_noportals (the water mirror draws the scene twice)
   HAZE                r_drawfog (1: OpenGL fog, almost free; 2: the original fog pass)
+  WATER RIPPLES       r_waterRipple 0 / 0.35 / 0.65 / 1
   ROBOT SHADOWS       cg_shadows 0 / 1 (round spot) / 2 (stencil, exact shape)
   DYNAMIC LIGHTS      r_dynamiclight (shots, explosions)
   MARKS ON WALLS      cg_marks
@@ -32,6 +33,7 @@ FAST and QUALITY set all of them at once.
 #define ID_FPS				10
 #define ID_REFLECTIONS		11
 #define ID_HAZE				12
+#define ID_RIPPLES			23
 #define ID_SHADOWS			13
 #define ID_DLIGHTS			14
 #define ID_MARKS			15
@@ -50,6 +52,7 @@ typedef struct {
 	menulist_s			fps;
 	menulist_s			reflections;
 	menulist_s			haze;
+	menulist_s			ripples;
 	menulist_s			shadows;
 	menulist_s			dlights;
 	menulist_s			marks;
@@ -65,6 +68,8 @@ typedef struct {
 static effectsMenuInfo_t	effectsMenuInfo;
 
 static const char *offOnNames[] = { "off", "on", NULL };
+static const char *rippleNames[] = { "off", "low", "medium", "high", NULL };
+static const float	rippleValues[] = { 0, 0.35f, 0.65f, 1.0f };
 static const char *shadowNames[] = { "off", "simple", "full", NULL };
 static const char *antialiasNames[] = { "off", "2x", "4x", NULL };
 static const char *filterNames[] = { "trilinear", "anisotropic", NULL };
@@ -81,10 +86,13 @@ current cvar values into the controls
 */
 static void Effects_SetMenuItems( void ) {
 	int		samples;
+	float	ripple;
 
 	effectsMenuInfo.fps.curvalue = trap_Cvar_VariableValue( "cg_drawFPS" ) != 0;
 	effectsMenuInfo.reflections.curvalue = trap_Cvar_VariableValue( "r_noportals" ) == 0;
 	effectsMenuInfo.haze.curvalue = trap_Cvar_VariableValue( "r_drawfog" ) != 0;
+	ripple = trap_Cvar_VariableValue( "r_waterRipple" );
+	effectsMenuInfo.ripples.curvalue = ripple < 0.15f ? 0 : ( ripple < 0.5f ? 1 : ( ripple < 0.85f ? 2 : 3 ) );
 	effectsMenuInfo.shadows.curvalue = Com_Clamp( 0, 2, trap_Cvar_VariableValue( "cg_shadows" ) );
 	effectsMenuInfo.dlights.curvalue = trap_Cvar_VariableValue( "r_dynamiclight" ) != 0;
 	effectsMenuInfo.marks.curvalue = trap_Cvar_VariableValue( "cg_marks" ) != 0;
@@ -105,6 +113,7 @@ static void Effects_StoreItems( void ) {
 	trap_Cvar_SetValue( "cg_drawFPS", effectsMenuInfo.fps.curvalue );
 	trap_Cvar_SetValue( "r_noportals", !effectsMenuInfo.reflections.curvalue );
 	trap_Cvar_SetValue( "r_drawfog", effectsMenuInfo.haze.curvalue );
+	trap_Cvar_SetValue( "r_waterRipple", rippleValues[effectsMenuInfo.ripples.curvalue] );
 	trap_Cvar_SetValue( "cg_shadows", effectsMenuInfo.shadows.curvalue );
 	trap_Cvar_SetValue( "r_dynamiclight", effectsMenuInfo.dlights.curvalue );
 	trap_Cvar_SetValue( "cg_marks", effectsMenuInfo.marks.curvalue );
@@ -122,6 +131,7 @@ static void Effects_Preset( qboolean fast ) {
 	effectsMenuInfo.fps.curvalue = 1;
 	effectsMenuInfo.reflections.curvalue = !fast;
 	effectsMenuInfo.haze.curvalue = 1;		// OpenGL fog: almost free
+	effectsMenuInfo.ripples.curvalue = 1;
 	effectsMenuInfo.shadows.curvalue = fast ? 1 : 2;
 	effectsMenuInfo.dlights.curvalue = !fast;
 	effectsMenuInfo.marks.curvalue = 1;
@@ -203,8 +213,8 @@ static void Effects_Draw( void ) {
 	static vec4_t	dimColor = { 0.75f, 0.75f, 0.75f, 1.0f };
 
 	Menu_Draw( &effectsMenuInfo.menu );
-	UI_DrawString( 320, 336, "reflections and full shadows cost the most", UI_CENTER | UI_SMALLFONT, dimColor );
-	UI_DrawString( 320, 354, "antialiasing, filter and quality: press APPLY", UI_CENTER | UI_SMALLFONT, dimColor );
+	UI_DrawString( 320, 358, "reflections and full shadows cost the most", UI_CENTER | UI_SMALLFONT, dimColor );
+	UI_DrawString( 320, 376, "antialiasing, filter and quality: press APPLY", UI_CENTER | UI_SMALLFONT, dimColor );
 }
 
 /*
@@ -232,6 +242,7 @@ static void Effects_MenuInit( void ) {
 	Effects_InitSpin( &effectsMenuInfo.fps, ID_FPS, y, "Show FPS:", offOnNames );					y += EFFECTS_STEP;
 	Effects_InitSpin( &effectsMenuInfo.reflections, ID_REFLECTIONS, y, "Water Reflections:", offOnNames );	y += EFFECTS_STEP;
 	Effects_InitSpin( &effectsMenuInfo.haze, ID_HAZE, y, "Haze:", offOnNames );						y += EFFECTS_STEP;
+	Effects_InitSpin( &effectsMenuInfo.ripples, ID_RIPPLES, y, "Water Ripples:", rippleNames );		y += EFFECTS_STEP;
 	Effects_InitSpin( &effectsMenuInfo.shadows, ID_SHADOWS, y, "Robot Shadows:", shadowNames );		y += EFFECTS_STEP;
 	Effects_InitSpin( &effectsMenuInfo.dlights, ID_DLIGHTS, y, "Dynamic Lights:", offOnNames );		y += EFFECTS_STEP;
 	Effects_InitSpin( &effectsMenuInfo.marks, ID_MARKS, y, "Marks On Walls:", offOnNames );			y += EFFECTS_STEP;
@@ -259,6 +270,7 @@ static void Effects_MenuInit( void ) {
 	Menu_AddItem( &effectsMenuInfo.menu, &effectsMenuInfo.fps );
 	Menu_AddItem( &effectsMenuInfo.menu, &effectsMenuInfo.reflections );
 	Menu_AddItem( &effectsMenuInfo.menu, &effectsMenuInfo.haze );
+	Menu_AddItem( &effectsMenuInfo.menu, &effectsMenuInfo.ripples );
 	Menu_AddItem( &effectsMenuInfo.menu, &effectsMenuInfo.shadows );
 	Menu_AddItem( &effectsMenuInfo.menu, &effectsMenuInfo.dlights );
 	Menu_AddItem( &effectsMenuInfo.menu, &effectsMenuInfo.marks );

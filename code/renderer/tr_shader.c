@@ -843,6 +843,25 @@ static qboolean ParseStage( shaderStage_t *stage, char **text )
 			}
 			// WALKER: "rgbGen oneMinusPortal <range>" fades a stage out with distance
 			// (the seabed under shallow water: seen from close, not at grazing angles)
+			// WALKER: "rgbGen waterRipple <near> <far>" for a ripple layer blended with
+			// GL_DST_COLOR GL_ONE_MINUS_SRC_ALPHA, "rgbGen waterGlint <near> <far> <scale>"
+			// for an additive layer: no ripples close to the camera, full strength from
+			// <far> on, all scaled by r_waterRipple
+			else if ( !Q_stricmp( token, "waterRipple" ) || !Q_stricmp( token, "waterGlint" ) )
+			{
+				stage->rgbWave.frequency = !Q_stricmp( token, "waterGlint" ) ? 1 : 0;
+				stage->rgbGen = CGEN_WATER_RIPPLE;
+				stage->alphaGen = AGEN_SKIP;	// alpha is written by the rgbGen
+				token = COM_ParseExt( text, qfalse );
+				stage->rgbWave.base = atof( token );
+				token = COM_ParseExt( text, qfalse );
+				stage->rgbWave.amplitude = atof( token );
+				token = COM_ParseExt( text, qfalse );
+				stage->rgbWave.phase = token[0] ? atof( token ) : 1;
+				if ( stage->rgbWave.amplitude <= stage->rgbWave.base ) {
+					stage->rgbWave.amplitude = stage->rgbWave.base + 1;
+				}
+			}
 			else if ( !Q_stricmp( token, "oneMinusPortal" ) )
 			{
 				stage->rgbGen = CGEN_ONE_MINUS_PORTAL;

@@ -362,7 +362,7 @@ def tex_water_deep(seed):
     """цвет толщи воды: тёмный сине-зелёный с крупными пятнами."""
     size = 256
     field = normalize(fft_noise(size, 1.6, seed))
-    color = colorize(field, [(0, (38, 72, 80)), (0.5, (44, 80, 88)), (1, (50, 88, 94))])
+    color = colorize(field, [(0, (36, 60, 72)), (0.5, (42, 66, 78)), (1, (48, 72, 84))])
     return Image.fromarray(np.clip(color, 0, 255).astype(np.uint8))
 
 
@@ -843,7 +843,7 @@ def make_water_shallow():
 
 MIRROR_START = 120.0       # от берега до начала зеркальной воды, единиц (около 20 м)
 BAND_FALL = 70.0           # за границей зеркала цвет воды уступает отражению на этой ширине
-SHALLOW_COLOR = (44, 82, 90)   # как толща воды у камеры (water.jpg)
+SHALLOW_COLOR = (40, 64, 74)   # тёмная стальная вода, ближе к образцам
 
 
 SEABED_LIGHT = 1.0         # подобрано по скриншоту: суша у кромки и дно у кромки одной яркости
@@ -1272,6 +1272,30 @@ textures/walker/water
 		rgbGen identity
 		tcMod scale 0.2 0.2
 	}}
+	// ripples and glints over the reflection only (the shallows near the shore are
+	// drawn over them by the terrain): none close to the camera, full from 1100 units
+	// on, strength set by r_waterRipple (menu EFFECTS -> Water Ripples)
+	{{
+		map textures/walker/water_ripple.jpg
+		blendFunc GL_DST_COLOR GL_ONE_MINUS_SRC_ALPHA
+		rgbGen waterRipple 120 1100
+		tcMod scale 0.45 0.45
+		tcMod scroll 0.004 0.022
+	}}
+	{{
+		map textures/walker/water_ripple2.jpg
+		blendFunc GL_DST_COLOR GL_ONE_MINUS_SRC_ALPHA
+		rgbGen waterRipple 120 1100
+		tcMod transform 0.2 0.15 -0.15 0.2 0 0
+		tcMod scroll -0.008 0.014
+	}}
+	{{
+		map textures/walker/water_glint.jpg
+		blendFunc GL_ONE GL_ONE
+		rgbGen waterGlint 200 1400 0.3
+		tcMod scale 0.45 0.45
+		tcMod scroll 0.004 0.022
+	}}
 }}
 textures/walker/water_shore
 {{
@@ -1283,8 +1307,7 @@ textures/walker/water_shore
 	surfaceparm nomarks
 	polygonOffset
 	// drawn after the terrain over all the water: near the shore the seabed shows
-	// through and turns into water colour towards the mirror; ripples and glints
-	// move over everything, the seabed included
+	// through and turns into water colour towards the mirror
 	{{
 		clampmap textures/walker/water_band_mask.jpg
 		blendFunc GL_ZERO GL_ONE_MINUS_SRC_COLOR
@@ -1296,25 +1319,6 @@ textures/walker/water_shore
 		blendFunc GL_ONE GL_ONE
 		tcGen vector ( {1.0 / (2 * HALF_X):.8f} 0 0 ) ( 0 {-1.0 / (2 * HALF_Y):.8f} 0 )
 		tcMod transform 1 0 0 1 0.5 0.5
-	}}
-	{{
-		map textures/walker/water_ripple.jpg
-		blendFunc GL_DST_COLOR GL_SRC_COLOR
-		tcMod scale 0.45 0.45
-		tcMod scroll 0.004 0.022
-	}}
-	{{
-		map textures/walker/water_ripple2.jpg
-		blendFunc GL_DST_COLOR GL_SRC_COLOR
-		tcMod transform 0.2 0.15 -0.15 0.2 0 0
-		tcMod scroll -0.008 0.014
-	}}
-	{{
-		map textures/walker/water_glint.jpg
-		blendFunc GL_ONE GL_ONE
-		rgbGen const ( 0.16 0.16 0.16 )
-		tcMod scale 0.45 0.45
-		tcMod scroll 0.004 0.022
 	}}
 }}
 textures/walker/terrain
