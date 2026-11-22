@@ -1137,10 +1137,61 @@ def launch_tower():
     beacon('d', 120, 700, ground(120, 700))
 
 
+ROCK_SHADOWS = []     # контуры теней глыб на воде: по 4 точки (x, y, z)
+
+
+def rock_shadow(x, y, top, radius):
+    """тень глыбы на поверхности воды: трапеция от подножия в сторону от солнца, длина — по
+    высоте вершины над водой и высоте солнца. Игра рисует её поверх воды (cg_marks.c,
+    CG_AddRockShadows); на суше трапеция уходит под землю. Только если тень доходит до воды."""
+    azimuth, elevation = math.radians(SUN_AZIMUTH), math.radians(SUN_ELEVATION)
+    direction = -np.array([math.cos(azimuth), math.sin(azimuth)])
+    across = np.array([-direction[1], direction[0]])
+    length = (top - WATER_Z) / math.tan(elevation)
+    centre = np.array([x, y])
+    back = centre - direction * radius * 0.4
+    tip = centre + direction * (length + radius * 0.3)
+    corners = [back - across * radius * 0.95, back + across * radius * 0.95,
+               tip + across * radius * 0.55, tip - across * radius * 0.55]
+    samples = np.array([back + (tip - back) * fraction + across * radius * side
+                        for fraction in np.linspace(0.2, 1, 9) for side in (-0.5, 0, 0.5)])
+    if terrain_height_at(samples[:, 0], samples[:, 1]).min() >= WATER_Z:
+        return
+    ROCK_SHADOWS.append([(float(corner[0]), float(corner[1]), WATER_Z + 1.0) for corner in corners])
+
+
+def write_rock_shadows():
+    os.makedirs(os.path.join(DATA, 'maps'), exist_ok=True)
+    with open(os.path.join(DATA, 'maps', 'wk_islands.shadows'), 'w', encoding='ascii', newline='\n') as file:
+        file.write('// rock shadows on the water: four corners (x y z) each, see cg_marks.c\n')
+        for corners in ROCK_SHADOWS:
+            file.write('  '.join(f'{px:.1f} {py:.1f} {pz:.1f}' for px, py, pz in corners) + '\n')
+    print('rock shadows on water:', len(ROCK_SHADOWS))
+
+
+def make_rock_shadow_texture():
+    """мягкое пятно тени: по ширине края размыты, у дальнего конца тень бледнеет."""
+    width, length = 64, 128
+    across = np.abs(np.linspace(-1, 1, width))
+    along = np.linspace(0, 1, length)
+    side = np.clip((1 - across) / 0.45, 0, 1)
+    side = side * side * (3 - 2 * side)
+    start = np.clip(along / 0.12, 0, 1)
+    end = np.clip((1 - along) / 0.5, 0, 1)
+    end = end * end * (3 - 2 * end)
+    mask = side[None, :] * (start * end)[:, None]
+    value = (255 * (1 - 0.5 * mask)).astype(np.uint8)
+    image = Image.fromarray(np.stack([value] * 3, axis=-1))
+    path = os.path.join(DATA, 'textures/walker/rock_shadow.tga')
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    image.save(path)
+
+
 def rock_stack(x, y, height, radius, seed):
     """скальный выход: валуны (make_props.rock_cluster) и невидимый браш коллизии главного валуна."""
     base = ground(x, y)
     props.add_prop(f'rocks_{seed}', props.rock_cluster((x, y, base), height * 1.05, radius * 1.05, seed))
+    rock_shadow(x, y, base + height * 0.95, radius * 1.05)
     add_frustum(x, y, radius * 0.6, radius * 0.3, -40, base + height * 0.7, 'clip_solid', 'clip_solid', 7)
 
 
@@ -1209,7 +1260,6 @@ def ruins_middle():
                                                     (180, -420, 110, 44), (-900, -350, 130, 50), (880, 420, 140, 52),
                                                     (-1250, -250, 100, 44), (1260, 260, 110, 46)]):
         rock_stack(x, y, height, radius, 500 + index)
-    scatter_stones()
 
 
 def add_hull():
@@ -1533,6 +1583,22 @@ def make_mix_textures():
     save_texture('textures/walker/terrain_detail', tex_detail(141))
 
 
+# тень глыбы на воде (рисует игра): затемнение поверх воды, после непрозрачных поверхностей
+ROCK_SHADOW_SHADER = """
+walker/rockshadow
+{
+	nopicmip
+	cull none
+	polygonOffset
+	sort banner
+	{
+		clampmap textures/walker/rock_shadow.tga
+		blendFunc GL_DST_COLOR GL_ZERO
+		rgbGen identity
+	}
+}
+"""
+
 PROP_MATERIALS = ['rock', 'rockmoss', 'concrete', 'concrete_dark', 'metal_rust', 'metal_panel', 'hazard',
                   'container_red', 'container_blue', 'container_orange']
 
@@ -1605,7 +1671,9 @@ def main():
     ruins_south()
     ruins_middle()
     make_mix_textures()
-    SHADERS += lightmapped_shaders() + vertex_lit_shaders()
+    make_rock_shadow_texture()
+    write_rock_shadows()
+    SHADERS += lightmapped_shaders() + vertex_lit_shaders() + ROCK_SHADOW_SHADER
     write_shaders()
     write_map()
     # карта высот для просмотра

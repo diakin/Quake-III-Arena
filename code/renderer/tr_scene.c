@@ -103,6 +103,12 @@ void R_AddPolygonSurfaces( void ) {
 	tr.currentEntityNum = ENTITYNUM_WORLD;
 	tr.shiftedEntityNum = tr.currentEntityNum << QSORT_ENTITYNUM_SHIFT;
 
+	// WALKER: the water mirror without robots (r_mirrorEntities 0) shows no marks and
+	// shadows either: they lie on the water level or belong to the robots
+	if ( tr.viewParms.isPortal && !r_mirrorEntities->integer ) {
+		return;
+	}
+
 	for ( i = 0, poly = tr.refdef.polys; i < tr.refdef.numPolys ; i++, poly++ ) {
 		sh = R_GetShaderByHandle( poly->hShader );
 		R_AddDrawSurf( ( void * )poly, sh, poly->fogIndex, qfalse );

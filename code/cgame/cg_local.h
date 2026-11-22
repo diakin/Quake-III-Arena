@@ -1375,6 +1375,8 @@ void CG_OutOfAmmoChange( void );	// should this be in pmove?
 //
 void	CG_InitMarkPolys( void );
 void	CG_AddMarks( void );
+void	CG_InitRockShadows( void );
+void	CG_AddRockShadows( void );
 void	CG_ImpactMark( qhandle_t markShader, 
 				    const vec3_t origin, const vec3_t dir, 
 					float orientation, 

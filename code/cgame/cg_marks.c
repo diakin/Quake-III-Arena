@@ -2272,3 +2272,89 @@ void CG_ParticleMisc (qhandle_t pshader, vec3_t origin, int size, int duration, 
 	p->rotate = qfalse;
 }
 
+
+
+/*
+===============================================================================
+
+WALKER: shadows of the big rocks on the water
+
+The water surface has no lightmap, so the baked shadow of a rock ends at the
+water. The map generator writes the outline of each shadow that reaches the
+water (maps/<map>.shadows: four corners "x y z" per shadow, at the water level,
+cast away from the sun); here each one is a single darkening polygon a frame.
+Over land the polygon is under the ground and hidden by it.
+
+===============================================================================
+*/
+
+#define	MAX_ROCK_SHADOWS	32
+
+static int			numRockShadows;
+static vec3_t		rockShadows[MAX_ROCK_SHADOWS][4];
+static qhandle_t	rockShadowShader;
+
+void CG_InitRockShadows( void ) {
+	char			name[MAX_QPATH];
+	char			text[8192];
+	fileHandle_t	file;
+	int				length, corner, axis;
+	char			*cursor, *token;
+
+	numRockShadows = 0;
+	COM_StripExtension( cgs.mapname, name );
+	Q_strcat( name, sizeof( name ), ".shadows" );
+	length = trap_FS_FOpenFile( name, &file, FS_READ );
+	if ( length <= 0 ) {
+		if ( file ) {
+			trap_FS_FCloseFile( file );
+		}
+		return;
+	}
+	if ( length >= sizeof( text ) ) {
+		length = sizeof( text ) - 1;
+	}
+	trap_FS_Read( text, length, file );
+	text[length] = 0;
+	trap_FS_FCloseFile( file );
+
+	cursor = text;
+	while ( numRockShadows < MAX_ROCK_SHADOWS ) {
+		for ( corner = 0 ; corner < 4 ; corner++ ) {
+			for ( axis = 0 ; axis < 3 ; axis++ ) {
+				token = COM_Parse( &cursor );
+				if ( !token[0] ) {
+					goto parsed;
+				}
+				rockShadows[numRockShadows][corner][axis] = atof( token );
+			}
+		}
+		numRockShadows++;
+	}
+parsed:
+	if ( numRockShadows ) {
+		rockShadowShader = trap_R_RegisterShader( "walker/rockshadow" );
+	}
+}
+
+void CG_AddRockShadows( void ) {
+	static const float	texCoords[4][2] = { { 0, 0 }, { 1, 0 }, { 1, 1 }, { 0, 1 } };
+	polyVert_t	verts[4];
+	int			index, corner;
+
+	if ( !numRockShadows || !rockShadowShader ) {
+		return;
+	}
+	for ( index = 0 ; index < numRockShadows ; index++ ) {
+		for ( corner = 0 ; corner < 4 ; corner++ ) {
+			VectorCopy( rockShadows[index][corner], verts[corner].xyz );
+			verts[corner].st[0] = texCoords[corner][0];
+			verts[corner].st[1] = texCoords[corner][1];
+			verts[corner].modulate[0] = 255;
+			verts[corner].modulate[1] = 255;
+			verts[corner].modulate[2] = 255;
+			verts[corner].modulate[3] = 255;
+		}
+		trap_R_AddPolyToScene( rockShadowShader, 4, verts );
+	}
+}

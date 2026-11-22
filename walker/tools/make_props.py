@@ -330,7 +330,7 @@ def chunk(mesh, material, center, size, seed):
 
 def ruined_wall(start, end, base_z, height, thickness, seed, windows=True, material='concrete'):
     """стена из колонн шириной ~12 единиц: верх рваный (ломаная линия), окна — пропуски в колоннах
-    между подоконником и перемычкой, сверху торчит арматура, у подножия обломки.
+    между подоконником и перемычкой.
     Возвращает сетку и список невидимых блоков коллизии (вдоль стены, по низу излома)."""
     local = np.random.default_rng(seed)
     start = np.array([start[0], start[1], 0.0]); end = np.array([end[0], end[1], 0.0])
@@ -383,25 +383,6 @@ def ruined_wall(start, end, base_z, height, thickness, seed, windows=True, mater
                 quad(mesh, 'concrete_dark', corner(u0, 1, piece_bottom), corner(u1, 1, piece_bottom), corner(u1, -1, piece_bottom), corner(u0, -1, piece_bottom))
             quad(mesh, material, corner(u0, 1, piece_bottom), corner(u0, -1, piece_bottom), corner(u0, -1, t0), corner(u0, 1, t0))
             quad(mesh, material, corner(u1, -1, piece_bottom), corner(u1, 1, piece_bottom), corner(u1, 1, t1), corner(u1, -1, t1))
-    # арматура над изломом
-    for column in range(1, columns - 1):
-        if local.random() < 0.45 and tops[column] < base_z + height * 0.92:
-            for side in (-0.5, 0.5):
-                foot = start + along * (column * length / columns) + across * side * half * 0.8 + np.array([0, 0, tops[column] - 4])
-                bend = np.array([local.normal() * 4, local.normal() * 4, 0])
-                tip = foot + np.array([0, 0, local.uniform(10, 26)]) + bend
-                beam(mesh, 'metal_rust', foot, tip, 1.4)
-                if local.random() < 0.4:
-                    beam(mesh, 'metal_rust', tip, tip + across * local.choice([-1, 1]) * local.uniform(5, 10) + bend * 0.5, 1.4)
-    # обломки у подножия: больше там, где стена ниже
-    for index in range(int(length / 14)):
-        uu = local.uniform(0, length)
-        drop = 1 - (np.interp(uu / length, u, tops) - base_z) / height
-        if local.random() > 0.35 + drop:
-            continue
-        side = local.choice([-1, 1])
-        spot = start + along * uu + across * side * (half + local.uniform(4, 22)) + np.array([0, 0, base_z - 2])
-        chunk(mesh, material if local.random() < 0.7 else 'concrete_dark', spot, local.uniform(5, 13), seed * 1000 + index)
     # коллизия: отрезки по 48 единиц высотой до нижней точки излома на отрезке
     clips = []
     segments = max(1, int(round(length / 48)))
