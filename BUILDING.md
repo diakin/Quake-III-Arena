@@ -52,7 +52,7 @@ walker/dist/basewalker/vm/*.qvm        (только что собранные �
 Рабочая папка — `walker/dist` (движок ищет `basewalker` в текущей папке):
 
 ```
-Walker.exe +map wk_islands
+Walker.exe +set bot_minplayers 6 +map wk_islands
 ```
 
 Без параметров открывается меню.

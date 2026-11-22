@@ -40,7 +40,7 @@ CGAME="cgame/cg_main.c cgame/cg_consolecmds.c cgame/cg_draw.c cgame/cg_drawtools
 UI="q3_ui/ui_main.c q3_ui/ui_gameinfo.c q3_ui/ui_atoms.c q3_ui/ui_cinematics.c q3_ui/ui_connect.c q3_ui/ui_controls2.c
  q3_ui/ui_demo2.c q3_ui/ui_mfield.c q3_ui/ui_credits.c q3_ui/ui_menu.c q3_ui/ui_ingame.c q3_ui/ui_confirm.c q3_ui/ui_setup.c
  q3_ui/ui_options.c q3_ui/ui_display.c q3_ui/ui_sound.c q3_ui/ui_network.c q3_ui/ui_playermodel.c q3_ui/ui_players.c
- q3_ui/ui_playersettings.c q3_ui/ui_preferences.c q3_ui/ui_qmenu.c q3_ui/ui_serverinfo.c q3_ui/ui_servers2.c
+ q3_ui/ui_playersettings.c q3_ui/ui_preferences.c q3_ui/ui_effects.c q3_ui/ui_qmenu.c q3_ui/ui_serverinfo.c q3_ui/ui_servers2.c
  q3_ui/ui_sparena.c q3_ui/ui_specifyserver.c q3_ui/ui_sppostgame.c q3_ui/ui_splevel.c q3_ui/ui_spskill.c
  q3_ui/ui_startserver.c q3_ui/ui_team.c q3_ui/ui_video.c q3_ui/ui_addbots.c q3_ui/ui_removebots.c q3_ui/ui_selectbots.c q3_ui/ui_hangar.c q3_ui/ui_teamorders.c
  q3_ui/ui_loadconfig.c q3_ui/ui_saveconfig.c q3_ui/ui_cdkey.c q3_ui/ui_mods.c game/bg_misc.c game/bg_lib.c game/q_math.c game/q_shared.c"

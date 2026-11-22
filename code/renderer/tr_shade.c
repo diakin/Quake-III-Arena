@@ -820,7 +820,7 @@ static void ComputeColors( shaderStage_t *pStage )
 	//
 	// fog adjustment for colors to fade out as fog increases
 	//
-	if ( tess.fogNum )
+	if ( tess.fogNum && r_drawfog->integer && !backEnd.viewParms.isPortal )
 	{
 		switch ( pStage->adjustColorsForFog )
 		{
@@ -1096,7 +1096,8 @@ void RB_StageIteratorGeneric( void )
 	//
 	// now do fog
 	//
-	if ( tess.fogNum && tess.shader->fogPass ) {
+	// WALKER: r_drawfog 0 turns the haze off; the water reflection is drawn without it
+	if ( tess.fogNum && tess.shader->fogPass && r_drawfog->integer && !backEnd.viewParms.isPortal ) {
 		RB_FogPass();
 	}
 
@@ -1184,7 +1185,8 @@ void RB_StageIteratorVertexLitTexture( void )
 	//
 	// now do fog
 	//
-	if ( tess.fogNum && tess.shader->fogPass ) {
+	// WALKER: r_drawfog 0 turns the haze off; the water reflection is drawn without it
+	if ( tess.fogNum && tess.shader->fogPass && r_drawfog->integer && !backEnd.viewParms.isPortal ) {
 		RB_FogPass();
 	}
 
@@ -1289,7 +1291,8 @@ void RB_StageIteratorLightmappedMultitexture( void ) {
 	//
 	// now do fog
 	//
-	if ( tess.fogNum && tess.shader->fogPass ) {
+	// WALKER: r_drawfog 0 turns the haze off; the water reflection is drawn without it
+	if ( tess.fogNum && tess.shader->fogPass && r_drawfog->integer && !backEnd.viewParms.isPortal ) {
 		RB_FogPass();
 	}
 

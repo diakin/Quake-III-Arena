@@ -135,9 +135,13 @@ static void SelectBots_BotEvent( void *ptr, int event ) {
 		return;		// the previous command is still waiting for the server
 	}
 	if ( selectBotsMenuInfo.clientNums[index] >= 0 ) {
+		// WALKER: the player manages bots by hand now; otherwise the server
+		// brings a removed bot back to keep bot_minplayers players
+		trap_Cvar_SetValue( "bot_minplayers", 0 );
 		trap_Cmd_ExecuteText( EXEC_APPEND, va( "clientkick %i\n", selectBotsMenuInfo.clientNums[index] ) );
 		selectBotsMenuInfo.request[index] = REQUEST_LEAVE;
 	} else {
+		trap_Cvar_SetValue( "bot_minplayers", 0 );
 		trap_Cmd_ExecuteText( EXEC_APPEND, va( "addbot %s %i\n", selectBotsMenuInfo.names[index], selectBotsMenuInfo.skill.curvalue + 1 ) );
 		selectBotsMenuInfo.request[index] = REQUEST_JOIN;
 	}

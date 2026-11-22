@@ -1486,6 +1486,192 @@ static	void R_LoadMarksurfaces (lump_t *l)
 
 /*
 =================
+R_MergeWorldFaces
+
+WALKER: the terrain of wk_islands is ~18000 small brush faces. The renderer
+spends time on every surface (culling, sorting, copying) no matter how small,
+and the water mirror draws the world twice, so the frame rate fell several
+times compared with the previous map. Here opaque faces with the same shader
+(that is, the same lightmap) and fog, lying in the same 512x512 cell, are
+joined at load time into triangle surfaces of up to MERGE_MAX_VERTS vertices;
+leaves point to the joined surface instead of the faces. The picture does not
+change; r_mergeFaces 0 turns this off.
+=================
+*/
+#define	MERGE_CELL			512
+#define	MERGE_MAX_VERTS		900
+#define	MERGE_MAX_INDEXES	2700
+
+typedef struct {
+	int			surfaceNum;
+	int			cellX, cellY;
+} mergeCandidate_t;
+
+static qboolean R_SameMergeKey( const mergeCandidate_t *a, const mergeCandidate_t *b ) {
+	msurface_t	*sa = s_worldData.surfaces + a->surfaceNum;
+	msurface_t	*sb = s_worldData.surfaces + b->surfaceNum;
+
+	return sa->shader == sb->shader && sa->fogIndex == sb->fogIndex
+		&& a->cellX == b->cellX && a->cellY == b->cellY;
+}
+
+static int R_CompareMergeCandidates( const void *first, const void *second ) {
+	const mergeCandidate_t	*a = first, *b = second;
+	msurface_t				*sa = s_worldData.surfaces + a->surfaceNum;
+	msurface_t				*sb = s_worldData.surfaces + b->surfaceNum;
+
+	if ( sa->shader != sb->shader ) {
+		return sa->shader->index - sb->shader->index;
+	}
+	if ( sa->fogIndex != sb->fogIndex ) {
+		return sa->fogIndex - sb->fogIndex;
+	}
+	if ( a->cellX != b->cellX ) {
+		return a->cellX - b->cellX;
+	}
+	if ( a->cellY != b->cellY ) {
+		return a->cellY - b->cellY;
+	}
+	return a->surfaceNum - b->surfaceNum;
+}
+
+static qboolean R_FaceCanMerge( msurface_t *surf ) {
+	srfSurfaceFace_t	*face;
+
+	if ( *surf->data != SF_FACE ) {
+		return qfalse;
+	}
+	if ( surf->shader->sort != SS_OPAQUE || surf->shader->isSky || surf->shader->numDeforms ) {
+		return qfalse;
+	}
+	face = (srfSurfaceFace_t *)surf->data;
+	return face->numPoints > 0 && face->numPoints < MERGE_MAX_VERTS && face->numIndices < MERGE_MAX_INDEXES;
+}
+
+static void R_EmitMergedSurface( mergeCandidate_t *list, int count, int numVerts, int numIndexes, int *remap ) {
+	srfTriangles_t		*tri;
+	msurface_t			*leader;
+	int					i, j, k, vertBase, indexBase;
+
+	leader = s_worldData.surfaces + list[0].surfaceNum;
+	tri = ri.Hunk_Alloc( sizeof( *tri ) + numVerts * sizeof( drawVert_t ) + numIndexes * sizeof( int ), h_low );
+	tri->surfaceType = SF_TRIANGLES;
+	tri->verts = (drawVert_t *)( tri + 1 );
+	tri->indexes = (int *)( tri->verts + numVerts );
+	tri->numVerts = numVerts;
+	tri->numIndexes = numIndexes;
+	ClearBounds( tri->bounds[0], tri->bounds[1] );
+
+	vertBase = indexBase = 0;
+	for ( i = 0 ; i < count ; i++ ) {
+		msurface_t			*surf = s_worldData.surfaces + list[i].surfaceNum;
+		srfSurfaceFace_t	*face = (srfSurfaceFace_t *)surf->data;
+		int					*faceIndexes = (int *)( (byte *)face + face->ofsIndices );
+
+		for ( j = 0 ; j < face->numPoints ; j++ ) {
+			drawVert_t	*dv = tri->verts + vertBase + j;
+			for ( k = 0 ; k < 3 ; k++ ) {
+				dv->xyz[k] = face->points[j][k];
+				dv->normal[k] = face->plane.normal[k];
+			}
+			dv->st[0] = face->points[j][3];
+			dv->st[1] = face->points[j][4];
+			dv->lightmap[0] = face->points[j][5];
+			dv->lightmap[1] = face->points[j][6];
+			*(int *)dv->color = *(int *)&face->points[j][7];
+			AddPointToBounds( dv->xyz, tri->bounds[0], tri->bounds[1] );
+		}
+		for ( j = 0 ; j < face->numIndices ; j++ ) {
+			tri->indexes[indexBase + j] = vertBase + faceIndexes[j];
+		}
+		vertBase += face->numPoints;
+		indexBase += face->numIndices;
+		remap[list[i].surfaceNum] = list[0].surfaceNum;
+	}
+	VectorAdd( tri->bounds[0], tri->bounds[1], tri->localOrigin );
+	VectorScale( tri->localOrigin, 0.5f, tri->localOrigin );
+	tri->radius = RadiusFromBounds( tri->bounds[0], tri->bounds[1] );
+	leader->data = (surfaceType_t *)tri;
+}
+
+static void R_MergeWorldFaces( void ) {
+	mergeCandidate_t	*list;
+	int					*remap;
+	byte				*seen;
+	int					i, count, start, numVerts, numIndexes, merged;
+
+	if ( !ri.Cvar_Get( "r_mergeFaces", "1", CVAR_ARCHIVE | CVAR_LATCH )->integer ) {
+		return;
+	}
+
+	list = ri.Hunk_AllocateTempMemory( s_worldData.numsurfaces * sizeof( *list ) );
+	remap = ri.Hunk_AllocateTempMemory( s_worldData.numsurfaces * sizeof( int ) );
+	seen = ri.Hunk_AllocateTempMemory( s_worldData.numsurfaces );
+	Com_Memset( seen, 0, s_worldData.numsurfaces );
+	for ( i = 0 ; i < s_worldData.numsurfaces ; i++ ) {
+		remap[i] = i;
+	}
+
+	// candidates: opaque faces that the leaves of the world refer to
+	count = 0;
+	for ( i = 0 ; i < s_worldData.nummarksurfaces ; i++ ) {
+		int				surfaceNum = s_worldData.marksurfaces[i] - s_worldData.surfaces;
+		msurface_t		*surf = s_worldData.surfaces + surfaceNum;
+		float			*point;
+
+		if ( seen[surfaceNum] || !R_FaceCanMerge( surf ) ) {
+			continue;
+		}
+		seen[surfaceNum] = 1;
+		point = ((srfSurfaceFace_t *)surf->data)->points[0];
+		list[count].surfaceNum = surfaceNum;
+		list[count].cellX = (int)floor( point[0] / MERGE_CELL );
+		list[count].cellY = (int)floor( point[1] / MERGE_CELL );
+		count++;
+	}
+	qsort( list, count, sizeof( *list ), R_CompareMergeCandidates );
+
+	// runs with the same key, cut so that the tesselator never overflows
+	merged = 0;
+	start = 0;
+	numVerts = numIndexes = 0;
+	for ( i = 0 ; i <= count ; i++ ) {
+		srfSurfaceFace_t	*face = NULL;
+
+		if ( i < count ) {
+			face = (srfSurfaceFace_t *)s_worldData.surfaces[list[i].surfaceNum].data;
+		}
+		if ( i > start && ( i == count || !R_SameMergeKey( &list[start], &list[i] )
+			|| numVerts + face->numPoints > MERGE_MAX_VERTS || numIndexes + face->numIndices > MERGE_MAX_INDEXES ) ) {
+			if ( i - start > 1 ) {
+				R_EmitMergedSurface( list + start, i - start, numVerts, numIndexes, remap );
+				merged++;
+			}
+			start = i;
+			numVerts = numIndexes = 0;
+		}
+		if ( face ) {
+			numVerts += face->numPoints;
+			numIndexes += face->numIndices;
+		}
+	}
+
+	// leaves now refer to the joined surfaces (a leaf may list one twice; the
+	// renderer skips a surface already added in this view)
+	for ( i = 0 ; i < s_worldData.nummarksurfaces ; i++ ) {
+		int		surfaceNum = s_worldData.marksurfaces[i] - s_worldData.surfaces;
+		s_worldData.marksurfaces[i] = s_worldData.surfaces + remap[surfaceNum];
+	}
+	ri.Printf( PRINT_ALL, "...merged %i world faces into %i surfaces\n", count, merged );
+
+	ri.Hunk_FreeTempMemory( seen );
+	ri.Hunk_FreeTempMemory( remap );
+	ri.Hunk_FreeTempMemory( list );
+}
+
+
+/*
+=================
 R_LoadPlanes
 =================
 */
@@ -1846,6 +2032,7 @@ void RE_LoadWorldMap( const char *name ) {
 	R_LoadFogs( &header->lumps[LUMP_FOGS], &header->lumps[LUMP_BRUSHES], &header->lumps[LUMP_BRUSHSIDES] );
 	R_LoadSurfaces( &header->lumps[LUMP_SURFACES], &header->lumps[LUMP_DRAWVERTS], &header->lumps[LUMP_DRAWINDEXES] );
 	R_LoadMarksurfaces (&header->lumps[LUMP_LEAFSURFACES]);
+	R_MergeWorldFaces();
 	R_LoadNodesAndLeafs (&header->lumps[LUMP_NODES], &header->lumps[LUMP_LEAFS]);
 	R_LoadSubmodels (&header->lumps[LUMP_MODELS]);
 	R_LoadVisibility( &header->lumps[LUMP_VISIBILITY] );

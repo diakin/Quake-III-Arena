@@ -981,6 +981,7 @@ void UI_Cache_f( void ) {
 	Demos_Cache();
 	UI_CinematicsMenu_Cache();
 	Preferences_Cache();
+	UI_Effects_Cache();
 	ServerInfo_Cache();
 	SpecifyServer_Cache();
 	ArenaServers_Cache();

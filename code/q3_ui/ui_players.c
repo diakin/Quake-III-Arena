@@ -725,6 +725,7 @@ UI_DrawPlayer
 qboolean	uiPlayerOrbit;
 float		uiPlayerOrbitPitch;
 float		uiPlayerOrbitRoll;
+float		uiPlayerOrbitZoom = 1;
 
 /*
 ===============
@@ -819,6 +820,9 @@ void UI_DrawPlayer( float x, float y, float w, float h, playerInfo_t *pi, int ti
 		alongX = radius / ( 0.85f * tan( DEG2RAD(refdef.fov_x) * 0.5 ) );
 		alongY = 0.5f * height / ( 0.85f * tan( DEG2RAD(refdef.fov_y) * 0.5 ) );
 		len = alongX > alongY ? alongX : alongY;
+		if ( uiPlayerOrbit && uiPlayerOrbitZoom > 0 ) {
+			len /= uiPlayerOrbitZoom;		// WALKER: hangar zoom (mouse wheel)
+		}
 	}
 	origin[0] = len + 0.5f * ( maxs[0] - mins[0] );
 	origin[1] = 0;

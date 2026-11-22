@@ -402,6 +402,12 @@ extern void PlayerSettings_Cache( void );
 // ui_preferences.c
 //
 extern void UI_PreferencesMenu( void );
+
+//
+// ui_effects.c (WALKER)
+//
+extern void UI_EffectsMenu( void );
+extern void UI_Effects_Cache( void );
 extern void Preferences_Cache( void );
 
 //
@@ -525,6 +531,7 @@ void UI_DrawPlayer( float x, float y, float w, float h, playerInfo_t *pi, int ti
 extern qboolean	uiPlayerOrbit;
 extern float	uiPlayerOrbitPitch;
 extern float	uiPlayerOrbitRoll;
+extern float	uiPlayerOrbitZoom;	// 1 = whole robot fits, more = closer
 void UI_PlayerInfo_SetModel( playerInfo_t *pi, const char *model );
 void UI_PlayerInfo_SetInfo( playerInfo_t *pi, int legsAnim, int torsoAnim, vec3_t viewAngles, vec3_t moveAngles, weapon_t weaponNum, qboolean chat );
 qboolean UI_RegisterClientModelname( playerInfo_t *pi, const char *modelSkinName );

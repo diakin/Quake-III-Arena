@@ -48,6 +48,7 @@ SETUP MENU
 #define ID_SAVE					16
 #define ID_DEFAULTS				17
 #define ID_BACK					18
+#define ID_EFFECTS				19
 
 
 typedef struct {
@@ -60,6 +61,7 @@ typedef struct {
 	menutext_s		setupcontrols;
 	menutext_s		setupsystem;
 	menutext_s		game;
+	menutext_s		effects;
 	menutext_s		cdkey;
 //	menutext_s		load;
 //	menutext_s		save;
@@ -117,6 +119,10 @@ static void UI_SetupMenu_Event( void *ptr, int event ) {
 
 	case ID_SYSTEMCONFIG:
 		UI_GraphicsOptionsMenu();
+		break;
+
+	case ID_EFFECTS:
+		UI_EffectsMenu();
 		break;
 
 	case ID_GAME:
@@ -227,6 +233,18 @@ static void UI_SetupMenu_Init( void ) {
 	setupMenuInfo.game.color						= color_red;
 	setupMenuInfo.game.style						= UI_CENTER;
 
+	// WALKER: switches for reflections, haze, shadows and other costly effects
+	y += SETUP_MENU_VERTICAL_SPACING;
+	setupMenuInfo.effects.generic.type				= MTYPE_PTEXT;
+	setupMenuInfo.effects.generic.flags				= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
+	setupMenuInfo.effects.generic.x					= 320;
+	setupMenuInfo.effects.generic.y					= y;
+	setupMenuInfo.effects.generic.id				= ID_EFFECTS;
+	setupMenuInfo.effects.generic.callback			= UI_SetupMenu_Event;
+	setupMenuInfo.effects.string					= "EFFECTS";
+	setupMenuInfo.effects.color						= color_red;
+	setupMenuInfo.effects.style						= UI_CENTER;
+
 	// WALKER: no CD key menu
 	setupMenuInfo.cdkey.generic.type				= MTYPE_PTEXT;
 	setupMenuInfo.cdkey.generic.flags				= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
@@ -293,6 +311,7 @@ static void UI_SetupMenu_Init( void ) {
 	Menu_AddItem( &setupMenuInfo.menu, &setupMenuInfo.setupcontrols );
 	Menu_AddItem( &setupMenuInfo.menu, &setupMenuInfo.setupsystem );
 	Menu_AddItem( &setupMenuInfo.menu, &setupMenuInfo.game );
+	Menu_AddItem( &setupMenuInfo.menu, &setupMenuInfo.effects );
 //	Menu_AddItem( &setupMenuInfo.menu, &setupMenuInfo.load );
 //	Menu_AddItem( &setupMenuInfo.menu, &setupMenuInfo.save );
 	if( !trap_Cvar_VariableValue( "cl_paused" ) ) {

@@ -119,6 +119,7 @@ cvar_t	*r_gamma;
 cvar_t	*r_intensity;
 cvar_t	*r_lockpvs;
 cvar_t	*r_noportals;
+cvar_t	*r_drawfog;
 cvar_t	*r_portalOnly;
 
 cvar_t	*r_subdivisions;
@@ -992,7 +993,9 @@ void R_Register( void )
 	r_offsetUnits = ri.Cvar_Get( "r_offsetunits", "-2", CVAR_CHEAT );
 	r_drawBuffer = ri.Cvar_Get( "r_drawBuffer", "GL_BACK", CVAR_CHEAT );
 	r_lockpvs = ri.Cvar_Get ("r_lockpvs", "0", CVAR_CHEAT);
-	r_noportals = ri.Cvar_Get ("r_noportals", "0", CVAR_CHEAT);
+	// WALKER: settings menu switches: water reflections (mirror) and haze (fog volumes)
+	r_noportals = ri.Cvar_Get ("r_noportals", "0", CVAR_ARCHIVE);
+	r_drawfog = ri.Cvar_Get ("r_drawfog", "1", CVAR_ARCHIVE);
 	r_shadows = ri.Cvar_Get( "cg_shadows", "1", 0 );
 
 	r_maxpolys = ri.Cvar_Get( "r_maxpolys", va("%d", MAX_POLYS), 0);

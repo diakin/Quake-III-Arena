@@ -28,6 +28,9 @@ This file is part of WALKER, based on the Quake III Arena source code
 #define ID_BACK				10
 #define ID_PILOT			11
 #define ID_AUTOROTATE		12
+#define ZOOM_STEP			1.12f	// one wheel notch
+#define ZOOM_MIN			0.6f
+#define ZOOM_MAX			2.6f
 #define ID_RESETVIEW		13
 #define ID_BAY0				20
 
@@ -80,6 +83,7 @@ typedef struct {
 	float			previewYaw;
 	float			previewPitch;
 	float			previewRoll;
+	float			previewZoom;
 	float			bayYaw;
 	int				lastTime;
 	qboolean		dragging;		// left button: turn and tilt
@@ -128,6 +132,7 @@ static void Hangar_DrawPreview( void *self ) {
 	uiPlayerOrbit = qtrue;
 	uiPlayerOrbitPitch = hangarMenuInfo.previewPitch;
 	uiPlayerOrbitRoll = hangarMenuInfo.previewRoll;
+	uiPlayerOrbitZoom = hangarMenuInfo.previewZoom;
 	UI_DrawPlayer( PREVIEW_X, PREVIEW_Y, PREVIEW_W, PREVIEW_H, &hangarMenuInfo.players[hangarMenuInfo.selected], uis.realtime / 2 );
 	uiPlayerOrbit = qfalse;
 
@@ -203,8 +208,8 @@ static void Hangar_Draw( void ) {
 
 	UI_DrawHandlePic( 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, hangarMenuInfo.backgroundShader );
 	Menu_Draw( &hangarMenuInfo.menu );
-	UI_DrawString( 320, 450, "left button: turn and tilt   right button: roll", UI_CENTER | UI_SMALLFONT, hangarDimColor );
-	UI_DrawString( 320, 466, "arrows, PgUp/PgDn: turn   HOME: reset", UI_CENTER | UI_SMALLFONT, hangarDimColor );
+	UI_DrawString( 320, 450, "drag: left button - turn and tilt, right button - roll", UI_CENTER | UI_SMALLFONT, hangarDimColor );
+	UI_DrawString( 320, 466, "wheel: zoom   arrows, PgUp/PgDn: turn   HOME: reset", UI_CENTER | UI_SMALLFONT, hangarDimColor );
 }
 
 
@@ -258,6 +263,23 @@ static sfxHandle_t Hangar_Key( int key ) {
 		hangarMenuInfo.previewYaw = 150;
 		hangarMenuInfo.previewPitch = 0;
 		hangarMenuInfo.previewRoll = 0;
+		hangarMenuInfo.previewZoom = 1;
+		return 0;
+	case K_MWHEELUP:
+	case K_KP_PLUS:
+	case '=':
+		hangarMenuInfo.previewZoom *= ZOOM_STEP;
+		if ( hangarMenuInfo.previewZoom > ZOOM_MAX ) {
+			hangarMenuInfo.previewZoom = ZOOM_MAX;
+		}
+		return 0;
+	case K_MWHEELDOWN:
+	case K_KP_MINUS:
+	case '-':
+		hangarMenuInfo.previewZoom /= ZOOM_STEP;
+		if ( hangarMenuInfo.previewZoom < ZOOM_MIN ) {
+			hangarMenuInfo.previewZoom = ZOOM_MIN;
+		}
 		return 0;
 	}
 	return Menu_DefaultKey( &hangarMenuInfo.menu, key );
@@ -288,6 +310,7 @@ static void Hangar_Event( void *ptr, int event ) {
 		hangarMenuInfo.previewYaw = 150;
 		hangarMenuInfo.previewPitch = 0;
 		hangarMenuInfo.previewRoll = 0;
+		hangarMenuInfo.previewZoom = 1;
 		break;
 	case ID_PILOT:
 		trap_Cvar_Set( "model", hangarRobots[hangarMenuInfo.selected].model );
@@ -352,6 +375,7 @@ static void Hangar_Init( void ) {
 		}
 	}
 	hangarMenuInfo.previewYaw = 150;
+	hangarMenuInfo.previewZoom = 1;
 
 	hangarMenuInfo.banner.generic.type	= MTYPE_BTEXT;
 	hangarMenuInfo.banner.generic.x		= 320;

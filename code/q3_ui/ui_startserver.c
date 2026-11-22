@@ -785,6 +785,9 @@ static void ServerOptions_Start( void ) {
 	trap_Cvar_SetValue ("capturelimit", Com_Clamp( 0, flaglimit, flaglimit ) );
 	trap_Cvar_SetValue( "g_friendlyfire", friendlyfire );
 	trap_Cvar_SetValue( "sv_pure", pure );
+	// WALKER: bots come only from the slots chosen here; without this the
+	// server would add random bots up to bot_minplayers on its own
+	trap_Cvar_SetValue( "bot_minplayers", 0 );
 	trap_Cvar_Set("sv_hostname", s_serveroptions.hostname.field.buffer );
 	
 	trap_Cvar_SetValue( "sv_punkbuster", s_serveroptions.punkbuster.curvalue );

@@ -42,7 +42,7 @@ WALKER - игра про шагающих роботов на движке Quake
    собранные QVM заменяют старые копии из pak0.pk3.
 
 3. Запуск (рабочая папка - walker/dist, движок ищет basewalker в текущей папке):
-     Walker.exe +map wk_islands
+     Walker.exe +set bot_minplayers 6 +map wk_islands   (6 участников: вы и боты)
    Или из меню: SINGLE PLAYER (бой с ботами) или MULTIPLAYER -> START SERVER -> Islands.
 
 После правки любого .h пересобирается всё (так проще и надёжнее, чем отслеживать зависимости).
@@ -160,7 +160,7 @@ TAB - счёт, ~ - консоль, ESC - меню, F12 - снимок экра�
   q3asm/q3asm.c          при ошибках сборки возвращает код ошибки (make останавливается)
   q3_ui/ui_hangar.c      ангар (прототип): 5 роботов в боксах, крупный вид выбранного робота;
                          левая кнопка мыши — поворот и наклон, правая — крен, стрелки и
-                         PgUp/PgDn, HOME — сброс; AUTO ROTATE включает и выключает
+                         PgUp/PgDn, колесо мыши (или +/-) — масштаб, HOME — сброс; AUTO ROTATE включает и выключает
                          вращение (ui_hangarAutoRotate); PILOT выбирает робота.
                          Наклон и крен всей модели — uiPlayerOrbit в ui_players.c
   renderer/tr_init.c     r_ambientScale 0.45, r_directedScale 1.4: модели контрастнее
@@ -169,6 +169,16 @@ TAB - счёт, ~ - консоль, ESC - меню, F12 - снимок экра�
                          id снижал качество текстур (r_picmip 1, bilinear) — убрано
   qcommon/common.c       com_zoneMegs 64, com_hunkMegs 128 (навигации ботов по карте нужно ~20 МБ)
   game/g_misc.c          зеркало misc_portal_surface рассылается всем (SVF_BROADCAST)
+  renderer/tr_bsp.c      R_MergeWorldFaces: при загрузке карты мелкие грани мира с одним шейдером
+                         (и картой освещения) в одной клетке 512x512 сливаются в поверхности до
+                         900 вершин — рельеф из ~18000 граней рисуется как ~300 поверхностей
+                         (r_mergeFaces 0 отключает)
+  renderer/tr_shade.c    r_drawfog 0 отключает дымку; в отражении воды дымка не рисуется
+  renderer/tr_backend.c  r_noportals 1 (отражения выкл.): под водой бледный цвет неба
+  q3_ui/ui_effects.c     меню SETUP -> EFFECTS: FPS, отражения, дымка, тени, динамический свет,
+                         следы, сглаживание, фильтрация, качество текстур; FAST / QUALITY / APPLY
+  q3_ui/ui_selectbots.c, ui_startserver.c: после ручного выбора ботов bot_minplayers 0, чтобы
+                         сервер не добавлял ботов сам (быстрый старт: +set bot_minplayers 6)
   renderer/tr_image.c    анизотропная фильтрация текстур (r_ext_texture_filter_anisotropic 1,
                          r_ext_max_anisotropy 8): земля не размывается под острым углом;
                          r_picmip 0 по умолчанию — текстуры в полном размере
