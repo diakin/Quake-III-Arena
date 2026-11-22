@@ -26,7 +26,7 @@ typedef struct
 	vec3_t	p[4];		// variable sized
 } winding_t;
 
-#define	MAX_POINTS_ON_WINDING	64
+#define	MAX_POINTS_ON_WINDING	256	// WALKER: was 64; long terrain portal windings
 
 // you can define on_epsilon in the makefile as tighter
 #ifndef	ON_EPSILON

@@ -173,6 +173,15 @@ void R_BoxSurfaces_r(mnode_t *node, vec3_t mins, vec3_t maxs, surfaceType_t **li
 				surf->viewCount = tr.viewCount;
 			}
 		}
+		// WALKER: joined world faces (R_MergeWorldFaces) take marks per triangle
+		else if (*(surf->data) == SF_TRIANGLES) {
+			srfTriangles_t	*tri = ( srfTriangles_t * ) surf->data;
+			if ( tri->bounds[0][0] > maxs[0] || tri->bounds[1][0] < mins[0]
+				|| tri->bounds[0][1] > maxs[1] || tri->bounds[1][1] < mins[1]
+				|| tri->bounds[0][2] > maxs[2] || tri->bounds[1][2] < mins[2] ) {
+				surf->viewCount = tr.viewCount;
+			}
+		}
 		else if (*(surfaceType_t *) (surf->data) != SF_GRID) surf->viewCount = tr.viewCount;
 		// check the viewCount because the surface may have
 		// already been added if it spans multiple leafs
@@ -394,6 +403,38 @@ int R_MarkFragments( int numPoints, const vec3_t *points, const vec3_t projectio
 							return returnedFragments;	// not enough space for more fragments
 						}
 					}
+				}
+			}
+		}
+		else if (*surfaces[i] == SF_TRIANGLES) {
+			// WALKER: joined world faces; every triangle is checked like a face
+			srfTriangles_t	*tri = ( srfTriangles_t * ) surfaces[i];
+
+			for ( k = 0 ; k < tri->numIndexes ; k += 3 ) {
+				drawVert_t	*corner[3];
+				vec3_t		triMins, triMaxs;
+
+				for ( j = 0 ; j < 3 ; j++ ) {
+					corner[j] = tri->verts + tri->indexes[k + j];
+				}
+				if ( DotProduct( corner[0]->normal, projectionDir ) > -0.5 ) {
+					continue;
+				}
+				ClearBounds( triMins, triMaxs );
+				for ( j = 0 ; j < 3 ; j++ ) {
+					AddPointToBounds( corner[j]->xyz, triMins, triMaxs );
+				}
+				if ( triMins[0] > maxs[0] || triMaxs[0] < mins[0] || triMins[1] > maxs[1] || triMaxs[1] < mins[1]
+					|| triMins[2] > maxs[2] || triMaxs[2] < mins[2] ) {
+					continue;
+				}
+				for ( j = 0 ; j < 3 ; j++ ) {
+					VectorMA( corner[j]->xyz, MARKER_OFFSET, corner[j]->normal, clipPoints[0][j] );
+				}
+				R_AddMarkFragments( 3, clipPoints, numPlanes, normals, dists, maxPoints, pointBuffer,
+					maxFragments, fragmentBuffer, &returnedPoints, &returnedFragments, mins, maxs );
+				if ( returnedFragments == maxFragments ) {
+					return returnedFragments;	// not enough space for more fragments
 				}
 			}
 		}

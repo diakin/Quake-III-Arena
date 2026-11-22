@@ -563,6 +563,13 @@ void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 
 	for (i = 0, drawSurf = drawSurfs ; i < numDrawSurfs ; i++, drawSurf++) {
 		if ( drawSurf->sort == oldSort ) {
+			// WALKER: a stencil shadow volume needs room for a second copy of every
+			// vertex (RB_ShadowTessEnd skips a batch of SHADER_MAX_VERTEXES / 2 or
+			// more), so shadow surfaces of one entity are cast one surface at a time
+			if ( tess.shader == tr.shadowShader && tess.numVertexes > 0 ) {
+				RB_EndSurface();
+				RB_BeginSurface( tr.shadowShader, oldFogNum );
+			}
 			// fast path, same as previous sort
 			rb_surfaceTable[ *drawSurf->surface ]( drawSurf->surface );
 			continue;

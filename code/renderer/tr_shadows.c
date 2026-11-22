@@ -166,6 +166,12 @@ void RB_ShadowTessEnd( void ) {
 	}
 
 	VectorCopy( backEnd.currentEntity->lightDir, lightDir );
+	// WALKER: shadows always fall away from the sun, whatever the dynamic lights do
+	if ( VectorLength( tr.sunLight ) > 0 ) {
+		lightDir[0] = DotProduct( tr.sunDirection, backEnd.currentEntity->e.axis[0] );
+		lightDir[1] = DotProduct( tr.sunDirection, backEnd.currentEntity->e.axis[1] );
+		lightDir[2] = DotProduct( tr.sunDirection, backEnd.currentEntity->e.axis[2] );
+	}
 
 	// project vertexes away from light direction
 	for ( i = 0 ; i < tess.numVertexes ; i++ ) {
@@ -319,6 +325,12 @@ void RB_ProjectionShadowDeform( void ) {
 	groundDist = backEnd.or.origin[2] - backEnd.currentEntity->e.shadowPlane;
 
 	VectorCopy( backEnd.currentEntity->lightDir, lightDir );
+	// WALKER: shadows always fall away from the sun, whatever the dynamic lights do
+	if ( VectorLength( tr.sunLight ) > 0 ) {
+		lightDir[0] = DotProduct( tr.sunDirection, backEnd.currentEntity->e.axis[0] );
+		lightDir[1] = DotProduct( tr.sunDirection, backEnd.currentEntity->e.axis[1] );
+		lightDir[2] = DotProduct( tr.sunDirection, backEnd.currentEntity->e.axis[2] );
+	}
 	d = DotProduct( lightDir, ground );
 	// don't let the shadows get too long or go negative
 	if ( d < 0.5 ) {

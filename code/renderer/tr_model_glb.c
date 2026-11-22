@@ -49,8 +49,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define GLB_CHUNK_JSON			0x4E4F534A		// "JSON"
 #define GLB_CHUNK_BIN			0x004E4942		// "BIN\0"
 
-#define GLB_MAX_SURFACE_VERTS	( SHADER_MAX_VERTEXES - 1 )
-#define GLB_MAX_SURFACE_TRIS	( ( SHADER_MAX_INDEXES - 1 ) / 3 )
+// WALKER: half of the tess buffer: stencil shadows (RB_ShadowTessEnd) need room for
+// a second, extruded copy of every vertex and skip larger surfaces, so the robot
+// with its baked texture atlas (more vertices at UV seams) lost its shadow
+#define GLB_MAX_SURFACE_VERTS	( SHADER_MAX_VERTEXES / 2 - 1 )
+#define GLB_MAX_SURFACE_TRIS	( SHADER_MAX_VERTEXES / 2 - 1 )
 #define GLB_MAX_SURFACES		256
 #define GLB_DEFAULT_FPS			15.0f
 #define GLB_DEFAULT_SCALE		"39.37"

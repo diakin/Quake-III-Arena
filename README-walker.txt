@@ -104,8 +104,13 @@ TAB - счёт, ~ - консоль, ESC - меню, F12 - снимок экра�
                       гуще, вдали — отражение, как по Френелю), затем мелководье: кадр
                       умножается на (1 - water_mask), прибавляется water_seabed (дно, уже
                       умноженное на маску; маска — по расстоянию от берега, у кромки 93% дна),
-                      затем два слоя ряби и блики на гребнях. Под водой у берега пологая отмель.
-                      rgbGen oneMinusPortal <дистанция> (renderer) гасит слой с расстоянием
+                      Под водой у берега пологая отмель. Ближе MIRROR_START (120 ед.) к берегу
+                      зеркало не пишет глубину (альфа-тест water_deep.tga), и там видно настоящее
+                      дно (рельеф с картой освещения). Второй слой воды water_shore рисуется после
+                      рельефа: полоса цвета воды (water_band) от 0 у кромки до 1 на границе
+                      зеркала, затем рябь и блики — граница зеркала не видна.
+                      Высоты рельефа с шагом 1/4 ед., ни одной вершины на уровне воды (иначе
+                      кромка шла прямыми линиями по сетке).
   import_splash.py    шаги по воде из записи walker/sounds/footsteps_water.mp3
                       (режет на отдельные шаги, splash1-4.wav)
   make_botfiles.py    файлы ботов: характеры, оружие, фразы, scripts/bots.txt,
@@ -122,7 +127,7 @@ TAB - счёт, ~ - консоль, ESC - меню, F12 - снимок экра�
          gcc -m32 ... -lm -lpthread). Добавлено: ключ -light -skylight <яркость> <число
          направлений> — свет всего неба (мягкие тени в углах и под навесами, освещение
          моделей в тени), потоки POSIX в common/threads.c (свет и vis на всех ядрах),
-         MAX_MAP_BRUSHSIDES 0x40000 в code/qcommon/qfiles.h (и Q3_MAX_MAP_BRUSHSIDES в
+         MAX_POINTS_ON_WINDING 256 в common/polylib.h, MAX_MAP_BRUSHSIDES 0x40000 в code/qcommon/qfiles.h (и Q3_MAX_MAP_BRUSHSIDES в
          code/bspc/q3files.h): рельефу на сетке 32 ед. нужно больше сторон брашей
   bspc:  code/bspc - файлы из списка GAME_OBJS в code/bspc/Makefile, флаги
          -DLINUX -DBSPC -Dstricmp=strcasecmp
@@ -187,6 +192,12 @@ TAB - счёт, ~ - консоль, ESC - меню, F12 - снимок экра�
                          следы, сглаживание, фильтрация, качество текстур; FAST / QUALITY / APPLY
   q3_ui/ui_selectbots.c, ui_startserver.c: после ручного выбора ботов bot_minplayers 0, чтобы
                          сервер не добавлял ботов сам (быстрый старт: +set bot_minplayers 6)
+  renderer/tr_light.c    на карте с солнцем (q3map_sun) модели освещаются с направления солнца:
+                         сетка освещения открытой карты давала свет снизу
+  renderer/tr_shadows.c, tr_backend.c, tr_model_glb.c: тени роботов (cg_shadows 2) — объём
+                         тени от солнца, поверхности тени по одной, поверхности GLB до 499
+                         вершин; tr_mesh.c: тени и внутри дымки; tr_marks.c: следы и пятно тени
+                         на слитых гранях мира; MAX_FACE_POINTS 256
   renderer/tr_image.c    анизотропная фильтрация текстур (r_ext_texture_filter_anisotropic 1,
                          r_ext_max_anisotropy 8): земля не размывается под острым углом;
                          r_picmip 0 по умолчанию — текстуры в полном размере

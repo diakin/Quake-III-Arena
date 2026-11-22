@@ -369,9 +369,11 @@ void R_AddMD3Surfaces( trRefEntity_t *ent ) {
 		// we will add shadows even if the main object isn't visible in the view
 
 		// stencil shadows can't do personal models unless I polyhedron clip
+		// WALKER: the map-wide haze (fog volume without a visible surface) no longer
+		// switches the shadows of the models inside it off
 		if ( !personalModel
 			&& r_shadows->integer == 2 
-			&& fogNum == 0
+			&& ( fogNum == 0 || !tr.world || !tr.world->fogs[fogNum].hasSurface )
 			&& !(ent->e.renderfx & ( RF_NOSHADOW | RF_DEPTHHACK ) ) 
 			&& shader->sort == SS_OPAQUE ) {
 			R_AddDrawSurf( (void *)surface, tr.shadowShader, 0, qfalse );
@@ -379,7 +381,7 @@ void R_AddMD3Surfaces( trRefEntity_t *ent ) {
 
 		// projection shadows work fine with personal models
 		if ( r_shadows->integer == 3
-			&& fogNum == 0
+			&& ( fogNum == 0 || !tr.world || !tr.world->fogs[fogNum].hasSurface )
 			&& (ent->e.renderfx & RF_SHADOW_PLANE )
 			&& shader->sort == SS_OPAQUE ) {
 			R_AddDrawSurf( (void *)surface, tr.projectionShadowShader, 0, qfalse );

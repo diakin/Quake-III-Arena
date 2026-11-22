@@ -1989,6 +1989,7 @@ void RE_LoadWorldMap( const char *name ) {
 	tr.sunDirection[2] = 0.9f;
 
 	VectorNormalize( tr.sunDirection );
+	VectorClear( tr.sunLight );		// WALKER: set again when the sky shader is parsed
 
 	tr.worldMapLoaded = qtrue;
 

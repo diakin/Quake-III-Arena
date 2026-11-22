@@ -310,6 +310,13 @@ void R_SetupEntityLighting( const trRefdef_t *refdef, trRefEntity_t *ent ) {
 	if ( !(refdef->rdflags & RDF_NOWORLDMODEL ) 
 		&& tr.world->lightGridData ) {
 		R_SetupEntityLightingGrid( ent );
+		// WALKER: on a map with a sun (q3map_sun in the sky shader) models take the
+		// light direction from the sun; the light grid of the big open map gave
+		// directions from below for many points, the robots were lit from under
+		// their feet and their shadows went up into the air
+		if ( VectorLength( tr.sunLight ) > 0 ) {
+			VectorCopy( tr.sunDirection, ent->lightDir );
+		}
 	} else {
 		ent->ambientLight[0] = ent->ambientLight[1] = 
 			ent->ambientLight[2] = tr.identityLight * 150;
