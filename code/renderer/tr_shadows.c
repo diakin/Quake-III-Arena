@@ -333,7 +333,16 @@ void RB_ShadowFinish( void ) {
 	qglDisable (GL_CLIP_PLANE0);
 	qglDisable (GL_CULL_FACE);
 
+	// WALKER: a plain multiply by 0.6 (the rock shadows on the water darken as much):
+	// no second texture unit, no fog and no texture left over from the last shader
+	if ( qglActiveTextureARB ) {
+		GL_SelectTexture( 1 );
+		qglDisable( GL_TEXTURE_2D );
+		GL_SelectTexture( 0 );
+	}
+	qglDisable( GL_FOG );
 	GL_Bind( tr.whiteImage );
+	GL_TexEnv( GL_MODULATE );
 
     qglLoadIdentity ();
 

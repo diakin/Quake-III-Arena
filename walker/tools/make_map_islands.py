@@ -25,6 +25,7 @@ FOG_COLOR = (0.72, 0.76, 0.77)   # как небо у горизонта
 FOG_DISTANCE = 12000
 SUN_AZIMUTH = 140.0      # градусы, как в q3map_sun
 SUN_ELEVATION = 40.0
+SHADOW_DARKEN = 0.4      # тени, которые рисует игра (робот, глыбы на воде): яркость x0.6
 
 # ================================================================ текстуры
 
@@ -1159,7 +1160,9 @@ def rock_shadow(x, y, top, radius):
                         for fraction in np.linspace(0.2, 1, 9) for side in (-0.5, 0, 0.5)])
     if terrain_height_at(samples[:, 0], samples[:, 1]).min() >= WATER_Z:
         return
-    ROCK_SHADOWS.append([(float(corner[0]), float(corner[1]), WATER_Z + 1.0) for corner in corners])
+    # над водой на 0.1: вершины суши не ближе 0.25 к уровню воды (height_map), и тень
+    # не ложится на берег поверх запечённой тени
+    ROCK_SHADOWS.append([(float(corner[0]), float(corner[1]), WATER_Z + 0.1) for corner in corners])
 
 
 def write_rock_shadows():
@@ -1182,7 +1185,7 @@ def make_rock_shadow_texture():
     end = np.clip((1 - along) / 0.5, 0, 1)
     end = end * end * (3 - 2 * end)
     mask = side[None, :] * (start * end)[:, None]
-    value = (255 * (1 - 0.5 * mask)).astype(np.uint8)
+    value = (255 * (1 - SHADOW_DARKEN * mask)).astype(np.uint8)
     image = Image.fromarray(np.stack([value] * 3, axis=-1))
     path = os.path.join(DATA, 'textures/walker/rock_shadow.tga')
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -1625,6 +1628,13 @@ def vertex_lit_shaders():
     return '\n'.join(blocks) + '\n'
 
 
+# шаг карты освещения (единиц на тексель) для построек: по умолчанию 16, и резкая граница
+# тени шла лесенкой по 16 единиц. Площадки — 4, остальной бетон и металл — 8; земля и скалы
+# остаются на 16 (их площадь велика, а на неровной текстуре ступени не видны)
+LIGHTMAP_SAMPLE_SIZE = {'concrete_tiles': 4, 'helipad': 4, 'concrete': 8, 'concrete_dark': 8, 'metal_rust': 8,
+                        'metal_panel': 8, 'metal_grate': 8, 'hazard': 8, 'rocket_white': 8}
+
+
 def lightmapped_shaders():
     """явные шейдеры для текстур с картой освещения: освещение, текстура и общий крупный рисунок
     (tcGen vector: проекция в мировых координатах, один рисунок на все поверхности подряд)."""
@@ -1636,10 +1646,11 @@ def lightmapped_shaders():
         if full in defined or not shader.startswith('walker/'):
             continue
         name = shader.split('/')[-1]
+        sample = f"\tq3map_lightmapsamplesize {LIGHTMAP_SAMPLE_SIZE[name]}\n" if name in LIGHTMAP_SAMPLE_SIZE else ''
         blocks.append(f"""{full}
 {{
 	qer_editorimage textures/walker/{name}.tga
-	{{
+{sample}	{{
 		map $lightmap
 		rgbGen identity
 	}}
