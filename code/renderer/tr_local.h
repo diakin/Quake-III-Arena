@@ -1039,6 +1039,8 @@ extern cvar_t	*r_ext_gamma_control;
 extern cvar_t	*r_ext_texenv_op;
 extern cvar_t	*r_ext_multitexture;
 extern cvar_t	*r_ext_compiled_vertex_array;
+extern cvar_t	*r_ext_texture_filter_anisotropic;
+extern cvar_t	*r_ext_max_anisotropy;
 extern cvar_t	*r_ext_texture_env_add;
 
 extern	cvar_t	*r_nobind;						// turns off binding to appropriate textures

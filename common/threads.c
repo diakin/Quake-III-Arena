@@ -31,6 +31,7 @@ int		oldf;
 qboolean		pacifier;
 
 qboolean	threaded;
+static void (*workfunction_posix) (int);
 
 /*
 =============
@@ -299,6 +300,93 @@ void RunThreadsOn (int workcnt, qboolean showpacifier, void(*func)(int))
 		_printf (" (%i)\n", end-start);
 }
 
+
+#endif
+
+/*
+===================================================================
+
+LINUX (POSIX threads) -- WALKER: q3map -light and -vis use all cores
+
+===================================================================
+*/
+
+#if defined(__linux__) && !defined(USED)
+#define	USED
+
+#include <pthread.h>
+#include <unistd.h>
+
+int		numthreads = -1;
+static pthread_mutex_t	posix_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void ThreadSetDefault (void)
+{
+	if (numthreads == -1)	// not set manually
+	{
+		numthreads = sysconf( _SC_NPROCESSORS_ONLN );
+		if ( numthreads < 1 )
+			numthreads = 1;
+		if ( numthreads > MAX_THREADS )
+			numthreads = MAX_THREADS;
+	}
+	_printf ("%i threads\n", numthreads);
+}
+
+void ThreadLock (void)
+{
+	if (threaded)
+		pthread_mutex_lock (&posix_mutex);
+}
+
+void ThreadUnlock (void)
+{
+	if (threaded)
+		pthread_mutex_unlock (&posix_mutex);
+}
+
+static void *PosixThreadStart (void *arg)
+{
+	workfunction_posix ((int)(long)arg);
+	return NULL;
+}
+
+void RunThreadsOn (int workcnt, qboolean showpacifier, void(*func)(int))
+{
+	int			i;
+	pthread_t	work_threads[MAX_THREADS];
+	int			start, end;
+
+	start = I_FloatTime ();
+	dispatch = 0;
+	workcount = workcnt;
+	oldf = -1;
+	pacifier = showpacifier;
+
+	if (pacifier)
+		setbuf (stdout, NULL);
+
+	if ( numthreads <= 1 ) {
+		func (0);
+	} else {
+		threaded = qtrue;
+		workfunction_posix = func;
+		for (i=0 ; i<numthreads ; i++)
+		{
+			if ( pthread_create( &work_threads[i], NULL, PosixThreadStart, (void *)(long)i ) != 0 )
+				Error ("pthread_create failed");
+		}
+		for (i=0 ; i<numthreads ; i++)
+		{
+			pthread_join (work_threads[i], NULL);
+		}
+		threaded = qfalse;
+	}
+
+	end = I_FloatTime ();
+	if (pacifier)
+		_printf (" (%i)\n", end-start);
+}
 
 #endif
 

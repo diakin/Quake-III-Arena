@@ -1,0 +1,743 @@
+"""Запекание текстур робота walker: уникальная развёртка и «боевой» вид.
+
+python3 walker/tools/bake_walker.py <папка модели в данных игры>
+
+В папке должны лежать lower.glb, upper.glb, head.glb, исходные текстуры материалов и
+файлы .skin всех окрасок (их пишут make_botfiles.py и копия assets/baseq3/models/players/walker).
+
+Что делается для каждой части (lower, upper, head):
+  1. все примитивы собираются в одну сетку в позе покоя, xatlas строит уникальную развёртку;
+  2. каждый тексель атласа получает точку на поверхности, нормаль, материал и исходные UV;
+  3. цвет = текстура материала окраски, затем:
+       - затенение в углах и стыках (ambient occlusion, лучи через embree);
+       - потёртости краски на выпуклых рёбрах (до голого металла), светлый кант рёбер;
+       - мелкие царапины, пыль сверху, потёки на вертикальных стенках, грязь снизу;
+  4. атлас пишется в <часть>_<окраска>.jpg, в GLB подменяются UV (вершины на швах развёртки
+     дублируются), .skin всех окрасок указывают на шейдеры с атласом,
+     scripts/walker_player.shader описывает материалы (краска, металл, свечение, стекло).
+
+Нужны: numpy, scipy, Pillow, xatlas, embreex (pip install xatlas embreex).
+"""
+import json, os, struct, sys
+import numpy as np
+from PIL import Image
+from scipy import ndimage
+from scipy.spatial import cKDTree
+import xatlas
+from embreex import rtcore_scene as rtcs
+from embreex.mesh_construction import TriangleMesh
+
+MODEL_DIR = sys.argv[1]
+DATA_ROOT = os.path.normpath(os.path.join(MODEL_DIR, '..', '..', '..'))
+SHADER_PREFIX = 'models/players/walker'
+PARTS = {'lower': 1024, 'upper': 1024, 'head': 512}
+SCHEMES = ['default', 'red', 'blue', 'desert', 'urban']
+AO_RAYS = 40
+AO_DISTANCE = 0.55          # единицы модели (1 единица = 14 единиц Quake)
+SUPERSAMPLE = 2             # цвет считается в 2x2 точках на тексель
+
+PAINTED = {'camo_green', 'camo_dark', 'panel_light', 'marking', 'trim_yellow', 'orange'}
+METAL = {'metal_gray', 'metal_dark', 'chrome', 'black'}
+GLOWING = {'engine_glow', 'light_cyan', 'sensor_purple'}
+GLASS = {'canopy_glass'}
+
+# ================================================================ GLB
+
+COMPONENT = {5120: np.int8, 5121: np.uint8, 5122: np.int16, 5123: np.uint16, 5125: np.uint32, 5126: np.float32}
+WIDTH = {'SCALAR': 1, 'VEC2': 2, 'VEC3': 3, 'VEC4': 4, 'MAT4': 16}
+
+
+def read_glb(path):
+    data = open(path, 'rb').read()
+    json_length = struct.unpack('<I', data[12:16])[0]
+    document = json.loads(data[20:20 + json_length])
+    offset = 20 + json_length
+    bin_length = struct.unpack('<I', data[offset:offset + 4])[0]
+    binary = data[offset + 8:offset + 8 + bin_length]
+    return document, binary
+
+
+def accessor(document, binary, index):
+    info = document['accessors'][index]
+    view = document['bufferViews'][info['bufferView']]
+    dtype = np.dtype(COMPONENT[info['componentType']])
+    width = WIDTH[info['type']]
+    start = view.get('byteOffset', 0) + info.get('byteOffset', 0)
+    stride = view.get('byteStride', 0) or dtype.itemsize * width
+    count = info['count']
+    raw = np.frombuffer(binary, dtype=np.uint8, count=stride * (count - 1) + dtype.itemsize * width, offset=start)
+    rows = np.lib.stride_tricks.as_strided(raw, shape=(count, dtype.itemsize * width), strides=(stride, 1))
+    return np.ascontiguousarray(rows).view(dtype).reshape(count, width) if width > 1 else np.ascontiguousarray(rows).view(dtype).reshape(count)
+
+
+def write_glb(path, document, binary):
+    json_bytes = json.dumps(document, separators=(',', ':')).encode('utf-8')
+    json_bytes += b' ' * (-len(json_bytes) % 4)
+    binary = bytes(binary) + b'\0' * (-len(binary) % 4)
+    total = 12 + 8 + len(json_bytes) + 8 + len(binary)
+    with open(path, 'wb') as file:
+        file.write(struct.pack('<III', 0x46546C67, 2, total))
+        file.write(struct.pack('<II', len(json_bytes), 0x4E4F534A) + json_bytes)
+        file.write(struct.pack('<II', len(binary), 0x004E4942) + binary)
+
+
+def quat_matrix(quat):
+    x, y, z, w = quat
+    return np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                     [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                     [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+
+
+def node_matrix(node):
+    if 'matrix' in node:
+        return np.array(node['matrix'], dtype=float).reshape(4, 4).T
+    matrix = np.eye(4)
+    rotation = quat_matrix(node.get('rotation', [0, 0, 0, 1]))
+    matrix[:3, :3] = rotation * np.array(node.get('scale', [1, 1, 1]))[None, :]
+    matrix[:3, 3] = node.get('translation', [0, 0, 0])
+    return matrix
+
+
+def world_matrices(document):
+    result = {}
+    def walk(index, parent):
+        node = document['nodes'][index]
+        matrix = parent @ node_matrix(node)
+        result[index] = matrix
+        for child in node.get('children', []):
+            walk(child, matrix)
+    for root in document['scenes'][document.get('scene', 0)]['nodes']:
+        walk(root, np.eye(4))
+    return result
+
+
+# ================================================================ шум в пространстве модели
+
+PERMUTATION = np.random.default_rng(7).permutation(256)
+PERMUTATION = np.concatenate([PERMUTATION, PERMUTATION])
+LATTICE = np.random.default_rng(8).random(256)
+
+
+def value_noise(points):
+    """гладкий шум по точкам (N, 3), значения в [0, 1]."""
+    cell = np.floor(points).astype(np.int64)
+    frac = points - cell
+    fade = frac * frac * (3 - 2 * frac)
+    cell &= 255
+    result = 0.0
+    for corner in range(8):
+        offset = np.array([(corner >> 0) & 1, (corner >> 1) & 1, (corner >> 2) & 1])
+        index = PERMUTATION[PERMUTATION[PERMUTATION[(cell[:, 0] + offset[0]) & 255] + ((cell[:, 1] + offset[1]) & 255)] + ((cell[:, 2] + offset[2]) & 255)]
+        weight = np.prod(np.where(offset[None, :] == 1, fade, 1 - fade), axis=1)
+        result = result + weight * LATTICE[index]
+    return result
+
+
+def fbm(points, octaves=4, gain=0.5):
+    total, amplitude, norm = 0.0, 1.0, 0.0
+    for octave in range(octaves):
+        total = total + amplitude * value_noise(points * (2 ** octave) + octave * 17.31)
+        norm += amplitude
+        amplitude *= gain
+    return total / norm
+
+
+def smoothstep(edge0, edge1, value):
+    ratio = np.clip((value - edge0) / (edge1 - edge0), 0, 1)
+    return ratio * ratio * (3 - 2 * ratio)
+
+
+# ================================================================ одна часть
+
+class Part:
+    def __init__(self, name, resolution):
+        self.name = name
+        self.resolution = resolution
+        self.path = os.path.join(MODEL_DIR, name + '.glb')
+        self.document, self.binary = read_glb(self.path)
+        self.collect()
+
+    def collect(self):
+        """все примитивы в одну сетку (мировые координаты позы покоя)."""
+        document, binary = self.document, self.binary
+        matrices = world_matrices(document)
+        positions, normals, uvs, faces, face_material, face_primitive = [], [], [], [], [], []
+        self.primitives = []    # (mesh, primitive, первая грань, число граней, первая вершина, число вершин)
+        vertex_base = face_base = 0
+        for node_index, node in enumerate(document['nodes']):
+            if 'mesh' not in node:
+                continue
+            matrix = matrices[node_index]
+            normal_matrix = np.linalg.inv(matrix[:3, :3]).T
+            for primitive_index, primitive in enumerate(document['meshes'][node['mesh']]['primitives']):
+                attributes = primitive['attributes']
+                local = accessor(document, binary, attributes['POSITION']).astype(float)
+                normal = accessor(document, binary, attributes['NORMAL']).astype(float)
+                uv = accessor(document, binary, attributes['TEXCOORD_0']).astype(float)
+                if 'indices' in primitive:
+                    index = accessor(document, binary, primitive['indices']).astype(np.int64).reshape(-1, 3)
+                else:
+                    index = np.arange(len(local)).reshape(-1, 3)
+                world = local @ matrix[:3, :3].T + matrix[:3, 3]
+                world_normal = normal @ normal_matrix.T
+                world_normal /= np.linalg.norm(world_normal, axis=1, keepdims=True) + 1e-12
+                positions.append(world); normals.append(world_normal); uvs.append(uv)
+                faces.append(index + vertex_base)
+                face_material += [primitive['material']] * len(index)
+                face_primitive += [len(self.primitives)] * len(index)
+                self.primitives.append({'mesh': node['mesh'], 'primitive': primitive_index, 'node': node_index,
+                                        'first_face': face_base, 'faces': len(index),
+                                        'first_vertex': vertex_base, 'local': local, 'normal': normal})
+                vertex_base += len(local)
+                face_base += len(index)
+        self.positions = np.concatenate(positions)
+        self.normals = np.concatenate(normals)
+        self.uvs = np.concatenate(uvs)
+        self.faces = np.concatenate(faces)
+        self.face_material = np.array(face_material)
+        self.face_primitive = np.array(face_primitive)
+        self.material_names = [material['name'] for material in document['materials']]
+
+    def unwrap(self):
+        """xatlas по сетке, сваренной по положению вершин внутри каждого примитива."""
+        welded_index = np.zeros(len(self.positions), dtype=np.int64)
+        welded_positions = []
+        base = 0
+        for primitive in self.primitives:
+            first = primitive['first_vertex']
+            count = len(primitive['local'])
+            keys = np.round(self.positions[first:first + count] * 2e4).astype(np.int64)
+            unique, inverse = np.unique(keys, axis=0, return_inverse=True)
+            inverse = inverse.reshape(-1)
+            representative = np.zeros(len(unique), dtype=np.int64)
+            representative[inverse] = np.arange(count)
+            welded_positions.append(self.positions[first + representative])
+            welded_index[first:first + count] = inverse + base
+            base += len(unique)
+        welded_positions = np.concatenate(welded_positions).astype(np.float32)
+        welded_faces = welded_index[self.faces].astype(np.uint32)
+        atlas = xatlas.Atlas()
+        atlas.add_mesh(welded_positions, welded_faces)
+        chart_options = xatlas.ChartOptions()
+        chart_options.max_iterations = 4
+        chart_options.normal_deviation_weight = 4.0
+        pack_options = xatlas.PackOptions()
+        pack_options.resolution = self.resolution
+        pack_options.padding = 6
+        pack_options.bilinear = True
+        pack_options.bruteForce = False
+        atlas.generate(chart_options, pack_options)
+        vmapping, atlas_faces, atlas_uv = atlas[0]
+        assert len(atlas_faces) == len(self.faces), 'xatlas changed the face count'
+        assert np.all(welded_index[self.faces[:, 0]] == vmapping[atlas_faces[:, 0]]), 'xatlas changed the face order'
+        self.atlas_faces = atlas_faces.astype(np.int64)
+        self.atlas_uv = atlas_uv.astype(float)
+        self.texels_per_unit = atlas.texels_per_unit
+        print(f'  {self.name}: {len(self.faces)} faces, charts {atlas.chart_count}, utilization {atlas.utilization:.2f}, '
+              f'{self.texels_per_unit:.0f} texels per unit')
+
+    def rasterize(self):
+        """для каждой точки выборки (SUPERSAMPLE^2 на тексель): грань и барицентрические координаты."""
+        size = self.resolution * SUPERSAMPLE
+        face_map = np.full((size, size), -1, dtype=np.int64)
+        bary_map = np.zeros((size, size, 3))
+        corners = self.atlas_uv[self.atlas_faces] * size      # (F, 3, 2) в пикселях выборки
+        for face, triangle in enumerate(corners):
+            low = np.floor(triangle.min(axis=0)).astype(int)
+            high = np.ceil(triangle.max(axis=0)).astype(int)
+            low = np.clip(low, 0, size - 1); high = np.clip(high, 0, size)
+            if high[0] <= low[0] or high[1] <= low[1]:
+                continue
+            grid_y, grid_x = np.mgrid[low[1]:high[1], low[0]:high[0]] + 0.5
+            (x0, y0), (x1, y1), (x2, y2) = triangle
+            area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)
+            if abs(area) < 1e-9:
+                continue
+            weight1 = ((grid_x - x0) * (y2 - y0) - (x2 - x0) * (grid_y - y0)) / area
+            weight2 = ((x1 - x0) * (grid_y - y0) - (grid_x - x0) * (y1 - y0)) / area
+            weight0 = 1 - weight1 - weight2
+            inside = (weight0 >= -1e-6) & (weight1 >= -1e-6) & (weight2 >= -1e-6)
+            rows = grid_y[inside].astype(int); cols = grid_x[inside].astype(int)
+            face_map[rows, cols] = face
+            bary_map[rows, cols] = np.stack([weight0[inside], weight1[inside], weight2[inside]], axis=-1)
+        self.face_map, self.bary_map = face_map, bary_map
+        covered = face_map >= 0
+        self.sample_rows, self.sample_cols = np.nonzero(covered)
+        faces = face_map[covered]
+        bary = bary_map[covered]
+        corner_index = self.faces[faces]                      # исходные вершины
+        self.sample_face = faces
+        self.sample_material = self.face_material[faces]
+        self.sample_position = np.einsum('nk,nkd->nd', bary, self.positions[corner_index])
+        normal = np.einsum('nk,nkd->nd', bary, self.normals[corner_index])
+        self.sample_normal = normal / (np.linalg.norm(normal, axis=1, keepdims=True) + 1e-12)
+        self.sample_uv = np.einsum('nk,nkd->nd', bary, self.uvs[corner_index])
+        triangle = self.positions[self.faces[faces]]
+        face_normal = np.cross(triangle[:, 1] - triangle[:, 0], triangle[:, 2] - triangle[:, 0])
+        self.sample_face_normal = face_normal / (np.linalg.norm(face_normal, axis=1, keepdims=True) + 1e-12)
+        print(f'  {self.name}: {len(faces)} samples')
+
+    def ambient_occlusion(self):
+        scene = rtcs.EmbreeScene()
+        TriangleMesh(scene, self.positions[self.faces].astype(np.float32))
+        count = len(self.sample_position)
+        rng = np.random.default_rng(11)
+        normal = self.sample_normal
+        # опорный базис для каждой точки
+        helper = np.where(np.abs(normal[:, 2:3]) < 0.9, np.array([[0, 0, 1.0]]), np.array([[1.0, 0, 0]]))
+        tangent = np.cross(helper, normal)
+        tangent /= np.linalg.norm(tangent, axis=1, keepdims=True)
+        bitangent = np.cross(normal, tangent)
+        origin = (self.sample_position + self.sample_face_normal * 0.004).astype(np.float32)
+        visible = np.zeros(count)
+        for ray in range(AO_RAYS):
+            # косинусное распределение, стратифицированное по номеру луча
+            u1 = (ray + rng.random(count)) / AO_RAYS
+            u2 = rng.random(count)
+            radius = np.sqrt(u1)
+            angle = 2 * np.pi * u2
+            local_x, local_y, local_z = radius * np.cos(angle), radius * np.sin(angle), np.sqrt(1 - u1)
+            direction = (tangent * local_x[:, None] + bitangent * local_y[:, None] + normal * local_z[:, None]).astype(np.float32)
+            result = scene.run(origin, direction, output=1)
+            distance = result['tfar']
+            hit = (result['geomID'] >= 0) & (distance < AO_DISTANCE)
+            # ближние препятствия затеняют сильнее дальних
+            visible += np.where(hit, (distance / AO_DISTANCE) ** 0.7, 1.0)
+        self.sample_ao = visible / AO_RAYS
+        print(f'  {self.name}: AO mean {self.sample_ao.mean():.2f}')
+
+    def edges(self):
+        """расстояние от каждой точки до ближайшего выпуклого и вогнутого острого ребра."""
+        keys = np.round(self.positions * 2e4).astype(np.int64)
+        _, vertex_id = np.unique(keys, axis=0, return_inverse=True)
+        vertex_id = vertex_id.reshape(-1)
+        faces = vertex_id[self.faces]
+        triangle = self.positions[self.faces]
+        face_normal = np.cross(triangle[:, 1] - triangle[:, 0], triangle[:, 2] - triangle[:, 0])
+        face_area = np.linalg.norm(face_normal, axis=1)
+        valid = face_area > 1e-10
+        face_normal = face_normal / (face_area[:, None] + 1e-12)
+        centroid = triangle.mean(axis=1)
+        edge_faces = {}
+        for face in np.nonzero(valid)[0]:
+            for corner in range(3):
+                first, second = faces[face, corner], faces[face, (corner + 1) % 3]
+                key = (min(first, second), max(first, second))
+                edge_faces.setdefault(key, []).append((face, corner))
+        convex_points, concave_points = [], []
+        for key, users in edge_faces.items():
+            if len(users) != 2:
+                continue
+            (face_a, corner_a), (face_b, _) = users
+            cosine = np.dot(face_normal[face_a], face_normal[face_b])
+            if cosine > 0.82:          # меньше ~35 градусов — не ребро
+                continue
+            start = self.positions[self.faces[face_a, corner_a]]
+            end = self.positions[self.faces[face_a, (corner_a + 1) % 3]]
+            length = np.linalg.norm(end - start)
+            steps = max(2, int(length / 0.006))
+            points = start[None, :] + (end - start)[None, :] * np.linspace(0, 1, steps)[:, None]
+            convex = np.dot(centroid[face_b] - centroid[face_a], face_normal[face_a]) < 0
+            (convex_points if convex else concave_points).append(points)
+        def distance_to(points):
+            if not points:
+                return np.full(len(self.sample_position), 1e3)
+            tree = cKDTree(np.concatenate(points))
+            distance, _ = tree.query(self.sample_position, k=1, workers=-1)
+            return distance
+        self.sample_convex = distance_to(convex_points)
+        self.sample_concave = distance_to(concave_points)
+        print(f'  {self.name}: sharp edges convex {len(convex_points)}, concave {len(concave_points)}')
+
+    def masks(self):
+        """маски износа, общие для всех окрасок."""
+        position = self.sample_position
+        normal = self.sample_normal
+        texel = 1.0 / self.texels_per_unit
+        chip_noise = fbm(position * 38.0, 4)
+        wide_noise = fbm(position * 6.0 + 3.1, 3)
+        # сколы краски на выпуклых рёбрах: ширина пляшет, местами сколов нет совсем
+        width = texel * (0.6 + 4.5 * np.clip(chip_noise - 0.35, 0, 1) * 2.2) * (0.4 + wide_noise)
+        self.wear = smoothstep(0.0, 1.0, (width - self.sample_convex) / (texel * 1.2 + 1e-9))
+        self.wear *= smoothstep(0.38, 0.55, chip_noise)
+        # светлый кант на рёбрах (стёртая до блеска кромка) и тёмная грязь во вогнутых углах
+        self.edge_light = np.exp(-self.sample_convex / (texel * 1.5))
+        self.crevice = np.exp(-self.sample_concave / (texel * 3.0)) * (0.5 + 0.5 * wide_noise)
+        # царапины: тонкие линии там, где шум проходит через середину
+        scratch_field = value_noise(position * np.array([90.0, 14.0, 90.0]) + 5.0)
+        scratch_mask = value_noise(position * 4.0 + 9.0)
+        self.scratch = smoothstep(0.012, 0.0, np.abs(scratch_field - 0.5)) * smoothstep(0.55, 0.75, scratch_mask)
+        # высота: у glTF ось Y вверх; ноги грязнее
+        height = position[:, 1]
+        low, high = self.height_range
+        relative = np.clip((height - low) / (high - low + 1e-9), 0, 1)
+        dirt_noise = fbm(position * 9.0 + 1.7, 4)
+        self.mud = np.clip((self.mud_level - relative) / self.mud_level, 0, 1) ** 1.3 * (0.55 + 0.6 * dirt_noise)
+        # потёки на вертикальных стенках
+        vertical = 1 - np.abs(normal[:, 1])
+        streak = value_noise(position * np.array([60.0, 2.5, 60.0]) + 2.0)
+        self.streaks = smoothstep(0.55, 0.85, streak) * vertical * (0.6 + 0.4 * wide_noise)
+        # пыль на горизонтальных поверхностях сверху
+        self.dust = smoothstep(0.55, 0.95, normal[:, 1]) * (0.35 + 0.65 * fbm(position * 14.0 + 4.4, 3))
+        self.grain = fbm(position * 120.0, 2) - 0.5
+        self.panel_masks(texel)
+
+    def panel_masks(self, texel):
+        """швы между панелями брони, заклёпки вдоль швов и разный тон соседних панелей.
+        Проекция по главной оси нормали; на мелких деталях (рядом с рёбрами) швов нет."""
+        position = self.sample_position
+        axis = np.argmax(np.abs(self.sample_normal), axis=1)
+        first = np.choose(axis, [position[:, 1], position[:, 0], position[:, 0]])
+        second = np.choose(axis, [position[:, 2], position[:, 2], position[:, 1]])
+        cell_first, cell_second = 0.46, 0.31
+        line = np.zeros(len(position)); bevel = np.zeros(len(position)); rivet = np.zeros(len(position))
+        tone = np.zeros(len(position))
+        for coord, other, cell, seed in ((first, second, cell_first, 1.0), (second, first, cell_second, 2.0)):
+            shifted = coord / cell + 0.37 * seed + axis * 0.21
+            index = np.floor(shifted)
+            distance = (shifted - np.round(shifted)) * cell          # до ближайшего шва
+            # шов есть не по всей длине: кусками по клеткам другой координаты
+            segment = np.floor(other / (cell * 1.7) + seed)
+            present = value_noise(np.stack([np.round(shifted), segment, axis + seed * 7], axis=1) * 0.999 + 0.5) > 0.32
+            seam = smoothstep(texel * 1.1, texel * 0.4, np.abs(distance)) * present
+            line = np.maximum(line, seam)
+            bevel = np.maximum(bevel, smoothstep(texel * 2.4, texel * 1.2, np.abs(distance - texel * 1.6)) * present)
+            # заклёпки: точки в шаге 0.06 вдоль шва, на расстоянии 0.025 от него
+            along = other / 0.06
+            dot_distance = np.hypot((along - np.round(along)) * 0.06, np.abs(distance) - 0.025)
+            rivet = np.maximum(rivet, smoothstep(texel * 1.6, texel * 0.8, dot_distance) * present)
+            tone += value_noise(np.stack([index, axis * 3.0 + seed, np.zeros_like(index)], axis=1) + 0.5) - 0.5
+        gate = smoothstep(0.03, 0.09, self.sample_convex)
+        self.panel_line = line * gate
+        self.panel_bevel = bevel * gate * (1 - line)
+        self.rivet = rivet * gate * (1 - line)
+        self.panel_tone = tone * 0.5
+
+    def base_colors(self, scheme):
+        """цвет материала окраски в каждой точке по исходным (повторяющимся) UV."""
+        skin = read_skin(os.path.join(MODEL_DIR, f'{self.name}_{scheme}.skin'))
+        colors = np.zeros((len(self.sample_position), 3))
+        for material_index, material in enumerate(self.material_names):
+            selected = self.sample_material == material_index
+            if not np.any(selected):
+                continue
+            texture_name = os.path.basename(skin.get(material, f'{SHADER_PREFIX}/{material}'))
+            image = load_texture(texture_name)
+            colors[selected] = bilinear(image, self.sample_uv[selected])
+        return colors
+
+    def compose(self, scheme):
+        base = self.base_colors(scheme)
+        materials = np.array(self.material_names)[self.sample_material]
+        painted = np.isin(materials, list(PAINTED))
+        metal = np.isin(materials, list(METAL))
+        glowing = np.isin(materials, list(GLOWING))
+        glass = np.isin(materials, list(GLASS))
+        ao = self.sample_ao
+        color = base.copy()
+        # общий износ: царапины и зерно на всём, кроме светящегося и стекла
+        rough = ~(glowing | glass)
+        color[rough] *= (1 + 0.10 * self.grain[rough])[:, None]
+        # краска приглушённая, «армейская»: меньше насыщенности, у панелей разный тон
+        gray = color.mean(axis=1, keepdims=True)
+        muted = gray + (color - gray) * 0.72
+        color = np.where(painted[:, None], muted * 0.9 * (1 + 0.09 * self.panel_tone[:, None]), color)
+        # швы панелей: тёмная щель, светлая фаска рядом, заклёпки
+        panel = (painted | metal)[:, None]
+        color = color * (1 - 0.55 * self.panel_line[:, None] * panel)
+        color = color * (1 + 0.12 * self.panel_bevel[:, None] * panel)
+        color = color + (np.array([185, 180, 170]) - color) * (0.35 * self.rivet[:, None] * panel)
+        # краска: сколы до голого металла, светлый кант, царапины
+        steel = np.array([150, 148, 142]) * (0.8 + 0.4 * self.grain[:, None] + 0.25)
+        primer = np.array([58, 56, 52])
+        chip = self.wear[:, None] * painted[:, None]
+        color = color * (1 - chip) + (steel * 0.75 + primer * 0.25) * chip
+        lighten = (self.edge_light * 0.22 + self.scratch * 0.35)[:, None] * painted[:, None]
+        color = color + (np.array([200, 196, 186]) - color) * lighten
+        # металл: светлые кромки и царапины до блеска
+        shine = (self.edge_light * 0.30 + self.scratch * 0.45)[:, None] * metal[:, None]
+        color = color + (np.array([215, 214, 208]) - color) * shine
+        # грязь: потёки, вогнутые углы, низ ног, пыль сверху
+        grime_color = np.array([46, 40, 32])
+        mud_color = np.array([88, 74, 54])
+        dust_color = np.array([150, 140, 118])
+        grime = np.clip(self.streaks * 0.30 + self.crevice * 0.45, 0, 0.8)[:, None] * rough[:, None]
+        color = color * (1 - grime) + grime_color * grime
+        mud = np.clip(self.mud, 0, 0.85)[:, None] * rough[:, None]
+        color = color * (1 - mud) + mud_color * (0.8 + 0.4 * self.grain[:, None]) * mud
+        dust = (self.dust * 0.22)[:, None] * rough[:, None]
+        color = color * (1 - dust) + dust_color * dust
+        # затенение: сильное в щелях, светящиеся детали не затеняются
+        shade = 0.22 + 0.78 * np.clip(ao, 0, 1) ** 1.25
+        shade = np.where(glowing, 0.75 + 0.25 * shade, shade)
+        color *= shade[:, None]
+        return np.clip(color, 0, 255)
+
+    def write_atlas(self, scheme, colors):
+        size = self.resolution * SUPERSAMPLE
+        image = np.zeros((size, size, 3))
+        image[self.sample_rows, self.sample_cols] = colors
+        covered = np.zeros((size, size), dtype=bool)
+        covered[self.sample_rows, self.sample_cols] = True
+        # заливка полей вокруг кусков развёртки ближайшим цветом (чтобы mip-уровни не темнели на швах)
+        _, (near_rows, near_cols) = ndimage.distance_transform_edt(~covered, return_indices=True)
+        image = image[near_rows, near_cols]
+        result = Image.fromarray(image.astype(np.uint8)).resize((self.resolution, self.resolution), Image.LANCZOS)
+        result.save(os.path.join(MODEL_DIR, f'{self.name}_{scheme}.jpg'), quality=88, optimize=True)
+
+    def rewrite_glb(self):
+        """новые вершины: пара (вершина атласа, исходная вершина); примитивы индексированные."""
+        document = self.document
+        old_binary = self.binary
+        mesh_accessors = set()
+        for mesh in document['meshes']:
+            for primitive in mesh['primitives']:
+                mesh_accessors.update(primitive['attributes'].values())
+                if 'indices' in primitive:
+                    mesh_accessors.add(primitive['indices'])
+        new_binary = bytearray()
+        new_views, new_accessors, accessor_remap, view_remap = [], [], {}, {}
+
+        def add_view(data, target=None):
+            new_binary.extend(b'\0' * (-len(new_binary) % 4))
+            view = {'buffer': 0, 'byteOffset': len(new_binary), 'byteLength': len(data)}
+            if target:
+                view['target'] = target
+            new_binary.extend(data)
+            new_views.append(view)
+            return len(new_views) - 1
+
+        for index, info in enumerate(document['accessors']):
+            if index in mesh_accessors:
+                continue
+            view_index = info['bufferView']
+            if view_index not in view_remap:
+                view = document['bufferViews'][view_index]
+                start = view.get('byteOffset', 0)
+                data = old_binary[start:start + view['byteLength']]
+                view_remap[view_index] = add_view(data)
+                if 'byteStride' in view:
+                    new_views[view_remap[view_index]]['byteStride'] = view['byteStride']
+            copy = dict(info)
+            copy['bufferView'] = view_remap[view_index]
+            accessor_remap[index] = len(new_accessors)
+            new_accessors.append(copy)
+
+        def add_accessor(array, kind, target, component=5126):
+            array = np.ascontiguousarray(array)
+            view = add_view(array.tobytes(), target)
+            info = {'bufferView': view, 'componentType': component, 'count': len(array), 'type': kind}
+            if kind == 'VEC3' and component == 5126:
+                info['min'] = array.min(axis=0).tolist()
+                info['max'] = array.max(axis=0).tolist()
+            new_accessors.append(info)
+            return len(new_accessors) - 1
+
+        for primitive_info in self.primitives:
+            first, count = primitive_info['first_face'], primitive_info['faces']
+            atlas_corners = self.atlas_faces[first:first + count].reshape(-1)
+            original_corners = (self.faces[first:first + count] - primitive_info['first_vertex']).reshape(-1)
+            pairs = np.stack([atlas_corners, original_corners], axis=1)
+            unique, inverse = np.unique(pairs, axis=0, return_inverse=True)
+            inverse = inverse.reshape(-1)
+            positions = primitive_info['local'][unique[:, 1]].astype(np.float32)
+            normals = primitive_info['normal'][unique[:, 1]].astype(np.float32)
+            uvs = self.atlas_uv[unique[:, 0]].astype(np.float32)
+            indices = inverse.astype(np.uint16 if len(unique) < 65536 else np.uint32)
+            primitive = document['meshes'][primitive_info['mesh']]['primitives'][primitive_info['primitive']]
+            primitive['attributes'] = {
+                'POSITION': add_accessor(positions, 'VEC3', 34962),
+                'NORMAL': add_accessor(normals, 'VEC3', 34962),
+                'TEXCOORD_0': add_accessor(uvs, 'VEC2', 34962),
+            }
+            primitive['indices'] = add_accessor(indices, 'SCALAR', 34963, 5123 if indices.dtype == np.uint16 else 5125)
+            primitive.pop('mode', None)
+
+        for animation in document.get('animations', []):
+            for sampler in animation['samplers']:
+                sampler['input'] = accessor_remap[sampler['input']]
+                sampler['output'] = accessor_remap[sampler['output']]
+        for skin in document.get('skins', []):
+            if 'inverseBindMatrices' in skin:
+                skin['inverseBindMatrices'] = accessor_remap[skin['inverseBindMatrices']]
+        document['accessors'] = new_accessors
+        document['bufferViews'] = new_views
+        document['buffers'] = [{'byteLength': len(new_binary)}]
+        # все материалы смотрят на атлас окраски по умолчанию (настоящий выбор делают .skin)
+        document['images'] = [{'uri': f'{self.name}_default.jpg', 'mimeType': 'image/jpeg'}]
+        document['textures'] = [{'source': 0}]
+        document.pop('samplers', None)
+        for material in document['materials']:
+            material.setdefault('pbrMetallicRoughness', {})['baseColorTexture'] = {'index': 0}
+            material.setdefault('extras', {})['q3_shader'] = f'{SHADER_PREFIX}/{self.name}_{material_class(material["name"])}_default'
+        write_glb(self.path, document, new_binary)
+
+
+# ================================================================ общие помощники
+
+TEXTURE_CACHE = {}
+
+
+def load_texture(name):
+    if name not in TEXTURE_CACHE:
+        path = os.path.join(MODEL_DIR, name + '.jpg')
+        TEXTURE_CACHE[name] = np.array(Image.open(path).convert('RGB')).astype(float)
+    return TEXTURE_CACHE[name]
+
+
+def bilinear(image, uv):
+    height, width = image.shape[:2]
+    x = uv[:, 0] * width - 0.5
+    y = uv[:, 1] * height - 0.5
+    x0 = np.floor(x).astype(np.int64); y0 = np.floor(y).astype(np.int64)
+    fx = (x - x0)[:, None]; fy = (y - y0)[:, None]
+    x0 %= width; y0 %= height
+    x1 = (x0 + 1) % width; y1 = (y0 + 1) % height
+    top = image[y0, x0] * (1 - fx) + image[y0, x1] * fx
+    bottom = image[y1, x0] * (1 - fx) + image[y1, x1] * fx
+    return top * (1 - fy) + bottom * fy
+
+
+def read_skin(path):
+    mapping = {}
+    with open(path, encoding='ascii') as file:
+        for line in file:
+            if ',' in line:
+                surface, shader = line.strip().split(',', 1)
+                if shader:
+                    mapping[surface] = shader
+    return mapping
+
+
+def material_class(name):
+    if name in GLOWING:
+        return 'glow'
+    if name in GLASS:
+        return 'glass'
+    if name in METAL:
+        return 'metal'
+    return 'paint'
+
+
+def write_skins(parts):
+    for part in parts:
+        for scheme in SCHEMES:
+            path = os.path.join(MODEL_DIR, f'{part.name}_{scheme}.skin')
+            lines = []
+            with open(path, encoding='ascii') as file:
+                for line in file:
+                    surface = line.strip().split(',', 1)[0]
+                    if not surface:
+                        continue
+                    if surface.startswith('tag_'):
+                        lines.append(f'{surface},')
+                    else:
+                        lines.append(f'{surface},{SHADER_PREFIX}/{part.name}_{material_class(surface)}_{scheme}')
+            with open(path, 'w', encoding='ascii', newline='\n') as file:
+                file.write('\n'.join(lines) + '\n')
+
+
+def write_shaders(parts):
+    blocks = ['// WALKER robot materials, generated by walker/tools/bake_walker.py',
+              '// one baked atlas per part and paint scheme; the material class picks the reflection']
+    for part in parts:
+        for scheme in SCHEMES:
+            atlas = f'{SHADER_PREFIX}/{part.name}_{scheme}.jpg'
+            base = f'{SHADER_PREFIX}/{part.name}'
+            blocks.append(f"""{base}_paint_{scheme}
+{{
+	{{
+		map {atlas}
+		rgbGen lightingDiffuse
+	}}
+	{{
+		map {SHADER_PREFIX}/env_shine.jpg
+		tcGen environment
+		blendFunc GL_SRC_ALPHA GL_ONE
+		rgbGen const ( 0.40 0.40 0.40 )
+		alphaGen lightingSpecular
+	}}
+}}
+{base}_metal_{scheme}
+{{
+	{{
+		map {atlas}
+		rgbGen lightingDiffuse
+	}}
+	{{
+		map {SHADER_PREFIX}/env_shine.jpg
+		tcGen environment
+		blendFunc GL_DST_COLOR GL_ONE
+		rgbGen const ( 0.55 0.55 0.55 )
+	}}
+	{{
+		map {SHADER_PREFIX}/env_shine.jpg
+		tcGen environment
+		blendFunc GL_SRC_ALPHA GL_ONE
+		rgbGen const ( 0.55 0.55 0.55 )
+		alphaGen lightingSpecular
+	}}
+}}
+{base}_glass_{scheme}
+{{
+	{{
+		map {atlas}
+		rgbGen lightingDiffuse
+	}}
+	{{
+		map {SHADER_PREFIX}/env_shine.jpg
+		tcGen environment
+		blendFunc GL_ONE GL_ONE
+		rgbGen const ( 0.35 0.35 0.35 )
+	}}
+}}
+{base}_glow_{scheme}
+{{
+	{{
+		map {atlas}
+		rgbGen identity
+	}}
+}}""")
+    path = os.path.join(DATA_ROOT, 'scripts', 'walker_player.shader')
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='ascii', newline='\n') as file:
+        file.write('\n'.join(blocks) + '\n')
+
+
+def main():
+    parts = []
+    for name, resolution in PARTS.items():
+        print('part', name)
+        part = Part(name, resolution)
+        part.unwrap()
+        part.rasterize()
+        part.ambient_occlusion()
+        part.edges()
+        parts.append(part)
+    # общая высота для грязи: ноги внизу, корпус и голова выше
+    lower = parts[0]
+    ground = lower.positions[:, 1].min()
+    knee = ground + (lower.positions[:, 1].max() - ground) * 0.55
+    for part in parts:
+        part.height_range = (ground, knee) if part.name == 'lower' else (part.positions[:, 1].min(), part.positions[:, 1].max())
+        part.mud_level = 0.85 if part.name == 'lower' else 0.25
+        part.masks()
+        for scheme in SCHEMES:
+            part.write_atlas(scheme, part.compose(scheme))
+    used = set()
+    for part in parts:
+        for scheme in SCHEMES:
+            used.update(os.path.basename(shader) for shader in read_skin(os.path.join(MODEL_DIR, f'{part.name}_{scheme}.skin')).values())
+    for part in parts:
+        part.rewrite_glb()
+    write_skins(parts)
+    write_shaders(parts)
+    # исходные текстуры материалов больше не нужны: всё в атласах
+    for name in used:
+        path = os.path.join(MODEL_DIR, name + '.jpg')
+        if os.path.exists(path):
+            os.remove(path)
+    print('baked:', ', '.join(f'{part.name} {part.resolution}' for part in parts), 'x', len(SCHEMES), 'schemes')
+
+
+main()

@@ -5,7 +5,7 @@
 #
 # Result: walker/dist/basewalker/pak0.pk3 (base data, model, QVMs)
 #         walker/dist/basewalker/wk_islands.pk3 (map)
-# Needs: python3 with numpy, scipy, Pillow; zip; fonts DejaVu (and Anton, optional).
+# Needs: python3 with numpy, scipy, Pillow, xatlas, embreex; zip; fonts DejaVu (and Anton, optional).
 set -e
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 TOOLS="$ROOT/walker/tools"
@@ -29,6 +29,8 @@ fi
 python3 "$TOOLS/make_botfiles.py" "$STAGE/base" "$ROOT/code"
 mkdir -p "$STAGE/base/models/players"
 cp -r "$ROOT/assets/baseq3/models/players/walker" "$STAGE/base/models/players/"
+# robot: unique UV atlas with baked occlusion, wear and dirt for every paint scheme
+python3 "$TOOLS/bake_walker.py" "$STAGE/base/models/players/walker"
 
 echo "== QVM"
 cd "$ROOT"
@@ -40,7 +42,8 @@ python3 "$TOOLS/make_map_islands.py" "$STAGE/map" "$STAGE/quake3/basewalker"
 cd "$STAGE/quake3/basewalker/maps"
 "$Q3MAP" wk_islands.map
 "$Q3MAP" -vis wk_islands.map
-"$Q3MAP" -light wk_islands.map
+# sun + light from the sky dome (48 directions, WALKER patch in q3map/light.c), 2x2 supersampling
+"$Q3MAP" -light -skylight 55 48 -extra wk_islands.map
 # bot navigation (AAS): robot box, no jumps
 "$BSPC" -cfg "$ROOT/walker/maps/aas_walker.cfg" -bsp2aas "$STAGE/quake3/basewalker/maps/wk_islands.bsp"
 mkdir -p "$STAGE/map/maps" "$STAGE/map/levelshots"

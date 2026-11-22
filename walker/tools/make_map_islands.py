@@ -19,6 +19,8 @@ FONT_TITLE = '/usr/share/fonts/truetype/google-fonts/ofl/anton/Anton-Regular.ttf
 if not os.path.exists(FONT_TITLE):
     FONT_TITLE = '/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf'
 
+FOG_COLOR = (0.72, 0.76, 0.77)   # как небо у горизонта
+FOG_DISTANCE = 12000
 SUN_AZIMUTH = 140.0      # градусы, как в q3map_sun
 SUN_ELEVATION = 48.0
 
@@ -63,61 +65,174 @@ def shade_relief(height_field, strength=1.0):
 TEXTURES = {}   # имя -> PIL.Image (RGB или RGBA)
 
 
-def tex_grass(seed, base_green):
-    size = 256
-    large = normalize(fft_noise(size, 1.6, seed))
-    fine = normalize(fft_noise(size, 0.7, seed + 1))
-    field = 0.6 * large + 0.4 * fine
-    color = colorize(field, [(0, (48, 58, 30)), (0.45, base_green), (0.75, (110, 120, 60)), (1, (128, 118, 74))])
-    tufts = normalize(fft_noise(size, 0.3, seed + 2)) > 0.86
-    color[tufts] = color[tufts] * 1.25
-    dirt = normalize(fft_noise(size, 1.9, seed + 3)) > 0.82
-    color[dirt] = color[dirt] * 0.55 + np.array([70, 58, 40]) * 0.45
-    color *= shade_relief(fine * 6, 1.0)[..., None]
+TEX = 512     # размер текстур рельефа и построек
+
+
+def soft(edge0, edge1, value):
+    ratio = np.clip((value - edge0) / (edge1 - edge0), 0, 1)
+    return ratio * ratio * (3 - 2 * ratio)
+
+
+def worley(size, cells, seed, cells_y=None, warp=None):
+    """бесшовный клеточный шум: (F1, F2, номер клетки) в пикселях.
+    cells_y — число клеток по вертикали (вытянутые клетки), warp — смещение точек выборки (dx, dy)."""
+    cells_y = cells_y or cells
+    local = np.random.default_rng(seed)
+    grid = np.stack(np.meshgrid(np.arange(cells), np.arange(cells_y), indexing='ij'), -1).reshape(-1, 2)
+    points = (grid + local.random((len(grid), 2))) * [size / cells, size / cells_y]
+    ids = np.arange(len(points))
+    tiled, tiled_ids = [], []
+    for dx in (-size, 0, size):
+        for dy in (-size, 0, size):
+            tiled.append(points + [dx, dy]); tiled_ids.append(ids)
+    from scipy.spatial import cKDTree
+    stretch = np.array([1.0, cells_y / cells])       # расстояния в «клеточной» метрике
+    tree = cKDTree(np.concatenate(tiled) * stretch)
+    all_ids = np.concatenate(tiled_ids)
+    y, x = np.mgrid[0:size, 0:size] + 0.5
+    if warp is not None:
+        x = (x + warp[0]) % size; y = (y + warp[1]) % size
+    distance, index = tree.query(np.stack([x.ravel(), y.ravel()], -1) * stretch, k=2)
+    return (distance[:, 0].reshape(size, size), distance[:, 1].reshape(size, size),
+            all_ids[index[:, 0]].reshape(size, size))
+
+
+def strokes(size, count, seed, length, colors, width=1):
+    """слой коротких штрихов (травинки) с переносом через край; RGBA."""
+    local = np.random.default_rng(seed)
+    layer = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    for _ in range(count):
+        x, y = local.random(2) * size
+        angle = local.random() * 2 * np.pi
+        span = length[0] + local.random() * (length[1] - length[0])
+        color = colors[local.integers(len(colors))]
+        shade = 0.75 + 0.5 * local.random()
+        fill = tuple(int(min(255, channel * shade)) for channel in color) + (int(150 + 100 * local.random()),)
+        dx, dy = np.cos(angle) * span, np.sin(angle) * span
+        for ox in (-size, 0, size):
+            for oy in (-size, 0, size):
+                if -span <= x + ox <= size + span and -span <= y + oy <= size + span:
+                    draw.line((x + ox, y + oy, x + ox + dx, y + oy + dy), fill=fill, width=width)
+    return layer
+
+
+def to_image(color):
     return Image.fromarray(np.clip(color, 0, 255).astype(np.uint8))
+
+
+def tex_grass(seed, base_green):
+    size = TEX
+    large = normalize(fft_noise(size, 1.8, seed))
+    mid = normalize(fft_noise(size, 1.2, seed + 1))
+    fine = fft_noise(size, 0.6, seed + 2)
+    field = 0.55 * large + 0.45 * mid
+    base = np.array(base_green, dtype=float)
+    color = colorize(field, [(0, base * 0.55), (0.45, base * 0.85), (0.75, base * 1.05 + [10, 6, -4]), (1, base * 1.1 + [34, 22, 0])])
+    image = to_image(color).convert('RGBA')
+    palette = [tuple((base * k + add).clip(0, 255).astype(int)) for k, add in
+               ((0.7, [0, 0, 0]), (1.0, [0, 0, 0]), (1.15, [8, 6, 0]), (1.0, [40, 30, 2]), (0.85, [24, 12, 4]))]
+    image.alpha_composite(strokes(size, 30000, seed + 3, (3, 8), palette))
+    color = np.array(image.convert('RGB')).astype(float)
+    # проплешины с землёй и камешками
+    dirt = soft(0.72, 0.86, normalize(fft_noise(size, 1.7, seed + 4)))[..., None]
+    soil = colorize(normalize(fft_noise(size, 0.8, seed + 5)), [(0, (60, 48, 34)), (1, (104, 88, 64))])
+    color = color * (1 - dirt * 0.8) + soil * dirt * 0.8
+    color *= (0.92 + 0.12 * fine)[..., None]
+    color *= shade_relief(fine * 4, 1.0)[..., None] ** 0.5
+    return to_image(color)
 
 
 def tex_rock(seed, moss=0.0):
-    size = 256
-    large = fft_noise(size, 1.8, seed)
+    """скала: горизонтальные плиты с неровными трещинами, слои, потёки, лишайник."""
+    size = TEX
+    warp = (fft_noise(size, 1.6, seed + 10) * 26, fft_noise(size, 1.6, seed + 11) * 18)
+    f1, f2, cell = worley(size, 4, seed, cells_y=9, warp=warp)
+    g1, g2, _ = worley(size, 13, seed + 20, warp=(warp[0] * 0.5, warp[1] * 0.5))
+    local = np.random.default_rng(seed + 1)
+    cell_tone = local.random(cell.max() + 1)[cell]
+    cracks = soft(4.0, 0.8, f2 - f1)
+    fine_cracks = soft(2.2, 0.4, g2 - g1) * soft(0.45, 0.7, normalize(fft_noise(size, 1.2, seed + 12)))
     y = np.arange(size)[:, None] / size
-    strata = np.sin((y * 9 + large * 1.5) * 2 * np.pi) * 0.3
-    cracks = np.abs(fft_noise(size, 1.2, seed + 1)) < 0.04
-    field = normalize(large + strata + 0.4 * fft_noise(size, 0.8, seed + 2))
-    color = colorize(field, [(0, (58, 54, 50)), (0.4, (98, 92, 84)), (0.75, (132, 126, 114)), (1, (160, 154, 140))])
-    color *= shade_relief(field * 8, 1.0)[..., None]
-    color[cracks] *= 0.55
+    detail = fft_noise(size, 1.0, seed + 2)
+    strata = np.sin((y * 22 + fft_noise(size, 1.8, seed + 3) * 1.5) * 2 * np.pi) * 0.5 + 0.5
+    height = 0.35 * soft(0, 40, f2 - f1) + 0.25 * cell_tone + 0.25 * detail + 0.15 * strata
+    tone = normalize(0.4 * cell_tone + 0.35 * detail + 0.25 * strata)
+    color = colorize(tone, [(0, (58, 55, 50)), (0.35, (88, 83, 76)), (0.7, (114, 108, 97)), (1, (136, 129, 115))])
+    color *= shade_relief(height * 14, 1.0)[..., None] ** 0.8
+    color *= (1 - 0.55 * cracks - 0.3 * fine_cracks)[..., None]
+    lichen = soft(0.86, 0.93, normalize(fft_noise(size, 0.6, seed + 4)))[..., None]
+    color = color * (1 - lichen * 0.45) + np.array([156, 150, 112]) * lichen * 0.45
+    streak = ndimage_blur(fft_noise(size, 0.5, seed + 5), 1.5, 30)
+    color *= (0.86 + 0.28 * normalize(streak))[..., None] ** 0.8
     if moss > 0:
-        moss_mask = normalize(fft_noise(size, 1.5, seed + 3) + (1 - y) * 0.0)
-        moss_amount = np.clip((moss_mask - (1 - moss)) * 3, 0, 1)[..., None]
-        color = color * (1 - moss_amount) + np.array([70, 88, 40]) * moss_amount * shade_relief(field * 8)[..., None]
-    return Image.fromarray(np.clip(color, 0, 255).astype(np.uint8))
+        moss_field = normalize(fft_noise(size, 1.6, seed + 6) + 0.3 * (1 - cell_tone) + 0.6 * soft(0, 30, f1) * 0)
+        amount = soft(1 - moss, 1 - moss + 0.22, moss_field)[..., None]
+        moss_color = colorize(normalize(detail), [(0, (46, 62, 28)), (1, (92, 110, 50))])
+        color = color * (1 - amount) + moss_color * amount * shade_relief(height * 12, 0.6)[..., None]
+    return to_image(color)
 
 
 def tex_shore(seed):
-    size = 256
-    field = normalize(fft_noise(size, 1.3, seed))
-    color = colorize(field, [(0, (70, 66, 52)), (0.5, (104, 96, 72)), (1, (134, 124, 96))])
-    pebbles = normalize(fft_noise(size, 0.2, seed + 1)) > 0.8
-    color[pebbles] = color[pebbles] * 0.75 + 30
-    grass = normalize(fft_noise(size, 1.7, seed + 2)) > 0.75
-    color[grass] = color[grass] * 0.6 + np.array([60, 80, 36]) * 0.4
-    return Image.fromarray(np.clip(color, 0, 255).astype(np.uint8))
+    """берег: влажный песок с галькой разного размера и пучками травы."""
+    size = TEX
+    f1, f2, cell = worley(size, 30, seed)
+    local = np.random.default_rng(seed + 1)
+    count = cell.max() + 1
+    radius = (size / 30) * (0.25 + 0.3 * local.random(count))[cell]
+    present = (local.random(count) > 0.45)[cell]
+    dome = np.sqrt(np.clip(1 - (f1 / radius) ** 2, 0, 1)) * present
+    pebble = soft(0.0, 0.25, dome)
+    sand = normalize(fft_noise(size, 1.2, seed + 2))
+    color = colorize(sand, [(0, (84, 76, 58)), (0.5, (110, 100, 77)), (1, (132, 120, 94))])
+    palette = np.array([[118, 112, 102], [96, 90, 82], [132, 124, 108], [84, 80, 76], [110, 98, 82]])
+    pebble_color = palette[local.integers(len(palette), size=count)][cell] * (0.9 + 0.2 * local.random(count))[cell][..., None]
+    pebble_color = pebble_color * shade_relief(-dome * 5, 1.0)[..., None]
+    color = color * (1 - pebble[..., None]) + pebble_color * pebble[..., None]
+    wet = soft(0.5, 0.8, normalize(fft_noise(size, 1.8, seed + 3)))[..., None]
+    color *= 1 - wet * 0.22
+    image = to_image(color).convert('RGBA')
+    image.alpha_composite(strokes(size, 2500, seed + 4, (3, 7), [(70, 88, 40), (96, 104, 52)]))
+    return image.convert('RGB')
 
 
 def tex_seabed(seed):
-    size = 256
+    size = TEX
     field = normalize(fft_noise(size, 1.5, seed))
     x = np.arange(size)[None, :] / size
-    ripple = np.sin((x * 6 + field * 0.8) * 2 * np.pi) * 0.12
-    color = colorize(np.clip(field + ripple, 0, 1), [(0, (46, 52, 34)), (0.5, (78, 82, 54)), (1, (112, 108, 78))])
-    weed = normalize(fft_noise(size, 1.2, seed + 1)) > 0.78
-    color[weed] = color[weed] * 0.6 + np.array([40, 70, 30]) * 0.4
-    return Image.fromarray(np.clip(color, 0, 255).astype(np.uint8))
+    ripple = np.sin((x * 10 + field * 1.2) * 2 * np.pi)
+    color = colorize(np.clip(field * 0.8 + ripple * 0.08 + 0.1, 0, 1), [(0, (52, 56, 38)), (0.5, (84, 86, 58)), (1, (116, 112, 82))])
+    color *= shade_relief(ripple * 3 + field * 6, 0.8)[..., None]
+    f1, _, cell = worley(size, 18, seed + 1)
+    local = np.random.default_rng(seed + 2)
+    stones = soft(9, 5, f1) * (local.random(cell.max() + 1)[cell] > 0.75)
+    color = color * (1 - stones[..., None] * 0.6) + np.array([92, 94, 84]) * stones[..., None] * 0.6
+    weed = soft(0.7, 0.85, normalize(fft_noise(size, 1.2, seed + 3)))[..., None]
+    color = color * (1 - weed * 0.5) + np.array([40, 66, 32]) * weed * 0.5
+    return to_image(color)
 
 
-def tex_concrete(seed, tone=1.0, panels=128, moss=0.35, tiles=False):
-    size = 256
+def tex_macro(seed):
+    """крупные пятна поверх всех текстур (режим умножения x2, 128 — без изменений):
+    ломают повторение тайлов, у соседних текстур общий рисунок."""
+    size = 512
+    tone = fft_noise(size, 2.1, seed)
+    hue = fft_noise(size, 2.3, seed + 1)
+    detail = fft_noise(size, 1.3, seed + 2)
+    level = 128 + 30 * tone + 8 * detail
+    color = np.stack([level + 8 * hue, level + 2 * hue, level - 8 * hue], axis=-1)
+    return to_image(color)
+
+
+def tex_mix(first, second, seed):
+    """переход между текстурами рельефа: пятна обеих."""
+    a = np.array(first).astype(float); b = np.array(second).astype(float)
+    mask = soft(0.38, 0.62, normalize(fft_noise(a.shape[0], 1.6, seed) + 0.3 * fft_noise(a.shape[0], 0.9, seed + 1)))[..., None]
+    return to_image(a * (1 - mask) + b * mask)
+
+
+def tex_concrete(seed, tone=1.0, panels=128, moss=0.35, tiles=False, size=TEX):
+    panels *= size // 256
     stains = normalize(fft_noise(size, 1.6, seed))
     grain = fft_noise(size, 0.5, seed + 1) * 0.08
     base = 150 * tone
@@ -128,8 +243,12 @@ def tex_concrete(seed, tone=1.0, panels=128, moss=0.35, tiles=False):
     y, x = np.mgrid[0:size, 0:size]
     seams = (x % panels < 2) | (y % panels < 2)
     if tiles:
-        seams |= (x % 64 < 1) | (y % 64 < 1)
+        seams |= (x % (size // 4) < 2) | (y % (size // 4) < 2)
     color[seams] *= 0.62
+    # тёмные потёки вниз от горизонтальных швов
+    below = (y % panels).astype(float)
+    drip = normalize(ndimage_blur(fft_noise(size, 0.4, seed + 7), 1.2, size * 0.06) + 0.3 * fft_noise(size, 1.5, seed + 8))
+    color *= (1 - 0.22 * soft(0.55, 0.9, drip) * np.exp(-below / (panels * 0.45)))[..., None]
     # потёки сверху вниз
     streak = normalize(fft_noise(size, 1.0, seed + 2, (size, size)) + np.linspace(-0.4, 0.4, size)[:, None])
     color *= (0.9 + 0.12 * streak)[..., None]
@@ -141,7 +260,8 @@ def tex_concrete(seed, tone=1.0, panels=128, moss=0.35, tiles=False):
 
 
 def tex_metal(seed, base, panel=64, rust=0.2, rivets=True):
-    size = 256
+    size = TEX
+    panel *= size // 256
     noise = normalize(fft_noise(size, 1.4, seed))
     color = np.zeros((size, size, 3))
     color[:] = base
@@ -151,7 +271,7 @@ def tex_metal(seed, base, panel=64, rust=0.2, rivets=True):
     color[seams] *= 0.55
     color[(x % panel == 2) | (y % (panel * 2) == 2)] *= 1.25
     if rivets:
-        rivet = ((x % panel - 6) ** 2 + (y % (panel * 2) - 6) ** 2 < 5) | ((x % panel - panel + 6) ** 2 + (y % (panel * 2) - 6) ** 2 < 5)
+        rivet = ((x % panel - 12) ** 2 + (y % (panel * 2) - 12) ** 2 < 18) | ((x % panel - panel + 12) ** 2 + (y % (panel * 2) - 12) ** 2 < 18)
         color[rivet] *= 1.35
     if rust > 0:
         rust_field = normalize(fft_noise(size, 1.3, seed + 1))
@@ -161,18 +281,18 @@ def tex_metal(seed, base, panel=64, rust=0.2, rivets=True):
 
 
 def tex_grate(seed):
-    size = 256
+    size = TEX
     color = np.array(tex_metal(seed, (96, 100, 102), 64, 0.25, False)).astype(float)
     y, x = np.mgrid[0:size, 0:size]
-    holes = ((x % 16) > 3) & ((y % 16) > 3)
+    holes = ((x % 32) > 6) & ((y % 32) > 6)
     color[holes] *= 0.35
     return Image.fromarray(np.clip(color, 0, 255).astype(np.uint8))
 
 
 def tex_hazard(seed):
-    size = 256
+    size = TEX
     y, x = np.mgrid[0:size, 0:size]
-    stripes = ((x + y) // 32) % 2 == 0
+    stripes = ((x + y) // 64) % 2 == 0
     color = np.zeros((size, size, 3))
     color[stripes] = (200, 160, 40)
     color[~stripes] = (36, 34, 30)
@@ -182,17 +302,17 @@ def tex_hazard(seed):
 
 
 def tex_container(seed, base):
-    size = 256
+    size = TEX
     color = np.array(tex_metal(seed, base, 256, 0.25, False)).astype(float)
     x = np.arange(size)[None, :]
-    ribs = np.sin(x / size * 2 * np.pi * 16)
+    ribs = np.sin(x / size * 2 * np.pi * 32)
     color *= (0.88 + 0.14 * ribs)[..., None]
     return Image.fromarray(np.clip(color, 0, 255).astype(np.uint8))
 
 
 def tex_marked_pad(seed, label, ring_color, letter_size=150):
     """площадка с кругом и буквой (маяки A-E, вертолётные площадки H)."""
-    image = tex_concrete(seed, 0.95, 256, 0.15).convert('RGB')
+    image = tex_concrete(seed, 0.95, 256, 0.15, size=256).convert('RGB')
     draw = ImageDraw.Draw(image)
     draw.ellipse((14, 14, 242, 242), outline=ring_color, width=12)
     draw.ellipse((40, 40, 216, 216), outline=ring_color, width=4)
@@ -212,12 +332,71 @@ def tex_glow(color):
     return Image.fromarray(np.clip(pixels, 0, 255).astype(np.uint8))
 
 
-def tex_water(seed):
+def ripple_field(size, wave_number, spread, seed):
+    """бесшовная рябь: волны вытянуты вдоль x (ветер вдоль y), гребни острые."""
+    local = np.random.default_rng(seed)
+    white = local.normal(0, 1, (size, size)) + 1j * local.normal(0, 1, (size, size))
+    freq_y = np.fft.fftfreq(size)[:, None] * size
+    freq_x = np.fft.fftfreq(size)[None, :] * size
+    band = np.exp(-((np.abs(freq_y) - wave_number) / (wave_number * spread)) ** 2) * np.exp(-(freq_x / (wave_number * 0.45)) ** 2)
+    field = np.real(np.fft.ifft2(white * band))
+    field = (field - field.mean()) / (field.std() + 1e-9)
+    return field
+
+
+def tex_water_ripple(seed, wave_number):
+    """слой ряби для режима modulate x2: 128 — без изменений, гребни светлее, впадины темнее."""
+    size = 512
+    field = ripple_field(size, wave_number, 0.35, seed) + 0.45 * ripple_field(size, wave_number * 2.1, 0.4, seed + 1)
+    field /= field.std()
+    crest = np.clip(field, 0, None) ** 1.6
+    trough = np.clip(-field, 0, None) ** 0.9
+    level = 128 + 34 * crest - 26 * trough
+    pixels = np.stack([level * 0.98, level, level * 1.02], axis=-1)
+    return Image.fromarray(np.clip(pixels, 0, 255).astype(np.uint8))
+
+
+def tex_water_deep(seed):
+    """цвет толщи воды: тёмный сине-зелёный с крупными пятнами."""
     size = 256
-    field = fft_noise(size, 1.2, seed)
-    ripple = normalize(np.sin(field * 9) + 0.5 * fft_noise(size, 0.9, seed + 1))
-    color = colorize(ripple, [(0, (28, 58, 62)), (0.6, (54, 96, 98)), (0.9, (120, 160, 156)), (1, (190, 214, 206))])
+    field = normalize(fft_noise(size, 1.6, seed))
+    color = colorize(field, [(0, (24, 46, 62)), (0.5, (30, 56, 72)), (1, (40, 68, 82))])
     return Image.fromarray(np.clip(color, 0, 255).astype(np.uint8))
+
+
+def tex_water_env():
+    """отражение неба для tcGen environment на ровной воде: строка t = 0.5 - vz / 2,
+    где vz — косинус угла между взглядом и вертикалью. У горизонта (t = 0.5) отражение яркое,
+    при взгляде сверху (t = 0) слабое — как по формуле Френеля. Нижняя половина — зеркально."""
+    size = 128
+    t = (np.arange(size) + 0.5) / size
+    vz = np.clip(1 - 2 * np.minimum(t, 1 - t), 0, 1)
+    fresnel = 0.06 + 0.94 * (1 - vz) ** 3.2
+    horizon = np.array([150, 168, 182]); zenith = np.array([62, 96, 132])
+    sky = horizon[None, :] * (1 - vz[:, None]) ** 0.6 + zenith[None, :] * (1 - (1 - vz[:, None]) ** 0.6)
+    column = sky * fresnel[:, None]
+    # облака в отражении: слабые полосы вдоль s (меняются при повороте камеры)
+    s = np.arange(size) / size
+    clouds = 1 + 0.12 * np.sin(s * 2 * np.pi * 3 + 1.3) + 0.08 * np.sin(s * 2 * np.pi * 7)
+    pixels = column[:, None, :] * clouds[None, :, None]
+    return Image.fromarray(np.clip(pixels, 0, 255).astype(np.uint8))
+
+
+def tex_water_glint(seed):
+    """блёстки солнца на гребнях: редкие яркие точки, вытянутые вдоль гребней."""
+    size = 256
+    field = ripple_field(size, 22, 0.3, seed)
+    local = np.random.default_rng(seed + 5)
+    dots = local.random((size, size)) > 0.9965
+    mask = ndimage_blur(dots.astype(float), 1.2, 0.5) * np.clip(field, 0, None)
+    level = np.clip(mask / (mask.max() + 1e-9) * 2.2, 0, 1) * 255
+    pixels = np.stack([level, level * 0.97, level * 0.9], axis=-1)
+    return Image.fromarray(pixels.astype(np.uint8))
+
+
+def ndimage_blur(image, sigma_x, sigma_y):
+    from scipy import ndimage
+    return ndimage.gaussian_filter(image, (sigma_y, sigma_x), mode='wrap')
 
 
 def make_textures():
@@ -244,7 +423,11 @@ def make_textures():
     TEXTURES['glow_cyan'] = tex_glow((120, 240, 255))
     TEXTURES['glow_red'] = tex_glow((255, 70, 50))
     TEXTURES['glow_orange'] = tex_glow((255, 170, 60))
-    TEXTURES['water'] = tex_water(111)
+    TEXTURES['water'] = tex_water_deep(111)
+    TEXTURES['water_ripple'] = tex_water_ripple(112, 24)
+    TEXTURES['water_ripple2'] = tex_water_ripple(114, 13)
+    TEXTURES['water_env'] = tex_water_env()
+    TEXTURES['water_glint'] = tex_water_glint(116)
     for name, image in TEXTURES.items():
         save_texture(f'textures/walker/{name}', image)
 
@@ -316,7 +499,7 @@ SHADER_SCALE = {}      # масштаб текстуры по умолчанию
 
 def texture_scale(shader):
     name = shader.split('/')[-1]
-    if name in ('grass', 'grass2', 'rock', 'rockmoss', 'shore', 'seabed'):
+    if name in ('grass', 'grass2', 'rock', 'rockmoss', 'shore', 'seabed') or name.startswith('mix_'):
         return 0.5
     if name.startswith('beacon_') or name == 'helipad':
         return 0.75
@@ -493,24 +676,50 @@ def ground(x, y):
     return (h00 * (1 - frac_x) + h10 * frac_x) * (1 - frac_y) + (h01 * (1 - frac_x) + h11 * frac_x) * frac_y
 
 
-def terrain_shader(points, variety):
+TERRAIN_ORDER = ['seabed', 'shore', 'grass', 'grass2', 'rockmoss', 'rock']
+TERRAIN_MIXES = {}      # пары текстур рельефа, для которых нужен переход: имя -> (a, b)
+
+
+def vertex_classes(variety_field):
+    """класс поверхности в каждой вершине сетки рельефа: по высоте, крутизне и шуму."""
+    grad_y, grad_x = np.gradient(HEIGHTS, CELL)
+    normal_z = 1 / np.sqrt(1 + grad_x ** 2 + grad_y ** 2)
+    jitter = fft_noise(0, 1.4, 306, (len(YS) * 2, len(XS) * 2))[:len(YS), :len(XS)]
+    classes = np.full(HEIGHTS.shape, 'grass', dtype=object)
+    classes[variety_field > 0.55] = 'grass2'
+    classes[(HEIGHTS > 105 + 25 * jitter) | (normal_z < 0.86)] = 'rockmoss'
+    classes[(normal_z < 0.74) | ((HEIGHTS > 170) & (normal_z < 0.9))] = 'rock'
+    classes[HEIGHTS < 6 + 4 * jitter] = 'shore'
+    classes[HEIGHTS < -6 + 3 * jitter] = 'seabed'
+    return classes
+
+
+def terrain_shader(points, vertex_class):
+    """текстура треугольника: если все вершины одного класса — она, иначе переход между двумя
+    самыми частыми классами. Крутые грани — всегда камень (или переход к камню)."""
     a, b, c = [np.array(point, dtype=float) for point in points]
     normal = np.cross(b - a, c - a)
     normal /= np.linalg.norm(normal)
-    mean_height = (a[2] + b[2] + c[2]) / 3
+    names = list(vertex_class)
+    if abs(normal[2]) < 0.6:
+        return 'rock'
     if abs(normal[2]) < 0.72:
-        return 'rock' if mean_height > 60 or variety > 0.3 else 'rockmoss'
-    if mean_height < -5:
-        return 'seabed'
-    if mean_height < 5:
-        return 'shore'
-    if mean_height > 110:
-        return 'rockmoss'
-    return 'grass' if variety < 0.55 else 'grass2'
+        names.append('rock')
+    counts = {}
+    for name in names:
+        counts[name] = counts.get(name, 0) + 1
+    ranked = sorted(counts, key=lambda name: (-counts[name], TERRAIN_ORDER.index(name)))
+    if len(ranked) == 1:
+        return ranked[0]
+    first, second = sorted(ranked[:2], key=TERRAIN_ORDER.index)
+    name = f'mix_{first}_{second}'
+    TERRAIN_MIXES[name] = (first, second)
+    return name
 
 
 def add_terrain():
     variety_field = normalize(fft_noise(0, 1.5, 305, (len(YS) * 2, len(XS) * 2))[:len(YS), :len(XS)])
+    classes = vertex_classes(variety_field)
     counts = {}
     for row in range(len(YS) - 1):
         for col in range(len(XS) - 1):
@@ -520,20 +729,23 @@ def add_terrain():
             h01, h11 = int(HEIGHTS[row + 1, col]), int(HEIGHTS[row + 1, col + 1])
             corner00, corner10 = (x0, y0, h00), (x1, y0, h10)
             corner01, corner11 = (x0, y1, h01), (x1, y1, h11)
+            class00, class10 = classes[row, col], classes[row, col + 1]
+            class01, class11 = classes[row + 1, col], classes[row + 1, col + 1]
             if (row + col) % 2 == 0:
-                triangles = [(corner00, corner10, corner11), (corner00, corner11, corner01)]
+                triangles = [((corner00, corner10, corner11), (class00, class10, class11)),
+                             ((corner00, corner11, corner01), (class00, class11, class01))]
             else:
-                triangles = [(corner00, corner10, corner01), (corner10, corner11, corner01)]
-            variety = variety_field[row, col]
-            for triangle in triangles:
-                shader = terrain_shader(triangle, variety)
+                triangles = [((corner00, corner10, corner01), (class00, class10, class01)),
+                             ((corner10, corner11, corner01), (class10, class11, class01))]
+            for triangle, vertex_class in triangles:
+                shader = terrain_shader(triangle, vertex_class)
                 counts[shader] = counts.get(shader, 0) + 1
                 polygon = [(point[0], point[1]) for point in triangle]
                 area = (polygon[1][0] - polygon[0][0]) * (polygon[2][1] - polygon[0][1]) - (polygon[2][0] - polygon[0][0]) * (polygon[1][1] - polygon[0][1])
                 if area < 0:
                     polygon.reverse()
                 add_prism(polygon, TERRAIN_BOTTOM, None, shader, CAULK, CAULK, True, list(triangle))
-    print('terrain triangles:', counts)
+    print('terrain triangles:', dict(sorted(counts.items(), key=lambda item: -item[1])))
 
 
 # ================================================================ постройки
@@ -757,6 +969,8 @@ def add_hull():
     ]
     for bx0, by0, bz0, bx1, by1, bz1, shader in hull:
         add_box(bx0, by0, bz0, bx1, by1, bz1, shader, shader, shader, detail=False)
+    # дымка: объём тумана на всю карту, дальние скалы растворяются в цвете горизонта
+    add_box(x0, y0, low, x1, y1, high, 'fog', 'fog', 'fog')
     clip = 'common/clip'
     thickness = 32
     for bx0, by0, bx1, by1 in [(-PLAY_X - thickness, -PLAY_Y - thickness, PLAY_X + thickness, -PLAY_Y),
@@ -785,7 +999,7 @@ def spawn_points():
 
 def write_map():
     worldspawn = {
-        'classname': 'worldspawn', 'message': 'Islands', 'ambient': '36', '_color': '0.75 0.82 0.9',
+        'classname': 'worldspawn', 'message': 'Islands', 'ambient': '20', '_color': '0.75 0.82 0.9',
         'gridsize': '128 128 128', '_blocksize': '0 0 0',
     }
     entities = spawn_points()
@@ -850,24 +1064,63 @@ textures/walker/water
 	surfaceparm nolightmap
 	surfaceparm nomarks
 	cull disable
-	tessSize 256
-	deformVertexes wave 128 sin 0 1.5 0 0.3
+	tessSize 128
+	deformVertexes wave 160 sin 0 1.2 0 0.25
+	// water body: seabed visible near the camera, opaque far away
 	{{
 		map textures/walker/water.jpg
 		blendFunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA
-		alphaGen const 0.62
+		alphaGen const 0.42
 		rgbGen identity
-		tcMod scale 0.5 0.5
-		tcMod scroll 0.012 0.02
+		tcMod scale 0.3 0.3
+		tcMod scroll 0.004 0.006
 	}}
 	{{
 		map textures/walker/water.jpg
-		blendFunc GL_ONE GL_ONE
-		rgbGen const ( 0.22 0.25 0.25 )
-		tcMod scale 0.37 0.37
-		tcMod turb 0 0.04 0 0.08
-		tcMod scroll -0.02 0.008
+		blendFunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA
+		alphaGen portal 1700
+		rgbGen identity
+		tcMod scale 0.3 0.3
 	}}
+	// sky reflection, stronger at grazing angles
+	{{
+		map textures/walker/water_env.jpg
+		tcGen environment
+		blendFunc GL_ONE GL_ONE
+		rgbGen identity
+		tcMod turb 0 0.012 0 0.15
+	}}
+	// two ripple layers (modulate x2): bright crests, dark troughs
+	{{
+		map textures/walker/water_ripple.jpg
+		blendFunc GL_DST_COLOR GL_SRC_COLOR
+		tcMod scale 0.55 0.55
+		tcMod scroll 0.006 0.035
+	}}
+	{{
+		map textures/walker/water_ripple2.jpg
+		blendFunc GL_DST_COLOR GL_SRC_COLOR
+		tcMod transform 0.25 0.19 -0.19 0.25 0 0
+		tcMod scroll -0.012 0.021
+	}}
+	// sun glints
+	{{
+		map textures/walker/water_glint.jpg
+		blendFunc GL_ONE GL_ONE
+		rgbGen wave sin 0.35 0.2 0 0.7
+		tcMod scale 0.9 0.9
+		tcMod scroll 0.01 0.05
+	}}
+}}
+textures/walker/fog
+{{
+	qer_editorimage textures/walker/water.tga
+	surfaceparm trans
+	surfaceparm nonsolid
+	surfaceparm fog
+	surfaceparm nolightmap
+	surfaceparm nomarks
+	fogparms ( {FOG_COLOR[0]:.3f} {FOG_COLOR[1]:.3f} {FOG_COLOR[2]:.3f} ) {FOG_DISTANCE}
 }}
 textures/walker/beacon_light
 {{
@@ -945,11 +1198,49 @@ def write_shaders():
         file.write(arena)
 
 
+def make_mix_textures():
+    for name, (first, second) in sorted(TERRAIN_MIXES.items()):
+        seed = 400 + TERRAIN_ORDER.index(first) * 10 + TERRAIN_ORDER.index(second)
+        save_texture(f'textures/walker/{name}', tex_mix(TEXTURES[first], TEXTURES[second], seed))
+    save_texture('textures/walker/macro', tex_macro(131))
+
+
+def lightmapped_shaders():
+    """явные шейдеры для текстур с картой освещения: освещение, текстура и общий крупный рисунок
+    (tcGen vector: проекция в мировых координатах, один рисунок на все поверхности подряд)."""
+    defined = {line.strip() for line in SHADERS.splitlines() if line.startswith('textures/')}
+    used = sorted({face[1] for brush, _ in BRUSHES for face in brush.faces})
+    blocks = []
+    for shader in used:
+        full = 'textures/' + shader
+        if full in defined or not shader.startswith('walker/'):
+            continue
+        name = shader.split('/')[-1]
+        blocks.append(f"""{full}
+{{
+	qer_editorimage textures/walker/{name}.tga
+	{{
+		map $lightmap
+		rgbGen identity
+	}}
+	{{
+		map textures/walker/{name}.jpg
+		blendFunc GL_DST_COLOR GL_ZERO
+		rgbGen identity
+	}}
+	{{
+		map textures/walker/macro.jpg
+		blendFunc GL_DST_COLOR GL_SRC_COLOR
+		tcGen vector ( 0.00042 0.00027 0 ) ( -0.00027 0.00042 0.00035 )
+	}}
+}}""")
+    return '\n'.join(blocks) + '\n'
+
+
 def main():
-    global XS, YS, HEIGHTS
+    global XS, YS, HEIGHTS, SHADERS
     make_textures()
     make_sky()
-    write_shaders()
     XS, YS, HEIGHTS = height_map()
     print('height range:', HEIGHTS.min(), HEIGHTS.max())
     add_hull()
@@ -961,6 +1252,9 @@ def main():
     ruins_east()
     ruins_south()
     ruins_middle()
+    make_mix_textures()
+    SHADERS += lightmapped_shaders()
+    write_shaders()
     write_map()
     # карта высот для просмотра
     preview = normalize(HEIGHTS)

@@ -100,6 +100,41 @@ static long generateHashValue( const char *fname ) {
 GL_TextureMode
 ===============
 */
+#ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
+#define GL_TEXTURE_MAX_ANISOTROPY_EXT		0x84FE
+#define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT	0x84FF
+#endif
+
+/*
+===============
+R_TextureAnisotropy
+
+WALKER: anisotropy level for mipmapped textures, 0 if the extension is off or missing
+===============
+*/
+static float R_TextureAnisotropy( void ) {
+	static qboolean	checked = qfalse;
+	static float	level = 0;
+	float			maximum = 0;
+
+	if ( !checked ) {
+		checked = qtrue;
+		if ( r_ext_texture_filter_anisotropic->integer
+			&& strstr( glConfig.extensions_string, "GL_EXT_texture_filter_anisotropic" ) ) {
+			qglGetFloatv( GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maximum );
+			level = r_ext_max_anisotropy->value;
+			if ( level > maximum ) {
+				level = maximum;
+			}
+			if ( level < 1 ) {
+				level = 0;
+			}
+			ri.Printf( PRINT_ALL, "...using GL_EXT_texture_filter_anisotropic (%g)\n", level );
+		}
+	}
+	return level;
+}
+
 void GL_TextureMode( const char *string ) {
 	int		i;
 	image_t	*glt;
@@ -133,6 +168,9 @@ void GL_TextureMode( const char *string ) {
 			GL_Bind (glt);
 			qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, gl_filter_min);
 			qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, gl_filter_max);
+			if ( R_TextureAnisotropy() > 0 ) {
+				qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, R_TextureAnisotropy() );
+			}
 		}
 	}
 }
@@ -701,6 +739,9 @@ done:
 	{
 		qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, gl_filter_min);
 		qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, gl_filter_max);
+		if ( R_TextureAnisotropy() > 0 ) {
+			qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, R_TextureAnisotropy() );
+		}
 	}
 	else
 	{

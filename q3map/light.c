@@ -96,6 +96,15 @@ int			entitySurface[ MAX_MAP_DRAW_SURFS ];
 vec3_t		sunDirection = { 0.45, 0.3, 0.9 };
 vec3_t		sunLight = { 100, 100, 50 };
 
+// WALKER: light from the whole sky dome (-skylight <intensity> <samples>):
+// extra "suns" spread over the upper hemisphere, so open ground is lit by the
+// sky and corners, walls and overhangs get soft shadows (ambient occlusion)
+#define	MAX_SKY_DIRS	256
+float		skyLightIntensity;
+int			numSkyDirs;
+vec3_t		skyDirs[MAX_SKY_DIRS];
+vec3_t		skyDirColor;
+
 
 
 typedef struct {
@@ -415,6 +424,26 @@ void FindSkyBrushes( void ) {
 
 	// default
 	VectorNormalize( sunDirection, sunDirection );
+
+	// sky dome directions: a Fibonacci spiral over the upper hemisphere
+	if ( skyLightIntensity > 0 && numSkyDirs > 0 ) {
+		int		k;
+		float	z, r, a;
+		for ( k = 0 ; k < numSkyDirs ; k++ ) {
+			z = 0.06 + 0.94 * ( k + 0.5 ) / numSkyDirs;
+			r = sqrt( 1 - z * z );
+			a = k * 2.39996323;
+			skyDirs[k][0] = r * cos( a );
+			skyDirs[k][1] = r * sin( a );
+			skyDirs[k][2] = z;
+		}
+		// a surface facing up under open sky gets skyLightIntensity in total
+		// (the mean cosine over the hemisphere is about 0.5); light of a pale blue sky
+		skyDirColor[0] = 0.86 * 2 * skyLightIntensity / numSkyDirs;
+		skyDirColor[1] = 0.94 * 2 * skyLightIntensity / numSkyDirs;
+		skyDirColor[2] = 1.10 * 2 * skyLightIntensity / numSkyDirs;
+		_printf( "sky light %.0f from %i directions\n", skyLightIntensity, numSkyDirs );
+	}
 
 	// find the sky shader
 	for ( i = 0 ; i < numDrawSurfaces ; i++ ) {
@@ -762,7 +791,13 @@ Returns an amount of light to add at the point
 ================
 */
 int		c_sunHit, c_sunMiss;
+static void SkyToPoint( const vec3_t origin, traceWork_t *tw, const vec3_t direction, const vec3_t light, vec3_t addLight );
+
 void SunToPoint( const vec3_t origin, traceWork_t *tw, vec3_t addLight ) {
+	SkyToPoint( origin, tw, sunDirection, sunLight, addLight );
+}
+
+static void SkyToPoint( const vec3_t origin, traceWork_t *tw, const vec3_t direction, const vec3_t light, vec3_t addLight ) {
 	int			i;
 	trace_t		trace;
 	skyBrush_t	*b;
@@ -773,7 +808,7 @@ void SunToPoint( const vec3_t origin, traceWork_t *tw, vec3_t addLight ) {
 		return;
 	}
 
-	VectorMA( origin, MAX_WORLD_COORD * 2, sunDirection, end );
+	VectorMA( origin, MAX_WORLD_COORD * 2, direction, end );
 
 	TraceLine( origin, end, &trace, qtrue, tw );
 
@@ -799,9 +834,9 @@ void SunToPoint( const vec3_t origin, traceWork_t *tw, vec3_t addLight ) {
 		if ( numthreads == 1 ) {
 			c_sunHit++;
 		}
-		addLight[0] = trace.filter[0] * sunLight[0];
-		addLight[1] = trace.filter[1] * sunLight[1];
-		addLight[2] = trace.filter[2] * sunLight[2];
+		addLight[0] = trace.filter[0] * light[0];
+		addLight[1] = trace.filter[1] * light[1];
+		addLight[2] = trace.filter[2] * light[2];
 
 		return;
 	}
@@ -811,6 +846,28 @@ void SunToPoint( const vec3_t origin, traceWork_t *tw, vec3_t addLight ) {
 	}
 
 	VectorClear( addLight );
+}
+
+/*
+================
+SkyDomeToPlane
+
+WALKER: add the light of every visible sky dome direction
+================
+*/
+void SkyDomeToPlane( const vec3_t origin, const vec3_t normal, vec3_t color, traceWork_t *tw ) {
+	int			k;
+	float		angle;
+	vec3_t		skyColor;
+
+	for ( k = 0 ; k < numSkyDirs && skyLightIntensity > 0 ; k++ ) {
+		angle = DotProduct( normal, skyDirs[k] );
+		if ( angle <= 0 ) {
+			continue;
+		}
+		SkyToPoint( origin, tw, skyDirs[k], skyDirColor, skyColor );
+		VectorMA( color, angle, skyColor, color );
+	}
 }
 
 /*
@@ -827,12 +884,12 @@ void SunToPlane( const vec3_t origin, const vec3_t normal, vec3_t color, traceWo
 	}
 
 	angle = DotProduct( normal, sunDirection );
-	if ( angle <= 0 ) {
-		return;		// facing away
+	if ( angle > 0 ) {
+		SunToPoint( origin, tw, sunColor );
+		VectorMA( color, angle, sunColor, color );
 	}
 
-	SunToPoint( origin, tw, sunColor );
-	VectorMA( color, angle, sunColor, color );
+	SkyDomeToPlane( origin, normal, color, tw );
 }
 
 /*
@@ -1709,6 +1766,16 @@ void TraceGrid( int num ) {
 	VectorCopy( ambientColor, color );
 	VectorClear( directedColor );
 
+	// WALKER: visible part of the sky dome lights models from all sides
+	if ( skyLightIntensity > 0 ) {
+		int		k;
+		vec3_t	skyColor;
+		for ( k = 0 ; k < numSkyDirs ; k++ ) {
+			SkyToPoint( origin, &tw, skyDirs[k], skyDirColor, skyColor );
+			VectorMA( color, 0.5, skyColor, color );
+		}
+	}
+
 	for ( i = 0 ; i < numCon ; i++ ) {
 		float	d;
 
@@ -2047,6 +2114,13 @@ int LightMain (int argc, char **argv) {
 		} else if (!strcmp(argv[i],"-patchshadows")) {
 			patchshadows = qtrue;
 			_printf ("Patch shadow casting enabled\n");
+		} else if (!strcmp(argv[i],"-skylight")) {
+			skyLightIntensity = atof( argv[i+1] );
+			numSkyDirs = atoi( argv[i+2] );
+			if ( numSkyDirs > MAX_SKY_DIRS ) {
+				numSkyDirs = MAX_SKY_DIRS;
+			}
+			i += 2;
 		} else if (!strcmp(argv[i],"-extra")) {
 			extra = qtrue;
 			_printf ("Extra detail tracing\n");
@@ -2091,6 +2165,7 @@ int LightMain (int argc, char **argv) {
 				"   point <W>      = set the point light scale to W\n"
 				"   notrace        = don't cast any shadows\n"
 				"   extra          = enable super sampling for anti-aliasing\n"
+				"   skylight I N   = light from the sky dome, intensity I, N directions\n"
 				"   extrawide      = same as extra but smoothen more\n"
 				"   nogrid         = don't calculate light grid for dynamic model lighting\n"
 				"   novertex       = don't calculate vertex lighting\n"
