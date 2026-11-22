@@ -2068,7 +2068,7 @@ static qboolean CG_PlayerShadow( centity_t *cent, float *shadowPlane ) {
 	if ( shadowMode == 2 && cgs.glconfig.stencilBits < 4 ) {
 		static qboolean	warned;
 		if ( !warned ) {
-			CG_Printf( "full robot shadows need a stencil buffer (stencil bits: %i), drawing the simple shadow\n", cgs.glconfig.stencilBits );
+			CG_Printf( "full robot shadows need a stencil buffer (stencil bits: %i), drawing the simple shadow; fix: r_stencilbits 8 ; vid_restart\n", cgs.glconfig.stencilBits );
 			warned = qtrue;
 		}
 		shadowMode = 1;

@@ -115,6 +115,10 @@ static void Effects_StoreItems( void ) {
 	trap_Cvar_SetValue( "r_drawfog", effectsMenuInfo.haze.curvalue );
 	trap_Cvar_SetValue( "r_waterRipple", rippleValues[effectsMenuInfo.ripples.curvalue] );
 	trap_Cvar_SetValue( "cg_shadows", effectsMenuInfo.shadows.curvalue );
+	// full shadows need a stencil buffer: takes effect after APPLY (vid_restart)
+	if ( effectsMenuInfo.shadows.curvalue == 2 && trap_Cvar_VariableValue( "r_stencilbits" ) < 8 ) {
+		trap_Cvar_SetValue( "r_stencilbits", 8 );
+	}
 	trap_Cvar_SetValue( "r_dynamiclight", effectsMenuInfo.dlights.curvalue );
 	trap_Cvar_SetValue( "cg_marks", effectsMenuInfo.marks.curvalue );
 	trap_Cvar_SetValue( "r_ext_multisample", antialiasSamples[effectsMenuInfo.antialias.curvalue] );

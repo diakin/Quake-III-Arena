@@ -487,10 +487,13 @@ static void GraphicsOptions_ApplyChanges( void *unused, int notification )
 	trap_Cvar_Set( "r_glDriver", ( char * ) s_drivers[s_graphicsoptions.driver.curvalue] );
 	switch ( s_graphicsoptions.colordepth.curvalue )
 	{
+	// WALKER: the stencil buffer (full robot shadows) is kept whenever the depth
+	// buffer can hold it; id's menu set r_stencilbits 0 on every APPLY with the
+	// default colour depth, so the shadows disappeared after switching to a window
 	case 0:
 		trap_Cvar_SetValue( "r_colorbits", 0 );
 		trap_Cvar_SetValue( "r_depthbits", 0 );
-		trap_Cvar_SetValue( "r_stencilbits", 0 );
+		trap_Cvar_SetValue( "r_stencilbits", 8 );
 		break;
 	case 1:
 		trap_Cvar_SetValue( "r_colorbits", 16 );
@@ -500,6 +503,7 @@ static void GraphicsOptions_ApplyChanges( void *unused, int notification )
 	case 2:
 		trap_Cvar_SetValue( "r_colorbits", 32 );
 		trap_Cvar_SetValue( "r_depthbits", 24 );
+		trap_Cvar_SetValue( "r_stencilbits", 8 );
 		break;
 	}
 	trap_Cvar_SetValue( "r_vertexLight", s_graphicsoptions.lighting.curvalue );

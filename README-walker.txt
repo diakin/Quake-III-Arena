@@ -191,6 +191,8 @@ TAB - счёт, ~ - консоль, ESC - меню, F12 - снимок экра�
                          x2 — серый, сложение — чёрный). r_drawfog: 0 — без дымки, 1 — OpenGL,
                          2 — исходный проход Q3
   renderer/tr_backend.c  r_noportals 1 (отражения выкл.): под водой бледный цвет неба
+  q3_ui/ui_video.c       APPLY в меню SYSTEM больше не ставит r_stencilbits 0 (тени пропадали
+                         после переключения в окно)
   q3_ui/ui_effects.c     меню SETUP -> EFFECTS: FPS, отражения, дымка, рябь на воде, тени, динамический свет,
                          следы, сглаживание, фильтрация, качество текстур; FAST / QUALITY / APPLY
   q3_ui/ui_selectbots.c, ui_startserver.c: после ручного выбора ботов bot_minplayers 0, чтобы
