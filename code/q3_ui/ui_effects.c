@@ -8,7 +8,7 @@ and texture quality take effect after APPLY (vid_restart).
 
   SHOW FPS            cg_drawFPS
   WATER REFLECTIONS   r_noportals (the water mirror draws the scene twice)
-  HAZE                r_drawfog (fog volume: one more pass over every surface)
+  HAZE                r_drawfog (1: OpenGL fog, almost free; 2: the original fog pass)
   ROBOT SHADOWS       cg_shadows 0 / 1 (round spot) / 2 (stencil, exact shape)
   DYNAMIC LIGHTS      r_dynamiclight (shots, explosions)
   MARKS ON WALLS      cg_marks
@@ -121,7 +121,7 @@ Effects_Preset
 static void Effects_Preset( qboolean fast ) {
 	effectsMenuInfo.fps.curvalue = 1;
 	effectsMenuInfo.reflections.curvalue = !fast;
-	effectsMenuInfo.haze.curvalue = !fast;
+	effectsMenuInfo.haze.curvalue = 1;		// OpenGL fog: almost free
 	effectsMenuInfo.shadows.curvalue = fast ? 1 : 2;
 	effectsMenuInfo.dlights.curvalue = !fast;
 	effectsMenuInfo.marks.curvalue = 1;
@@ -203,7 +203,7 @@ static void Effects_Draw( void ) {
 	static vec4_t	dimColor = { 0.75f, 0.75f, 0.75f, 1.0f };
 
 	Menu_Draw( &effectsMenuInfo.menu );
-	UI_DrawString( 320, 336, "reflections, haze and full shadows cost the most", UI_CENTER | UI_SMALLFONT, dimColor );
+	UI_DrawString( 320, 336, "reflections and full shadows cost the most", UI_CENTER | UI_SMALLFONT, dimColor );
 	UI_DrawString( 320, 354, "antialiasing, filter and quality: press APPLY", UI_CENTER | UI_SMALLFONT, dimColor );
 }
 

@@ -611,6 +611,76 @@ static void ProjectDlightTexture( void ) {
 
 /*
 ===================
+WALKER: hardware fog
+
+Q3 draws a fog volume as one more pass over every surface in it, with fog
+texture coordinates computed on the CPU for every vertex each frame. Over the
+whole map that pass halved the frame rate. A fog volume without a visible
+surface (the map-wide haze of wk_islands) is drawn with OpenGL fog instead,
+which costs nothing on any video card. The fog curve follows Q3's: about half
+density at a quarter of the fog distance (GL_EXP, density 2.4 / distance).
+Stages after the first are blended with what is already fogged, so the fog
+colour is chosen per blend mode: white for multiply, grey for multiply x2,
+black for additive. r_drawfog 2 brings back the original fog pass.
+===================
+*/
+static qboolean	hardwareFog;
+static qboolean	hardwareFogUsed;	// this tesselation was fogged by OpenGL
+static vec3_t	hardwareFogColor;
+
+static qboolean RB_HardwareFogBegin( void ) {
+	fog_t	*fog;
+
+	hardwareFog = qfalse;
+	hardwareFogUsed = qfalse;
+	if ( r_drawfog->integer != 1 || !tess.fogNum || !tess.shader->fogPass || !tr.world ) {
+		return qfalse;
+	}
+	fog = tr.world->fogs + tess.fogNum;
+	if ( fog->hasSurface ) {
+		return qfalse;		// fog with a visible plane: the classic pass draws its edge
+	}
+	VectorCopy( fog->parms.color, hardwareFogColor );
+	qglFogi( GL_FOG_MODE, GL_EXP );
+	qglFogf( GL_FOG_DENSITY, 2.4f / ( fog->parms.depthForOpaque > 1 ? fog->parms.depthForOpaque : 1 ) );
+	qglHint( GL_FOG_HINT, GL_NICEST );
+	qglEnable( GL_FOG );
+	hardwareFog = qtrue;
+	hardwareFogUsed = qtrue;
+	return qtrue;
+}
+
+static void RB_HardwareFogStage( int stateBits ) {
+	int		srcBlend = stateBits & GLS_SRCBLEND_BITS;
+	int		dstBlend = stateBits & GLS_DSTBLEND_BITS;
+	vec4_t	color;
+
+	if ( !hardwareFog ) {
+		return;
+	}
+	color[3] = 1;
+	if ( ( srcBlend == GLS_SRCBLEND_DST_COLOR && dstBlend == GLS_DSTBLEND_ZERO )
+		|| ( srcBlend == GLS_SRCBLEND_ZERO && dstBlend == GLS_DSTBLEND_SRC_COLOR ) ) {
+		VectorSet( color, 1, 1, 1 );			// multiply: fade to "no change"
+	} else if ( srcBlend == GLS_SRCBLEND_DST_COLOR && dstBlend == GLS_DSTBLEND_SRC_COLOR ) {
+		VectorSet( color, 0.5f, 0.5f, 0.5f );	// multiply x2
+	} else if ( dstBlend == GLS_DSTBLEND_ONE ) {
+		VectorSet( color, 0, 0, 0 );			// additive
+	} else {
+		VectorCopy( hardwareFogColor, color );
+	}
+	qglFogfv( GL_FOG_COLOR, color );
+}
+
+static void RB_HardwareFogEnd( void ) {
+	if ( hardwareFog ) {
+		qglDisable( GL_FOG );
+		hardwareFog = qfalse;
+	}
+}
+
+/*
+===================
 RB_FogPass
 
 Blends a fog texture on top of everything else
@@ -820,7 +890,7 @@ static void ComputeColors( shaderStage_t *pStage )
 	//
 	// fog adjustment for colors to fade out as fog increases
 	//
-	if ( tess.fogNum && r_drawfog->integer && !backEnd.viewParms.isPortal )
+	if ( tess.fogNum && r_drawfog->integer && !hardwareFogUsed && !backEnd.viewParms.isPortal )
 	{
 		switch ( pStage->adjustColorsForFog )
 		{
@@ -958,6 +1028,7 @@ static void RB_IterateStagesGeneric( shaderCommands_t *input )
 
 		ComputeColors( pStage );
 		ComputeTexCoords( pStage );
+		RB_HardwareFogStage( pStage->stateBits );
 
 		if ( !setArraysOnce )
 		{
@@ -1083,7 +1154,9 @@ void RB_StageIteratorGeneric( void )
 	//
 	// call shader function
 	//
+	RB_HardwareFogBegin();
 	RB_IterateStagesGeneric( input );
+	RB_HardwareFogEnd();
 
 	// 
 	// now do any dynamic lighting needed
@@ -1096,8 +1169,9 @@ void RB_StageIteratorGeneric( void )
 	//
 	// now do fog
 	//
-	// WALKER: r_drawfog 0 turns the haze off; the water reflection is drawn without it
-	if ( tess.fogNum && tess.shader->fogPass && r_drawfog->integer && !backEnd.viewParms.isPortal ) {
+	// WALKER: r_drawfog 0 turns the haze off, 1 draws it with OpenGL fog where
+	// possible (RB_HardwareFogBegin), 2 always with the fog pass
+	if ( tess.fogNum && tess.shader->fogPass && r_drawfog->integer && !hardwareFogUsed && !backEnd.viewParms.isPortal ) {
 		RB_FogPass();
 	}
 
@@ -1171,9 +1245,12 @@ void RB_StageIteratorVertexLitTexture( void )
 	//
 	// call special shade routine
 	//
+	RB_HardwareFogBegin();
+	RB_HardwareFogStage( tess.xstages[0]->stateBits );
 	R_BindAnimatedImage( &tess.xstages[0]->bundle[0] );
 	GL_State( tess.xstages[0]->stateBits );
 	R_DrawElements( input->numIndexes, input->indexes );
+	RB_HardwareFogEnd();
 
 	// 
 	// now do any dynamic lighting needed
@@ -1185,8 +1262,9 @@ void RB_StageIteratorVertexLitTexture( void )
 	//
 	// now do fog
 	//
-	// WALKER: r_drawfog 0 turns the haze off; the water reflection is drawn without it
-	if ( tess.fogNum && tess.shader->fogPass && r_drawfog->integer && !backEnd.viewParms.isPortal ) {
+	// WALKER: r_drawfog 0 turns the haze off, 1 draws it with OpenGL fog where
+	// possible (RB_HardwareFogBegin), 2 always with the fog pass
+	if ( tess.fogNum && tess.shader->fogPass && r_drawfog->integer && !hardwareFogUsed && !backEnd.viewParms.isPortal ) {
 		RB_FogPass();
 	}
 
@@ -1226,6 +1304,8 @@ void RB_StageIteratorLightmappedMultitexture( void ) {
 	//
 	GL_State( GLS_DEFAULT );
 	qglVertexPointer( 3, GL_FLOAT, 16, input->xyz );
+	RB_HardwareFogBegin();
+	RB_HardwareFogStage( GLS_DEFAULT );
 
 #ifdef REPLACE_MODE
 	qglDisableClientState( GL_COLOR_ARRAY );
@@ -1280,6 +1360,7 @@ void RB_StageIteratorLightmappedMultitexture( void ) {
 	GL_TexEnv( GL_MODULATE );
 	qglShadeModel( GL_SMOOTH );
 #endif
+	RB_HardwareFogEnd();
 
 	// 
 	// now do any dynamic lighting needed
@@ -1291,8 +1372,9 @@ void RB_StageIteratorLightmappedMultitexture( void ) {
 	//
 	// now do fog
 	//
-	// WALKER: r_drawfog 0 turns the haze off; the water reflection is drawn without it
-	if ( tess.fogNum && tess.shader->fogPass && r_drawfog->integer && !backEnd.viewParms.isPortal ) {
+	// WALKER: r_drawfog 0 turns the haze off, 1 draws it with OpenGL fog where
+	// possible (RB_HardwareFogBegin), 2 always with the fog pass
+	if ( tess.fogNum && tess.shader->fogPass && r_drawfog->integer && !hardwareFogUsed && !backEnd.viewParms.isPortal ) {
 		RB_FogPass();
 	}
 
