@@ -1149,10 +1149,12 @@ def rock_shadow(x, y, top, radius):
     across = np.array([-direction[1], direction[0]])
     length = (top - WATER_Z) / math.tan(elevation)
     centre = np.array([x, y])
-    back = centre - direction * radius * 0.4
-    tip = centre + direction * (length + radius * 0.3)
-    corners = [back - across * radius * 0.95, back + across * radius * 0.95,
-               tip + across * radius * 0.55, tip - across * radius * 0.55]
+    # начало — у центра глыбы (на солнечную сторону тень не заходит); ширина меньше
+    # диаметра: глыба сужается кверху, а тень даёт её верхняя часть
+    back = centre + direction * radius * 0.15
+    tip = centre + direction * (length + radius * 0.2)
+    corners = [back - across * radius * 0.62, back + across * radius * 0.62,
+               tip + across * radius * 0.32, tip - across * radius * 0.32]
     samples = np.array([back + (tip - back) * fraction + across * radius * side
                         for fraction in np.linspace(0.2, 1, 9) for side in (-0.5, 0, 0.5)])
     if terrain_height_at(samples[:, 0], samples[:, 1]).min() >= WATER_Z:
