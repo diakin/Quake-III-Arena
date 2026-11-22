@@ -1940,7 +1940,6 @@ void CG_Init( int serverMessageNum, int serverCommandSequence, int clientNum ) {
 	CG_InitLocalEntities();
 
 	CG_InitMarkPolys();
-	CG_InitRockShadows();
 
 	// remove the last loading update
 	cg.infoScreenText[0] = 0;

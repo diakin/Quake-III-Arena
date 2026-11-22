@@ -54,7 +54,7 @@ WIN32_SRC = win_input.c win_main.c win_net.c win_shared.c win_snd.c win_syscon.c
 RENDERER_SRC = tr_animation.c tr_backend.c tr_bsp.c tr_cmds.c tr_curve.c \
 	tr_flares.c tr_font.c tr_image.c tr_init.c tr_light.c tr_main.c tr_marks.c \
 	tr_mesh.c tr_model.c tr_model_glb.c tr_noise.c tr_scene.c tr_shade.c \
-	tr_shade_calc.c tr_shader.c tr_shadows.c tr_sky.c tr_surface.c tr_world.c
+	tr_shade_calc.c tr_shader.c tr_shadows.c tr_sunshadow.c tr_sky.c tr_surface.c tr_world.c
 
 JPEG_SRC = jcapimin.c jccoefct.c jccolor.c jcdctmgr.c jchuff.c jcinit.c \
 	jcmainct.c jcmarker.c jcmaster.c jcomapi.c jcparam.c jcphuff.c jcprepct.c \

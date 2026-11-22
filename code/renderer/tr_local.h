@@ -1085,6 +1085,7 @@ extern	cvar_t	*r_waterRipple;
 extern	cvar_t	*r_mirrorScale;
 extern	cvar_t	*r_mirrorDistance;
 extern	cvar_t	*r_mirrorEntities;
+extern	cvar_t	*r_sunShadows;		// WALKER: 0 off, 1 simple, 2 full
 extern	cvar_t	*r_portalOnly;
 
 extern	cvar_t	*r_subdivisions;
@@ -1381,7 +1382,12 @@ SHADOWS
 */
 
 void RB_ShadowTessEnd( void );
-void RB_ShadowFinish( void );
+void RB_ShadowFinish( qboolean sunShadows );
+
+// WALKER: sun shadows of the buildings (tr_sunshadow.c)
+void R_LoadSunCasters( const char *bspName );
+qboolean R_SunShadowsActive( void );
+qboolean RB_SunShadowVolumes( drawSurf_t *drawSurfs, int numDrawSurfs );
 void RB_ProjectionShadowDeform( void );
 
 /*

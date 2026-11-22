@@ -794,7 +794,9 @@ int		c_sunHit, c_sunMiss;
 static void SkyToPoint( const vec3_t origin, traceWork_t *tw, const vec3_t direction, const vec3_t light, vec3_t addLight );
 
 void SunToPoint( const vec3_t origin, traceWork_t *tw, vec3_t addLight ) {
+	tw->sunTrace = qtrue;
 	SkyToPoint( origin, tw, sunDirection, sunLight, addLight );
+	tw->sunTrace = qfalse;
 }
 
 static void SkyToPoint( const vec3_t origin, traceWork_t *tw, const vec3_t direction, const vec3_t light, vec3_t addLight ) {
@@ -1282,6 +1284,7 @@ void TraceLtm( int num ) {
 	vec3_t		lightmapOrigin, lightmapVecs[2];
 	int widthtable[LIGHTMAP_WIDTH], heighttable[LIGHTMAP_WIDTH];
 
+	tw.sunTrace = qfalse;
 	ds = &drawSurfaces[num];
 	si = ShaderInfoForShader( dshaders[ ds->shaderNum].shader );
 
@@ -1670,6 +1673,7 @@ void TraceGrid( int num ) {
 	traceWork_t	tw;
 	float		addSize;
 
+	tw.sunTrace = qfalse;
 	mod = num;
 	z = mod / ( gridBounds[0] * gridBounds[1] );
 	mod -= z * ( gridBounds[0] * gridBounds[1] );
@@ -2020,6 +2024,7 @@ void VertexLightingThread(int num) {
 	traceWork_t	tw;
 	shaderInfo_t *si;
 
+	tw.sunTrace = qfalse;
 	ds = &drawSurfaces[num];
 
 	// vertex-lit triangle model
@@ -2050,6 +2055,7 @@ void TriSoupLightingThread(int num) {
 	traceWork_t	tw;
 	shaderInfo_t *si;
 
+	tw.sunTrace = qfalse;
 	ds = &drawSurfaces[num];
 	si = ShaderInfoForShader( dshaders[ ds->shaderNum].shader );
 

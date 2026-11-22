@@ -124,6 +124,7 @@ cvar_t	*r_waterRipple;
 cvar_t	*r_mirrorScale;
 cvar_t	*r_mirrorDistance;
 cvar_t	*r_mirrorEntities;
+cvar_t	*r_sunShadows;
 cvar_t	*r_portalOnly;
 
 cvar_t	*r_subdivisions;
@@ -1007,6 +1008,9 @@ void R_Register( void )
 	r_mirrorScale = ri.Cvar_Get ("r_mirrorScale", "0.5", CVAR_ARCHIVE);
 	r_mirrorDistance = ri.Cvar_Get ("r_mirrorDistance", "1500", CVAR_ARCHIVE);
 	r_mirrorEntities = ri.Cvar_Get ("r_mirrorEntities", "0", CVAR_ARCHIVE);
+	// WALKER: sun shadows of the buildings, stencil shadow volumes (tr_sunshadow.c):
+	// 0 off, 1 simple (coarse shapes, for slow cards), 2 full
+	r_sunShadows = ri.Cvar_Get ("r_sunShadows", "2", CVAR_ARCHIVE);
 	r_shadows = ri.Cvar_Get( "cg_shadows", "1", 0 );
 
 	r_maxpolys = ri.Cvar_Get( "r_maxpolys", va("%d", MAX_POLYS), 0);

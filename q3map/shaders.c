@@ -441,6 +441,14 @@ static void ParseShaderFile( const char *filename ) {
 				continue;
 			}
 
+			// WALKER: q3map_nosunshadow: the surface does not block the sun (its sun
+			// shadow is drawn by the game with stencil shadow volumes); it still
+			// blocks the light of the sky dome
+			if ( !Q_stricmp( token, "q3map_nosunshadow" ) ) {
+				si->noSunShadow = qtrue;
+				continue;
+			}
+
 			// q3map_forcesunlight
 			if ( !Q_stricmp( token, "q3map_forcesunlight" ) ) {
 				si->forceSunLight = qtrue;

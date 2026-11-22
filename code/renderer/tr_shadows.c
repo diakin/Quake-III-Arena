@@ -320,8 +320,8 @@ because otherwise shadows from different body parts would
 overlap and double darken.
 =================
 */
-void RB_ShadowFinish( void ) {
-	if ( r_shadows->integer != 2 ) {
+void RB_ShadowFinish( qboolean sunShadows ) {
+	if ( r_shadows->integer != 2 && !sunShadows ) {
 		return;
 	}
 	if ( glConfig.stencilBits < 4 ) {

@@ -12,6 +12,7 @@ and texture quality take effect after APPLY (vid_restart).
   HAZE                r_drawfog (1: OpenGL fog, almost free; 2: the original fog pass)
   WATER RIPPLES       r_waterRipple 0 / 0.25 / 0.55 / 1
   ROBOT SHADOWS       cg_shadows 0 / 1 (round spot) / 2 (stencil, exact shape)
+  BUILDING SHADOWS    r_sunShadows 0 / 1 (coarse shapes) / 2 (full): stencil shadow volumes
   ROBOT DETAIL        r_lodbias -1 / 0 / 1 (simplified robot models with distance)
   DYNAMIC LIGHTS      r_dynamiclight (shots, explosions)
   MARKS ON WALLS      cg_marks
@@ -29,14 +30,15 @@ FAST and QUALITY set all of them at once.
 #define ART_BACK1			"menu/art/back_1"
 
 #define EFFECTS_X			340
-#define EFFECTS_Y			96
-#define EFFECTS_STEP		22
+#define EFFECTS_Y			88
+#define EFFECTS_STEP		21
 
 #define ID_FPS				10
 #define ID_REFLECTIONS		11
 #define ID_HAZE				12
 #define ID_RIPPLES			23
 #define ID_DETAIL			24
+#define ID_BUILDINGS		25
 #define ID_SHADOWS			13
 #define ID_DLIGHTS			14
 #define ID_MARKS			15
@@ -58,6 +60,7 @@ typedef struct {
 	menulist_s			ripples;
 	menulist_s			detail;
 	menulist_s			shadows;
+	menulist_s			buildings;
 	menulist_s			dlights;
 	menulist_s			marks;
 	menulist_s			antialias;
@@ -106,6 +109,7 @@ static void Effects_SetMenuItems( void ) {
 	ripple = trap_Cvar_VariableValue( "r_waterRipple" );
 	effectsMenuInfo.ripples.curvalue = ripple < 0.1f ? 0 : ( ripple < 0.4f ? 1 : ( ripple < 0.8f ? 2 : 3 ) );
 	effectsMenuInfo.shadows.curvalue = Com_Clamp( 0, 2, trap_Cvar_VariableValue( "cg_shadows" ) );
+	effectsMenuInfo.buildings.curvalue = Com_Clamp( 0, 2, trap_Cvar_VariableValue( "r_sunShadows" ) );
 	effectsMenuInfo.detail.curvalue = Com_Clamp( 0, 2, trap_Cvar_VariableValue( "r_lodbias" ) + 1 );
 	effectsMenuInfo.dlights.curvalue = trap_Cvar_VariableValue( "r_dynamiclight" ) != 0;
 	effectsMenuInfo.marks.curvalue = trap_Cvar_VariableValue( "cg_marks" ) != 0;
@@ -133,8 +137,10 @@ static void Effects_StoreItems( void ) {
 	trap_Cvar_SetValue( "r_waterRipple", rippleValues[effectsMenuInfo.ripples.curvalue] );
 	trap_Cvar_SetValue( "cg_shadows", effectsMenuInfo.shadows.curvalue );
 	trap_Cvar_SetValue( "r_lodbias", effectsMenuInfo.detail.curvalue - 1 );
-	// full shadows need a stencil buffer: takes effect after APPLY (vid_restart)
-	if ( effectsMenuInfo.shadows.curvalue == 2 && trap_Cvar_VariableValue( "r_stencilbits" ) < 8 ) {
+	trap_Cvar_SetValue( "r_sunShadows", effectsMenuInfo.buildings.curvalue );
+	// stencil shadows need a stencil buffer: takes effect after APPLY (vid_restart)
+	if ( ( effectsMenuInfo.shadows.curvalue == 2 || effectsMenuInfo.buildings.curvalue )
+		&& trap_Cvar_VariableValue( "r_stencilbits" ) < 8 ) {
 		trap_Cvar_SetValue( "r_stencilbits", 8 );
 	}
 	trap_Cvar_SetValue( "r_dynamiclight", effectsMenuInfo.dlights.curvalue );
@@ -155,6 +161,7 @@ static void Effects_Preset( qboolean fast ) {
 	effectsMenuInfo.haze.curvalue = 1;		// OpenGL fog: almost free
 	effectsMenuInfo.ripples.curvalue = 1;
 	effectsMenuInfo.shadows.curvalue = fast ? 1 : 2;
+	effectsMenuInfo.buildings.curvalue = fast ? 1 : 2;
 	effectsMenuInfo.detail.curvalue = fast ? 2 : 1;
 	effectsMenuInfo.dlights.curvalue = !fast;
 	effectsMenuInfo.marks.curvalue = 1;
@@ -236,7 +243,7 @@ static void Effects_Draw( void ) {
 	static vec4_t	dimColor = { 0.75f, 0.75f, 0.75f, 1.0f };
 
 	Menu_Draw( &effectsMenuInfo.menu );
-	UI_DrawString( 320, 380, "reflections and full shadows cost the most", UI_CENTER | UI_SMALLFONT, dimColor );
+	UI_DrawString( 320, 394, "reflections and full shadows cost the most", UI_CENTER | UI_SMALLFONT, dimColor );
 	UI_DrawString( 320, 398, "antialiasing, filter and quality: press APPLY", UI_CENTER | UI_SMALLFONT, dimColor );
 }
 
@@ -267,6 +274,7 @@ static void Effects_MenuInit( void ) {
 	Effects_InitSpin( &effectsMenuInfo.haze, ID_HAZE, y, "Haze:", offOnNames );						y += EFFECTS_STEP;
 	Effects_InitSpin( &effectsMenuInfo.ripples, ID_RIPPLES, y, "Water Ripples:", rippleNames );		y += EFFECTS_STEP;
 	Effects_InitSpin( &effectsMenuInfo.shadows, ID_SHADOWS, y, "Robot Shadows:", shadowNames );		y += EFFECTS_STEP;
+	Effects_InitSpin( &effectsMenuInfo.buildings, ID_BUILDINGS, y, "Building Shadows:", shadowNames );	y += EFFECTS_STEP;
 	Effects_InitSpin( &effectsMenuInfo.detail, ID_DETAIL, y, "Robot Detail:", detailNames );		y += EFFECTS_STEP;
 	Effects_InitSpin( &effectsMenuInfo.dlights, ID_DLIGHTS, y, "Dynamic Lights:", offOnNames );		y += EFFECTS_STEP;
 	Effects_InitSpin( &effectsMenuInfo.marks, ID_MARKS, y, "Marks On Walls:", offOnNames );			y += EFFECTS_STEP;
@@ -296,6 +304,7 @@ static void Effects_MenuInit( void ) {
 	Menu_AddItem( &effectsMenuInfo.menu, &effectsMenuInfo.haze );
 	Menu_AddItem( &effectsMenuInfo.menu, &effectsMenuInfo.ripples );
 	Menu_AddItem( &effectsMenuInfo.menu, &effectsMenuInfo.shadows );
+	Menu_AddItem( &effectsMenuInfo.menu, &effectsMenuInfo.buildings );
 	Menu_AddItem( &effectsMenuInfo.menu, &effectsMenuInfo.detail );
 	Menu_AddItem( &effectsMenuInfo.menu, &effectsMenuInfo.dlights );
 	Menu_AddItem( &effectsMenuInfo.menu, &effectsMenuInfo.marks );

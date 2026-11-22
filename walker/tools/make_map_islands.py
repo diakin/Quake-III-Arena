@@ -25,7 +25,6 @@ FOG_COLOR = (0.72, 0.76, 0.77)   # как небо у горизонта
 FOG_DISTANCE = 12000
 SUN_AZIMUTH = 140.0      # градусы, как в q3map_sun
 SUN_ELEVATION = 40.0
-SHADOW_DARKEN = 0.4      # тени, которые рисует игра (робот, глыбы на воде): яркость x0.6
 
 # ================================================================ текстуры
 
@@ -554,6 +553,17 @@ def tex(name):
     return name if name.startswith('common/') else f'walker/{name}'
 
 
+# постройки: их солнечные тени рисует игра (теневые объёмы по выпуклым формам, make_props.CASTERS),
+# в запечённом освещении они солнце не загораживают (q3map_nosunshadow); тени скал и рельефа —
+# запечённые
+SHADOW_CASTER_SHADERS = {'concrete', 'concrete_dark', 'concrete_tiles', 'hazard', 'helipad', 'metal_grate', 'metal_panel',
+                         'metal_rust', 'rocket_white', 'beacon_light', 'glow_cyan', 'glow_orange', 'glow_red'}
+
+
+def is_caster(*shaders):
+    return any(shader in SHADOW_CASTER_SHADERS or shader.startswith('beacon_') for shader in shaders if shader)
+
+
 def add_prism(polygon, z_bottom, z_top, top, side, bottom=CAULK, detail=True, top_points=None, top_shift=(0, 0), top_scale=None):
     """выпуклая призма: polygon — вершины против часовой стрелки (вид сверху).
     top_points — три точки наклонной верхней плоскости (иначе плоская на z_top)."""
@@ -574,6 +584,11 @@ def add_prism(polygon, z_bottom, z_top, top, side, bottom=CAULK, detail=True, to
     if z_top is not None:
         lowest_top = min(lowest_top, z_top)
     BRUSHES.append((brush, (center_x, center_y, (z_bottom + lowest_top) / 2)))
+    if is_caster(top, side):
+        first, second, third = (np.array(point, dtype=float) for point in top_points)
+        normal = np.cross(second - first, third - first)
+        tops = [first[2] - (normal[0] * (x - first[0]) + normal[1] * (y - first[1])) / normal[2] for x, y in polygon]
+        props.caster([(x, y, z_bottom) for x, y in polygon] + [(x, y, z) for (x, y), z in zip(polygon, tops)])
 
 
 def add_box(x0, y0, z0, x1, y1, z1, side, top=None, bottom=CAULK, detail=True):
@@ -600,6 +615,8 @@ def add_frustum(center_x, center_y, radius_bottom, radius_top, z0, z1, side, top
         brush.face([(bottom_poly[index][0], bottom_poly[index][1], z0), (bottom_poly[following][0], bottom_poly[following][1], z0),
                     (top_poly[index][0], top_poly[index][1], z1)], tex(side))
     BRUSHES.append((brush, (center_x, center_y, (z0 + z1) / 2)))
+    if is_caster(top, side):
+        props.caster([(x, y, z0) for x, y in bottom_poly] + [(x, y, z1) for x, y in top_poly])
 
 
 def add_ramp(x0, y0, x1, y1, z_low, z_high, rise_toward, side='concrete_dark', top='concrete', z_bottom=-40):
@@ -1138,65 +1155,11 @@ def launch_tower():
     beacon('d', 120, 700, ground(120, 700))
 
 
-ROCK_SHADOWS = []     # контуры теней глыб на воде: по 4 точки (x, y, z)
-
-
-def rock_shadow(x, y, top, radius):
-    """тень глыбы на поверхности воды: трапеция от подножия в сторону от солнца, длина — по
-    высоте вершины над водой и высоте солнца. Игра рисует её поверх воды (cg_marks.c,
-    CG_AddRockShadows); на суше трапеция уходит под землю. Только если тень доходит до воды."""
-    azimuth, elevation = math.radians(SUN_AZIMUTH), math.radians(SUN_ELEVATION)
-    direction = -np.array([math.cos(azimuth), math.sin(azimuth)])
-    across = np.array([-direction[1], direction[0]])
-    length = (top - WATER_Z) / math.tan(elevation)
-    centre = np.array([x, y])
-    # начало — у центра глыбы (на солнечную сторону тень не заходит); ширина меньше
-    # диаметра: глыба сужается кверху, а тень даёт её верхняя часть
-    back = centre + direction * radius * 0.15
-    tip = centre + direction * (length + radius * 0.2)
-    corners = [back - across * radius * 0.62, back + across * radius * 0.62,
-               tip + across * radius * 0.32, tip - across * radius * 0.32]
-    samples = np.array([back + (tip - back) * fraction + across * radius * side
-                        for fraction in np.linspace(0.2, 1, 9) for side in (-0.5, 0, 0.5)])
-    if terrain_height_at(samples[:, 0], samples[:, 1]).min() >= WATER_Z:
-        return
-    # над водой на 0.1: вершины суши не ближе 0.25 к уровню воды (height_map), и тень
-    # не ложится на берег поверх запечённой тени
-    ROCK_SHADOWS.append([(float(corner[0]), float(corner[1]), WATER_Z + 0.1) for corner in corners])
-
-
-def write_rock_shadows():
-    os.makedirs(os.path.join(DATA, 'maps'), exist_ok=True)
-    with open(os.path.join(DATA, 'maps', 'wk_islands.shadows'), 'w', encoding='ascii', newline='\n') as file:
-        file.write('// rock shadows on the water: four corners (x y z) each, see cg_marks.c\n')
-        for corners in ROCK_SHADOWS:
-            file.write('  '.join(f'{px:.1f} {py:.1f} {pz:.1f}' for px, py, pz in corners) + '\n')
-    print('rock shadows on water:', len(ROCK_SHADOWS))
-
-
-def make_rock_shadow_texture():
-    """мягкое пятно тени: по ширине края размыты, у дальнего конца тень бледнеет."""
-    width, length = 64, 128
-    across = np.abs(np.linspace(-1, 1, width))
-    along = np.linspace(0, 1, length)
-    side = np.clip((1 - across) / 0.45, 0, 1)
-    side = side * side * (3 - 2 * side)
-    start = np.clip(along / 0.12, 0, 1)
-    end = np.clip((1 - along) / 0.5, 0, 1)
-    end = end * end * (3 - 2 * end)
-    mask = side[None, :] * (start * end)[:, None]
-    value = (255 * (1 - SHADOW_DARKEN * mask)).astype(np.uint8)
-    image = Image.fromarray(np.stack([value] * 3, axis=-1))
-    path = os.path.join(DATA, 'textures/walker/rock_shadow.tga')
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    image.save(path)
-
-
 def rock_stack(x, y, height, radius, seed):
     """скальный выход: валуны (make_props.rock_cluster) и невидимый браш коллизии главного валуна."""
     base = ground(x, y)
     props.add_prop(f'rocks_{seed}', props.rock_cluster((x, y, base), height * 1.05, radius * 1.05, seed))
-    rock_shadow(x, y, base + height * 0.95, radius * 1.05)
+
     add_frustum(x, y, radius * 0.6, radius * 0.3, -40, base + height * 0.7, 'clip_solid', 'clip_solid', 7)
 
 
@@ -1588,22 +1551,6 @@ def make_mix_textures():
     save_texture('textures/walker/terrain_detail', tex_detail(141))
 
 
-# тень глыбы на воде (рисует игра): затемнение поверх воды, после непрозрачных поверхностей
-ROCK_SHADOW_SHADER = """
-walker/rockshadow
-{
-	nopicmip
-	cull none
-	polygonOffset
-	sort banner
-	{
-		clampmap textures/walker/rock_shadow.tga
-		blendFunc GL_DST_COLOR GL_ZERO
-		rgbGen identity
-	}
-}
-"""
-
 PROP_MATERIALS = ['rock', 'rockmoss', 'concrete', 'concrete_dark', 'metal_rust', 'metal_panel', 'hazard',
                   'container_red', 'container_blue', 'container_orange']
 
@@ -1633,6 +1580,26 @@ def vertex_lit_shaders():
 # остаются на 16 (их площадь велика, а на неровной текстуре ступени не видны)
 LIGHTMAP_SAMPLE_SIZE = {'concrete_tiles': 4, 'helipad': 4, 'concrete': 8, 'concrete_dark': 8, 'metal_rust': 8,
                         'metal_panel': 8, 'metal_grate': 8, 'hazard': 8, 'rocket_white': 8}
+
+
+def mark_no_sun_shadow(text):
+    """q3map_nosunshadow в шейдеры построек и моделей: солнце их не учитывает при расчёте
+    освещения (их тени рисует игра)."""
+    out = []
+    lines = text.split('\n')
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        out.append(line)
+        name = line.strip()
+        if name.startswith('textures/walker/') and index + 1 < len(lines) and lines[index + 1].strip() == '{':
+            short = name[len('textures/walker/'):]
+            if is_caster(short) or short.startswith('v_'):
+                out.append(lines[index + 1])
+                out.append('\tq3map_nosunshadow')
+                index += 1
+        index += 1
+    return '\n'.join(out)
 
 
 def lightmapped_shaders():
@@ -1684,9 +1651,10 @@ def main():
     ruins_south()
     ruins_middle()
     make_mix_textures()
-    make_rock_shadow_texture()
-    write_rock_shadows()
-    SHADERS += lightmapped_shaders() + vertex_lit_shaders() + ROCK_SHADOW_SHADER
+    SHADERS += lightmapped_shaders() + vertex_lit_shaders()
+    SHADERS = mark_no_sun_shadow(SHADERS)
+    counts = props.write_casters(os.path.join(DATA, 'maps', 'wk_islands.casters'))
+    print('shadow casters (both, simple only, full only):', counts)
     write_shaders()
     write_map()
     # карта высот для просмотра

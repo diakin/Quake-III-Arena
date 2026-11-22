@@ -50,6 +50,7 @@ typedef struct shaderInfo_s {
 	qboolean	patchShadows;			// have patches casting shadows when using -light for this surface
 	qboolean	vertexShadows;			// shadows will be casted at this surface even when vertex lit
 	qboolean	noVertexShadows;		// no shadows will be casted at this surface in vertex lighting
+	qboolean	noSunShadow;			// WALKER: does not block the sun (the game draws its shadow)
 	qboolean	forceSunLight;			// force sun light at this surface even tho we might not calculate shadows in vertex lighting
 	qboolean	notjunc;				// don't use this surface for tjunction fixing
 	float		vertexScale;			// vertex light scale

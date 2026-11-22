@@ -2046,5 +2046,8 @@ void RE_LoadWorldMap( const char *name ) {
 	tr.world = &s_worldData;
 
     ri.FS_FreeFile( buffer );
+
+	// WALKER: shapes for the sun shadows of the buildings
+	R_LoadSunCasters( name );
 }
 

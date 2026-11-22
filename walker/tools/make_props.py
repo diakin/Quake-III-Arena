@@ -63,6 +63,33 @@ class Mesh:
         return sum(sum(len(faces) for faces in part[2]) for part in self.parts.values())
 
 
+# ================================================================ формы для теней
+
+# Тени построек и моделей от солнца рисует игра (теневые объёмы, renderer/tr_sunshadow.c) по
+# выпуклым формам; q3map их солнцем не учитывает (q3map_nosunshadow). Уровни: CASTER_BOTH —
+# в простых и полных тенях, CASTER_SIMPLE — только в простых (крупные оболочки),
+# CASTER_FULL — только в полных (тонкие элементы, отдельные колонны стен).
+CASTER_BOTH, CASTER_SIMPLE, CASTER_FULL = 0, 1, 2
+CASTERS = []
+_caster_pause = [0]
+
+
+def caster(points, level=CASTER_BOTH):
+    """выпуклая форма для тени: вершины, оболочка строится при записи; мелочь не нужна."""
+    if _caster_pause[0]:
+        return
+    points = np.asarray(points, dtype=float).reshape(-1, 3)
+    extent = points.max(axis=0) - points.min(axis=0)
+    if extent.max() < 6:
+        return
+    CASTERS.append((level, points))
+
+
+def thin_level(thickness):
+    """тонкие детали (перила, раскосы, ступени) — только в полных тенях."""
+    return CASTER_BOTH if thickness >= 4 else CASTER_FULL
+
+
 def quad(mesh, material, p0, p1, p2, p3, max_edge=MAX_EDGE):
     """плоский четырёхугольник p0-p1-p2-p3 (против часовой стрелки снаружи), сетка ячеек."""
     p0, p1, p2, p3 = [np.asarray(point, dtype=float) for point in (p0, p1, p2, p3)]
@@ -106,6 +133,7 @@ def box(mesh, material, x0, y0, z0, x1, y1, z1, top=None, bottom=False, max_edge
     """прямоугольный блок; top — материал верха; низ по умолчанию не рисуется (стоит на земле)."""
     x0, x1 = sorted((x0, x1)); y0, y1 = sorted((y0, y1)); z0, z1 = sorted((z0, z1))
     top = top or material
+    caster([(x, y, z) for x in (x0, x1) for y in (y0, y1) for z in (z0, z1)], thin_level(min(x1 - x0, y1 - y0, z1 - z0)))
     quad(mesh, top, (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1), max_edge)
     if bottom:
         quad(mesh, material, (x0, y1, z0), (x1, y1, z0), (x1, y0, z0), (x0, y0, z0), max_edge)
@@ -120,6 +148,7 @@ def oriented_box(mesh, material, center, axis_x, axis_y, axis_z, half, bottom=Tr
     center = np.asarray(center, dtype=float)
     axes = [np.asarray(axis, dtype=float) * size for axis, size in zip((axis_x, axis_y, axis_z), half)]
     corner = lambda sx, sy, sz: center + sx * axes[0] + sy * axes[1] + sz * axes[2]
+    caster([corner(sx, sy, sz) for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)], thin_level(2 * min(half)))
     quad(mesh, material, corner(-1, -1, 1), corner(1, -1, 1), corner(1, 1, 1), corner(-1, 1, 1), max_edge)
     if bottom:
         quad(mesh, material, corner(-1, 1, -1), corner(1, 1, -1), corner(1, -1, -1), corner(-1, -1, -1), max_edge)
@@ -177,6 +206,7 @@ def cylinder(mesh, material, start, end, radius, sides=8, caps=True, radius_end=
             d = a + sides + 1
             faces += [(a, b, c), (a, c, d)]
     mesh.add(material, positions, normals, faces)
+    caster(positions, thin_level(2 * min(radius, radius_end)))
     if caps:
         for center, current, sign in ((end, radius_end, 1), (start, radius, -1)):
             ring = [center + (math.cos(angle) * side_u + math.sin(angle) * side_v) * current for angle in angles[:-1]]
@@ -275,6 +305,7 @@ def boulder(mesh, center, radius_x, radius_y, height, seed, sink, level=3, rough
     # подошва: всё ниже земли сплющивается
     positions[:, 2] = np.maximum(positions[:, 2], -sink - 4 + 0.15 * (positions[:, 2] + sink))
     positions += np.asarray(center, dtype=float)
+    caster(positions)
     # плоское затенение граней: скол читается как скол, а не как гладкий бок
     face_normals = np.cross(positions[faces[:, 1]] - positions[faces[:, 0]], positions[faces[:, 2]] - positions[faces[:, 0]])
     face_normals /= np.linalg.norm(face_normals, axis=1, keepdims=True) + 1e-12
@@ -360,6 +391,7 @@ def ruined_wall(start, end, base_z, height, thickness, seed, windows=True, mater
             position += span + local.uniform(3, 6)
     mesh = Mesh()
     half = thickness / 2
+    runs = {}               # простые тени: части колонн по 4 подряд в одну оболочку
     for column in range(columns):
         u0, u1 = column * length / columns, (column + 1) * length / columns
         top0, top1 = tops[column], tops[column + 1]
@@ -375,6 +407,10 @@ def ruined_wall(start, end, base_z, height, thickness, seed, windows=True, mater
             corner = lambda uu, side, zz: start + along * uu + across * side * half + np.array([0, 0, zz])
             t0 = top0 if piece_top is None else piece_top
             t1 = top1 if piece_top is None else piece_top
+            corners = [corner(u0, side, piece_bottom) for side in (-1, 1)] + [corner(u1, side, piece_bottom) for side in (-1, 1)] \
+                + [corner(u0, side, t0) for side in (-1, 1)] + [corner(u1, side, t1) for side in (-1, 1)]
+            caster(corners, CASTER_FULL)
+            runs.setdefault((column // 4, piece_bottom > bottom, piece_top is None), []).extend(corners)
             # грани: лицо, тыл, верх (наклонный), торцы колонны (видны в проёмах и на краях)
             quad(mesh, material, corner(u0, -1, piece_bottom), corner(u1, -1, piece_bottom), corner(u1, -1, t1), corner(u0, -1, t0))
             quad(mesh, material, corner(u1, 1, piece_bottom), corner(u0, 1, piece_bottom), corner(u0, 1, t0), corner(u1, 1, t1))
@@ -383,6 +419,8 @@ def ruined_wall(start, end, base_z, height, thickness, seed, windows=True, mater
                 quad(mesh, 'concrete_dark', corner(u0, 1, piece_bottom), corner(u1, 1, piece_bottom), corner(u1, -1, piece_bottom), corner(u0, -1, piece_bottom))
             quad(mesh, material, corner(u0, 1, piece_bottom), corner(u0, -1, piece_bottom), corner(u0, -1, t0), corner(u0, 1, t0))
             quad(mesh, material, corner(u1, -1, piece_bottom), corner(u1, 1, piece_bottom), corner(u1, 1, t1), corner(u1, -1, t1))
+    for corners in runs.values():
+        caster(corners, CASTER_SIMPLE)
     # коллизия: отрезки по 48 единиц высотой до нижней точки излома на отрезке
     clips = []
     segments = max(1, int(round(length / 48)))
@@ -404,6 +442,11 @@ def shipping_container(center, length, width, height, along_x, color, seed):
     mesh = Mesh()
     cx, cy, cz = center
     half_length, half_width = length / 2, width / 2
+    if along_x:
+        caster([(cx + a, cy + b, cz + z) for a in (-half_length, half_length) for b in (-half_width, half_width) for z in (0, height)])
+    else:
+        caster([(cx + b, cy + a, cz + z) for a in (-half_length, half_length) for b in (-half_width, half_width) for z in (0, height)])
+    _caster_pause[0] += 1
     def point(a, b, z):        # a — вдоль контейнера, b — поперёк
         return (cx + a, cy + b, cz + z) if along_x else (cx - b, cy + a, cz + z)
     rib = 3.0                   # шаг гофры
@@ -449,6 +492,7 @@ def shipping_container(center, length, width, height, along_x, color, seed):
             beam(mesh, 'metal_rust', point(a, b, 0), point(a, b, height), 2.4)
             for z in (1.2, height - 1.2):
                 box(mesh, 'metal_panel', *_corner_box(point(a, b, z), 1.8), bottom=True, max_edge=64)
+    _caster_pause[0] -= 1
     return mesh
 
 
@@ -621,6 +665,36 @@ def write_md3(path, mesh, origin, shader_prefix):
     with open(path, 'wb') as file:
         file.write(header + frame + b''.join(surface_blobs))
     return sum(len(faces) for _, _, _, _, faces in surfaces)
+
+
+def write_casters(path):
+    """формы для теней: выпуклые оболочки (scipy) — вершины и треугольники, обход против
+    часовой стрелки снаружи. Строки: "<уровень> <вершин> <треугольников>", вершины, треугольники."""
+    from scipy.spatial import ConvexHull
+    lines = ['// shadow casters for renderer/tr_sunshadow.c: level (0 both, 1 simple, 2 full) verts tris']
+    counts = [0, 0, 0]
+    for level, points in CASTERS:
+        points = np.unique(np.round(points, 1), axis=0)
+        try:
+            hull = ConvexHull(points)
+        except Exception:
+            continue            # плоская или вырожденная форма
+        used = np.unique(hull.simplices)
+        remap = {old: new for new, old in enumerate(used)}
+        triangles = []
+        for simplex, equation in zip(hull.simplices, hull.equations):
+            a, b, c = (points[index] for index in simplex)
+            if np.dot(np.cross(b - a, c - a), equation[:3]) < 0:
+                simplex = simplex[[0, 2, 1]]
+            triangles.append([remap[index] for index in simplex])
+        lines.append(f'{level} {len(used)} {len(triangles)}')
+        lines.append(' '.join(f'{x:.1f} {y:.1f} {z:.1f}' for x, y, z in points[used]))
+        lines.append(' '.join(f'{a} {b} {c}' for a, b, c in triangles))
+        counts[level] += 1
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='ascii', newline='\n') as file:
+        file.write('\n'.join(lines) + '\n')
+    return counts
 
 
 def add_prop(name, mesh):

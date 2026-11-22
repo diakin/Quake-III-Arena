@@ -927,6 +927,9 @@ void TraceLine( const vec3_t start, const vec3_t stop, trace_t *trace, qboolean 
 			if ( !tw->patchshadows && test->patch ) {
 				continue;
 			}
+			if ( tw->sunTrace && test->shader && test->shader->noSunShadow ) {
+				continue;
+			}
 			TraceAgainstSurface( tw, test );
 		}
 

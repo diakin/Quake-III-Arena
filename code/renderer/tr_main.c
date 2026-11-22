@@ -394,6 +394,12 @@ static void SetFarClip( void )
 	//
 	// set far clipping planes dynamically
 	//
+	// WALKER: the far caps of the sun shadow volumes reach the world bounds and must
+	// not be clipped (depth-fail counting): take the whole world then
+	if ( R_SunShadowsActive() && !tr.viewParms.isPortal ) {
+		VectorCopy( tr.world->bmodels[0].bounds[0], tr.viewParms.visBounds[0] );
+		VectorCopy( tr.world->bmodels[0].bounds[1], tr.viewParms.visBounds[1] );
+	}
 	farthestCornerDistance = 0;
 	for ( i = 0; i < 8; i++ )
 	{

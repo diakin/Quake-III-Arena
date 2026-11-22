@@ -124,6 +124,7 @@ typedef struct {
 	int			openLeafNumbers[MAX_MAP_LEAFS];
 	trace_t		*trace;
 	int			patchshadows;
+	int			sunTrace;		// WALKER: trace to the sun, q3map_nosunshadow surfaces let it through
 } traceWork_t;
 
 void TraceLine( const vec3_t start, const vec3_t stop, trace_t *trace,
