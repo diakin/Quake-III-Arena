@@ -806,6 +806,84 @@ void CalcMuzzlePointOrigin ( gentity_t *ent, vec3_t origin, vec3_t forward, vec3
 
 /*
 ===============
+AimAtCrosshair
+
+WALKER: the camera is above and behind the robot (cg_view.c, CG_OffsetThirdPersonView),
+and the crosshair in the middle of the screen looks at a point CAMERA_FOCUS_DISTANCE
+ahead of the eyes. A shot along the view angles from the eyes crosses that line only at
+that distance: nearer targets are hit below the crosshair, farther ones above it.
+Rebuild the same camera, find what the crosshair is on, and fire from the muzzle at it.
+===============
+*/
+static void AimAtCrosshair( gentity_t *ent ) {
+	static vec3_t	mins = { -4, -4, -4 };
+	static vec3_t	maxs = { 4, 4, 4 };
+	vec3_t		eye, view, focusPoint, focusAngles, cameraAngles, cameraForward;
+	vec3_t		aim, start, end, target, newForward, newAngles;
+	trace_t		trace;
+	float		range, along;
+
+	if ( !ent->client || ( ent->r.svFlags & SVF_BOT ) ) {
+		return;		// bots aim along their view angles
+	}
+	if ( !ent->client->pers.thirdPerson || ent->client->ps.stats[STAT_HEALTH] <= 0 ) {
+		return;		// first person: the crosshair is on the line of fire already
+	}
+
+	VectorCopy( ent->client->ps.origin, eye );
+	eye[2] += ent->client->ps.viewheight;
+
+	// the point the camera looks at
+	VectorCopy( ent->client->ps.viewangles, focusAngles );
+	if ( focusAngles[PITCH] > 45 ) {
+		focusAngles[PITCH] = 45;
+	}
+	AngleVectors( focusAngles, aim, NULL, NULL );
+	VectorMA( eye, CAMERA_FOCUS_DISTANCE, aim, focusPoint );
+
+	// the camera position, pulled in when a wall is behind the robot
+	VectorCopy( eye, view );
+	view[2] += CAMERA_HEIGHT;
+	VectorCopy( ent->client->ps.viewangles, cameraAngles );
+	cameraAngles[PITCH] *= 0.5;
+	AngleVectors( cameraAngles, cameraForward, NULL, NULL );
+	range = ent->client->pers.thirdPersonRange;
+	VectorMA( view, -range, cameraForward, view );
+	trap_Trace( &trace, eye, mins, maxs, view, ent->s.number, MASK_SOLID );
+	if ( trace.fraction != 1.0 ) {
+		VectorCopy( trace.endpos, view );
+		view[2] += ( 1.0 - trace.fraction ) * 32;
+		trap_Trace( &trace, eye, mins, maxs, view, ent->s.number, MASK_SOLID );
+		VectorCopy( trace.endpos, view );
+	}
+
+	// the crosshair ray; start it beside the robot so nothing behind it is hit
+	VectorSubtract( focusPoint, view, aim );
+	if ( VectorNormalize( aim ) < 1 ) {
+		return;
+	}
+	VectorSubtract( eye, view, start );
+	along = DotProduct( start, aim );
+	if ( along < 0 ) {
+		along = 0;
+	}
+	VectorMA( view, along, aim, start );
+	VectorMA( start, 8192 * 16, aim, end );
+	trap_Trace( &trace, start, NULL, NULL, end, ent->s.number, MASK_SHOT );
+	VectorCopy( trace.endpos, target );
+
+	// fire from the muzzle at that point, unless it is beside or behind the muzzle
+	// (a wall right in front of the gun: the point can be close and well above it)
+	VectorSubtract( target, muzzle, newForward );
+	if ( VectorNormalize( newForward ) < 1 || DotProduct( newForward, forward ) < 0.25 ) {
+		return;
+	}
+	vectoangles( newForward, newAngles );
+	AngleVectors( newAngles, forward, right, up );
+}
+
+/*
+===============
 FireWeapon
 ===============
 */
@@ -838,6 +916,8 @@ void FireWeapon( gentity_t *ent ) {
 	AngleVectors (ent->client->ps.viewangles, forward, right, up);
 
 	CalcMuzzlePointOrigin ( ent, ent->client->oldOrigin, forward, right, up, muzzle );
+
+	AimAtCrosshair( ent );
 
 	// fire the specific weapon
 	switch( ent->s.weapon ) {

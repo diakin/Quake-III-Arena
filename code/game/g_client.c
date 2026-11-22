@@ -726,6 +726,15 @@ void ClientUserinfoChanged( int clientNum ) {
 		client->pers.localClient = qtrue;
 	}
 
+	// WALKER: third-person camera of this client (missing key: the default camera)
+	s = Info_ValueForKey( userinfo, "cg_thirdPerson" );
+	client->pers.thirdPerson = ( !*s || atoi( s ) != 0 );
+	s = Info_ValueForKey( userinfo, "cg_thirdPersonRange" );
+	client->pers.thirdPersonRange = *s ? atof( s ) : CAMERA_DEFAULT_RANGE;
+	if ( client->pers.thirdPersonRange < 0 || client->pers.thirdPersonRange > 400 ) {
+		client->pers.thirdPersonRange = CAMERA_DEFAULT_RANGE;
+	}
+
 	// check the item prediction
 	s = Info_ValueForKey( userinfo, "cg_predictItems" );
 	if ( !atoi( s ) ) {

@@ -84,8 +84,11 @@ static void WIN_EnableAltTab( void )
 VID_AppActivate
 ==================
 */
+void WG_RestoreGamma( void );
+
 static void VID_AppActivate(BOOL fActive, BOOL minimize)
 {
+	cvar_t	*gamma;
 	g_wv.isMinimized = minimize;
 
 	Com_DPrintf("VID_AppActivate: %i\n", fActive );
@@ -100,6 +103,18 @@ static void VID_AppActivate(BOOL fActive, BOOL minimize)
 	else
 	{
 		g_wv.activeApp = qfalse;
+	}
+
+	// WALKER: the gamma ramp is shared with the desktop: give the desktop its own ramp
+	// while the game is inactive and set the game ramp again when it is active
+	// (the renderer applies r_gamma on the next frame when it is marked modified)
+	gamma = Cvar_Get( "r_gamma", "1", CVAR_ARCHIVE );
+	if ( gamma ) {
+		if ( g_wv.activeApp ) {
+			gamma->modified = qtrue;
+		} else {
+			WG_RestoreGamma();
+		}
 	}
 
 	// minimize/restore mouse-capture on demand

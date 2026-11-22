@@ -27,6 +27,12 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #define	GAME_VERSION		"baseq3-1"
 
+// WALKER: third-person camera, shared by cgame (to place the camera) and game
+// (to send the shot to the point under the crosshair)
+#define	CAMERA_FOCUS_DISTANCE	512		// the crosshair looks at this point ahead of the eyes
+#define	CAMERA_HEIGHT			30		// camera above the eyes
+#define	CAMERA_DEFAULT_RANGE	110		// camera behind the eyes (cg_thirdPersonRange)
+
 #define	DEFAULT_GRAVITY		800
 #define	GIB_HEALTH			-40
 #define	ARMOR_PROTECTION	0.66

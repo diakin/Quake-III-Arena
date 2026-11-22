@@ -217,7 +217,7 @@ CG_OffsetThirdPersonView
 
 ===============
 */
-#define	FOCUS_DISTANCE	512
+#define	FOCUS_DISTANCE	CAMERA_FOCUS_DISTANCE
 static void CG_OffsetThirdPersonView( void ) {
 	vec3_t		forward, right, up;
 	vec3_t		view;
@@ -248,7 +248,7 @@ static void CG_OffsetThirdPersonView( void ) {
 
 	VectorCopy( cg.refdef.vieworg, view );
 
-	view[2] += 30;		// WALKER: camera above the robot, looking over its shoulders
+	view[2] += CAMERA_HEIGHT;		// WALKER: camera above the robot, looking over its shoulders
 
 	cg.refdefViewAngles[PITCH] *= 0.5;
 

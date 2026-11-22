@@ -313,6 +313,12 @@ void RE_BeginFrame( stereoFrame_t stereoFrame ) {
 	tr.frameCount++;
 	tr.frameSceneNum = 0;
 
+	// WALKER: the gamma ramp is set while the window is being created and the system may
+	// reset it when the window is shown; set it again on the first frames
+	if ( tr.frameCount == 2 || tr.frameCount == 30 ) {
+		r_gamma->modified = qtrue;
+	}
+
 	//
 	// do overdraw measurement
 	//
