@@ -185,6 +185,11 @@ int R_ComputeLOD( trRefEntity_t *ent ) {
 		frame += ent->e.frame;
 
 		radius = RadiusFromBounds( frame->bounds[0], frame->bounds[1] );
+		// WALKER: parts of one robot (legs, torso, head) switch levels together; a small
+		// part like the head would otherwise drop to its coarsest level close up
+		if ( radius < 48 ) {
+			radius = 48;
+		}
 
 		if ( ( projectedRadius = ProjectRadius( radius, ent->e.origin ) ) != 0 )
 		{

@@ -5,7 +5,7 @@
 #
 # Result: walker/dist/basewalker/pak0.pk3 (base data, model, QVMs)
 #         walker/dist/basewalker/wk_islands.pk3 (map)
-# Needs: python3 with numpy, scipy, Pillow, xatlas, embreex; zip; fonts DejaVu (and Anton, optional).
+# Needs: python3 with numpy, scipy, Pillow, xatlas, embreex, meshoptimizer; zip; fonts DejaVu (and Anton, optional).
 set -e
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 TOOLS="$ROOT/walker/tools"
@@ -31,6 +31,8 @@ mkdir -p "$STAGE/base/models/players"
 cp -r "$ROOT/assets/baseq3/models/players/walker" "$STAGE/base/models/players/"
 # robot: unique UV atlas with baked occlusion, wear and dirt for every paint scheme
 python3 "$TOOLS/bake_walker.py" "$STAGE/base/models/players/walker"
+# simplified robot models for long distances (lower_1..3.glb etc., needs meshoptimizer)
+python3 "$TOOLS/make_lods.py" "$STAGE/base/models/players/walker"
 
 echo "== QVM"
 cd "$ROOT"

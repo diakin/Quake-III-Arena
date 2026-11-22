@@ -67,7 +67,7 @@ Walker.exe +set bot_minplayers 6 +map wk_islands
 - **Python 3** с пакетами numpy, scipy и Pillow. Для Windows 7 последняя подходящая
   версия — Python 3.8.
 - Для запекания текстур робота (`bake_walker.py`) ещё **xatlas** и **embreex**:
-  `pip install xatlas embreex`. У embreex нет сборки для 32-битного Python под Windows,
+  `pip install xatlas embreex meshoptimizer` (meshoptimizer — для упрощённых моделей, `make_lods.py`). У embreex нет сборки для 32-битного Python под Windows,
   поэтому запекание пока делается под Linux или 64-битным Python.
 - **ffmpeg** — для нарезки шагов по воде из записи (`import_splash.py`).
 - Утилиты **zip** и **sh** — для `build_all.sh`.
