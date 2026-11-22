@@ -1109,6 +1109,7 @@ Vertex lighting will completely ignore occlusion, because
 shadows would not be resolvable anyway.
 =============
 */
+qboolean PointInSolid( vec3_t start );
 void VertexLighting( dsurface_t *ds, qboolean testOcclusion, qboolean forceSunLight, float scale, traceWork_t *tw ) {
 	int			i, j;
 	drawVert_t	*dv;
@@ -1125,7 +1126,17 @@ void VertexLighting( dsurface_t *ds, qboolean testOcclusion, qboolean forceSunLi
 			LightingAtSample( dv->xyz, dv->normal, sample, testOcclusion, forceSunLight, tw );
 		}
 		else if (ds->surfaceType == MST_TRIANGLE_SOUP) {
-			LightingAtSample( dv->xyz, dv->normal, sample, testOcclusion, forceSunLight, tw );
+			// WALKER: model vertices often lie on a collision brush or touch the ground;
+			// sampled there they count as fully shadowed. Step out along the normal
+			// (2, 4, 8, 16 units) to the first point outside solid space.
+			vec3_t	origin;
+			float	step;
+
+			VectorMA( dv->xyz, 2, dv->normal, origin );
+			for ( step = 4 ; step <= 16 && PointInSolid( origin ) ; step *= 2 ) {
+				VectorMA( dv->xyz, step, dv->normal, origin );
+			}
+			LightingAtSample( origin, dv->normal, sample, testOcclusion, forceSunLight, tw );
 		}
 		else {
 			LightingAtSample( dv->xyz, normal, sample, testOcclusion, forceSunLight, tw );

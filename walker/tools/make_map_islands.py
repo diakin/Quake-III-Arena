@@ -8,6 +8,8 @@ python3 walker/tools/make_map_islands.py <данные игры> <папка к�
 Масштаб: робот 56 единиц ~ 10 м, то есть 1 м ~ 5.6 единицы.
 """
 import math, os, shutil, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import make_props as props
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
@@ -948,6 +950,12 @@ def helipad(x, y, z_top, ramp_side):
         add_box(x + offset_x - 14, y + offset_y - 14, TERRAIN_BOTTOM + 30, x + offset_x + 14, y + offset_y + 14, z_top - 10, 'concrete_dark')
     for corner in polygon_regular(x, y, 128, 8)[::2]:
         add_box(corner[0] - 5, corner[1] - 5, z_top, corner[0] + 5, corner[1] + 5, z_top + 4, 'glow_orange')
+    mesh = props.Mesh()
+    legs = [(x - 70, y - 70), (x + 70, y - 70), (x + 70, y + 70), (x - 70, y + 70)]
+    props.x_braces(mesh, legs, -6, z_top - 14, 2.5)
+    for leg_x, leg_y in legs:
+        props.box(mesh, 'concrete_dark', leg_x - 19, leg_y - 19, z_top - 18, leg_x + 19, leg_y + 19, z_top - 10, bottom=True)
+    props.add_prop(f'helipad_{int(x)}_{int(y)}', mesh)
     length = 230
     if ramp_side == '-x':
         add_ramp(x - 130 - length, y - 50, x - 120, y + 50, -24, z_top, '+x')
@@ -960,33 +968,35 @@ def helipad(x, y, z_top, ramp_side):
 
 
 def broken_wall(x0, y0, x1, y1, z_base, height, thickness=16, seed=0, side='concrete'):
-    """стена с обломанным верхом: ряд блоков разной высоты, местами провалы."""
-    local = np.random.default_rng(seed)
-    length = math.hypot(x1 - x0, y1 - y0)
-    segments = max(1, int(length // 48))
-    horizontal = abs(x1 - x0) >= abs(y1 - y0)
-    for index in range(segments):
-        if local.random() < 0.18 and 0 < index < segments - 1:
-            continue                      # пролом
-        start = index / segments
-        end = (index + 1) / segments
-        top = z_base + height * local.uniform(0.45, 1.0)
-        if horizontal:
-            sx0, sx1 = x0 + (x1 - x0) * start, x0 + (x1 - x0) * end
-            add_box(sx0, y0 - thickness / 2, z_base - 20, sx1, y0 + thickness / 2, top, side, 'concrete_dark')
+    """разрушенная стена (модель make_props.ruined_wall: окна, рваный верх, арматура, обломки)
+    и невидимые блоки коллизии под изломом."""
+    thickness = max(thickness, 20) if height > 70 else thickness
+    mesh, clips = props.ruined_wall((x0, y0), (x1, y1), z_base, height, thickness, seed, height > 70, side)
+    props.add_prop(f'wall_{seed}', mesh)
+    # блоки коллизии на 3 единицы тоньше и на 6 ниже модели: вершины модели не лежат на них
+    # (иначе q3map считает их в тени)
+    inner = thickness / 2 - 3
+    for start, end, top in clips:
+        if abs(end[0] - start[0]) >= abs(end[1] - start[1]):
+            add_box(start[0], start[1] - inner, z_base - 20, end[0], start[1] + inner, top - 6, 'clip_solid', 'clip_solid')
         else:
-            sy0, sy1 = y0 + (y1 - y0) * start, y0 + (y1 - y0) * end
-            add_box(x0 - thickness / 2, sy0, z_base - 20, x0 + thickness / 2, sy1, top, side, 'concrete_dark')
+            add_box(start[0] - inner, start[1], z_base - 20, start[0] + inner, end[1], top - 6, 'clip_solid', 'clip_solid')
+
+
+CONTAINERS = [0]
 
 
 def container(x, y, z, along_x=True, color='container_red', stack=1):
     length, width, height = 72, 30, 30
     for level in range(stack):
         z0 = z + level * height
+        CONTAINERS[0] += 1
+        props.add_prop(f'container_{CONTAINERS[0]}', props.shipping_container((x, y, z0), length, width, height, along_x, color, CONTAINERS[0]))
+        inset = 2
         if along_x:
-            add_box(x - length / 2, y - width / 2, z0, x + length / 2, y + width / 2, z0 + height, color, 'metal_rust', 'metal_rust')
+            add_box(x - length / 2 + inset, y - width / 2 + inset, z0, x + length / 2 - inset, y + width / 2 - inset, z0 + height - inset, 'clip_solid', 'clip_solid')
         else:
-            add_box(x - width / 2, y - length / 2, z0, x + width / 2, y + length / 2, z0 + height, color, 'metal_rust', 'metal_rust')
+            add_box(x - width / 2 + inset, y - length / 2 + inset, z0, x + width / 2 - inset, y + length / 2 - inset, z0 + height - inset, 'clip_solid', 'clip_solid')
 
 
 def platform(x0, y0, x1, y1, z_top, ramps):
@@ -1011,6 +1021,25 @@ def platform(x0, y0, x1, y1, z_top, ramps):
     # кромка с полосами
     for edge in [(x0, y0, x1, y0 + 4), (x0, y1 - 4, x1, y1)]:
         add_box(edge[0], edge[1], z_top, edge[2], edge[3], z_top + 3, 'hazard')
+    # детали: оголовки опор, продольные балки и крестовые связи между опорами, стальная кромка
+    mesh = props.Mesh()
+    pillars = [[(x0 + 20 + (x1 - x0 - 40) * column / 3, y0 + 20 + (y1 - y0 - 40) * row / 2) for column in range(4)] for row in range(3)]
+    for row in pillars:
+        for pillar_x, pillar_y in row:
+            props.box(mesh, 'concrete_dark', pillar_x - 17, pillar_y - 17, z_top - 22, pillar_x + 17, pillar_y + 17, z_top - 12, bottom=True)
+        for (first_x, first_y), (second_x, second_y) in zip(row, row[1:]):
+            props.beam(mesh, 'metal_rust', (first_x, first_y, z_top - 16), (second_x, second_y, z_top - 16), 3, 6)
+            props.beam(mesh, 'metal_rust', (first_x, first_y, -8), (second_x, second_y, z_top - 20), 2.2)
+            props.beam(mesh, 'metal_rust', (second_x, second_y, -8), (first_x, first_y, z_top - 20), 2.2)
+    for column in range(4):
+        for row in range(2):
+            (first_x, first_y), (second_x, second_y) = pillars[row][column], pillars[row + 1][column]
+            props.beam(mesh, 'metal_rust', (first_x, first_y, z_top - 16), (second_x, second_y, z_top - 16), 3, 6)
+    for edge_y in (y0, y1):
+        props.beam(mesh, 'metal_rust', (x0, edge_y, z_top - 6), (x1, edge_y, z_top - 6), 2, 12)
+    for edge_x in (x0, x1):
+        props.beam(mesh, 'metal_rust', (edge_x, y0, z_top - 6), (edge_x, y1, z_top - 6), 2, 12)
+    props.add_prop(f'platform_{int(x0)}_{int(y0)}', mesh)
 
 
 def central_tower():
@@ -1023,7 +1052,9 @@ def central_tower():
     # башня
     add_prism(polygon_regular(0, 0, 64, 8), plaza_top, 470, 'metal_panel', 'metal_panel')
     add_frustum(0, 0, 64, 26, 470, 520, 'metal_panel', 'metal_panel')
-    add_box(-5, -5, 520, 5, 5, 660, 'metal_rust')
+    mast = props.Mesh()
+    props.lattice_mast(mast, (0, 0), 516, 660, 12, 3)
+    props.add_prop('tower_mast', mast)
     add_box(-9, -9, 660, 9, 9, 676, 'glow_red')
     for band_z in (120, 300, 430):
         add_prism(polygon_regular(0, 0, 70, 8), band_z, band_z + 10, 'hazard', 'hazard')
@@ -1038,13 +1069,31 @@ def central_tower():
         add_prism(polygon, 236, 248, 'metal_grate', 'hazard', 'metal_rust')
         rail = [(outer * math.cos(angle0), outer * math.sin(angle0)), ((outer + 8) * math.cos(angle0), (outer + 8) * math.sin(angle0)),
                 ((outer + 8) * math.cos(angle1), (outer + 8) * math.sin(angle1)), (outer * math.cos(angle1), outer * math.sin(angle1))]
-        add_prism(rail, 248, 262, 'metal_rust', 'metal_rust')
+        add_prism(rail, 248, 262, 'clip_solid', 'clip_solid')
     for angle in range(45, 360, 90):
         radians = math.radians(angle)
         brace_x, brace_y = 180 * math.cos(radians), 180 * math.sin(radians)
         add_box(brace_x - 8, brace_y - 8, plaza_top, brace_x + 8, brace_y + 8, 236, 'metal_rust')
         for light_z in (250,):
             add_box(brace_x - 6, brace_y - 6, 262, brace_x + 6, brace_y + 6, 272, 'glow_cyan')
+    # детали башни: перила кольцевой площадки, подкосы и балки под ней, лестница, трубы
+    tower = props.Mesh()
+    ring = [(212 * math.cos(2 * math.pi * index / 16), 212 * math.sin(2 * math.pi * index / 16)) for index in range(16)]
+    props.railing(tower, ring, 248, 24, 28, closed=True)
+    for index in range(16):
+        angle = 2 * math.pi * (index + 0.5) / 16
+        props.beam(tower, 'metal_rust', (60 * math.cos(angle), 60 * math.sin(angle), 233), (206 * math.cos(angle), 206 * math.sin(angle), 233), 4, 6)
+    for index in range(8):
+        angle = 2 * math.pi * (index + 0.5) / 8
+        props.beam(tower, 'metal_rust', (58 * math.cos(angle), 58 * math.sin(angle), 168), (150 * math.cos(angle), 150 * math.sin(angle), 231), 3.5)
+    apothem = 64 * math.cos(math.pi / 8)
+    props.ladder(tower, (apothem, 0, plaza_top), 248, (1, 0, 0), 12)
+    for angle_degrees, pipe_radius in ((135, 4), (180, 6), (225, 4)):     # по центрам граней башни
+        angle = math.radians(angle_degrees)
+        px, py = (apothem + 7) * math.cos(angle), (apothem + 7) * math.sin(angle)
+        props.pipe_run(tower, (px, py, plaza_top), (px, py, 462), pipe_radius, 'metal_panel', 70,
+                       (-math.cos(angle), -math.sin(angle), 0))
+    props.add_prop('tower_details', tower)
     # укрытия на площади
     broken_wall(-250, 150, -130, 150, plaza_top, 52, seed=1)
     broken_wall(130, -150, 250, -150, plaza_top, 52, seed=2)
@@ -1064,6 +1113,15 @@ def launch_tower():
     for level_z in range(110, 600, 110):
         for x0, y0, x1, y1 in [(-half, -half, half, -half + 8), (-half, half - 8, half, half), (-half, -half, -half + 8, half), (half - 8, -half, half, half)]:
             add_box(base_x + x0, base_y + y0, level_z, base_x + x1, base_y + y1, level_z + 10, 'metal_rust')
+    truss = props.Mesh()
+    corners = [(base_x - half, base_y - half), (base_x + half, base_y - half), (base_x + half, base_y + half), (base_x - half, base_y + half)]
+    levels = [top] + list(range(110, 600, 110)) + [600]
+    for z0, z1 in zip(levels, levels[1:]):
+        props.x_braces(truss, corners, z0 + 10, z1, 3)
+    props.ladder(truss, (base_x, base_y - half, top), 600, (0, -1, 0), 12)
+    for corner_x, corner_y in corners:
+        props.box(truss, 'concrete_dark', corner_x - 16, corner_y - 16, top, corner_x + 16, corner_y + 16, top + 10, bottom=False)
+    props.add_prop('launch_truss', truss)
     add_box(base_x - half - 20, base_y - half - 20, 600, base_x + half + 20, base_y + half + 20, 612, 'metal_grate', 'metal_grate', 'metal_rust')
     add_box(base_x - 6, base_y - 6, 612, base_x + 6, base_y + 6, 640, 'glow_red')
     # ракета рядом с фермой
@@ -1080,10 +1138,33 @@ def launch_tower():
 
 
 def rock_stack(x, y, height, radius, seed):
-    local = np.random.default_rng(seed)
+    """скальный выход: валуны (make_props.rock_cluster) и невидимый браш коллизии главного валуна."""
     base = ground(x, y)
-    add_frustum(x, y, radius, radius * local.uniform(0.45, 0.7), -40, base + height, 'rock', 'rockmoss', 7, local.uniform(-0.4, 0.4))
-    add_frustum(x + radius * 0.2, y - radius * 0.1, radius * 0.55, radius * 0.25, base + height - 4, base + height + height * 0.25, 'rock', 'rockmoss', 6)
+    props.add_prop(f'rocks_{seed}', props.rock_cluster((x, y, base), height * 1.05, radius * 1.05, seed))
+    add_frustum(x, y, radius * 0.6, radius * 0.3, -40, base + height * 0.7, 'clip_solid', 'clip_solid', 7)
+
+
+def scatter_stones():
+    """мелкие камни: вдоль берега и по склонам у скал; модели по участкам карты."""
+    local = np.random.default_rng(777)
+    groups = {}
+    for _ in range(9000):
+        x = local.uniform(-HALF_X + 120, HALF_X - 120)
+        y = local.uniform(-HALF_Y + 120, HALF_Y - 120)
+        height = float(terrain_height_at(np.array([x]), np.array([y]))[0])
+        if 1 < height < 12:
+            chance = 0.22                 # берег
+        elif 70 < height < 220:
+            chance = 0.05                 # подножие скал
+        else:
+            chance = 0.006
+        if local.random() > chance:
+            continue
+        key = (int((x + HALF_X) // 900), int((y + HALF_Y) // 900))
+        groups.setdefault(key, []).append((x, y, height, local.uniform(3, 11)))
+    for (column, row), points in sorted(groups.items()):
+        props.add_prop(f'stones_{column}_{row}', props.stones(points, 900 + column * 10 + row))
+    print('stones:', sum(len(points) for points in groups.values()))
 
 
 def ruins_west():
@@ -1128,6 +1209,7 @@ def ruins_middle():
                                                     (180, -420, 110, 44), (-900, -350, 130, 50), (880, 420, 140, 52),
                                                     (-1250, -250, 100, 44), (1260, 260, 110, 46)]):
         rock_stack(x, y, height, radius, 500 + index)
+    scatter_stones()
 
 
 def add_hull():
@@ -1192,6 +1274,8 @@ def write_map():
     entities.append({'classname': 'misc_portal_surface', 'origin': f'{int(XS[col])} {int(YS[row])} {WATER_Z + 8}'})
     for x, y in [(0, 0), (-1000, 400), (1000, -400), (0, 900), (0, -900)]:
         entities.append({'classname': 'target_speaker', 'origin': f'{x} {y} 120', 'noise': 'sound/world/wind_loop.wav', 'spawnflags': '1'})
+    prop_entities, _ = props.write_props(COMPILE)
+    entities += prop_entities
     lines = ['// WALKER map wk_islands, generated by walker/tools/make_map_islands.py', '{']
     lines += [f'"{key}" "{value}"' for key, value in worldspawn.items()]
     for brush, inside in BRUSHES:
@@ -1211,6 +1295,13 @@ def write_map():
 SHADERS = f"""// WALKER map shaders: wk_islands
 textures/common/caulk
 {{
+	surfaceparm nodraw
+	surfaceparm nolightmap
+	surfaceparm nomarks
+}}
+textures/walker/clip_solid
+{{
+	qer_trans 0.4
 	surfaceparm nodraw
 	surfaceparm nolightmap
 	surfaceparm nomarks
@@ -1442,6 +1533,30 @@ def make_mix_textures():
     save_texture('textures/walker/terrain_detail', tex_detail(141))
 
 
+PROP_MATERIALS = ['rock', 'rockmoss', 'concrete', 'concrete_dark', 'metal_rust', 'metal_panel', 'hazard',
+                  'container_red', 'container_blue', 'container_orange']
+
+
+def vertex_lit_shaders():
+    """шейдеры моделей (misc_model): освещение по вершинам от q3map и общий крупный рисунок."""
+    blocks = []
+    for name in PROP_MATERIALS:
+        blocks.append(f"""textures/walker/v_{name}
+{{
+	qer_editorimage textures/walker/{name}.tga
+	{{
+		map textures/walker/{name}.jpg
+		rgbGen exactVertex
+	}}
+	{{
+		map textures/walker/macro.jpg
+		blendFunc GL_DST_COLOR GL_SRC_COLOR
+		tcGen vector ( 0.00042 0.00027 0 ) ( -0.00027 0.00042 0.00035 )
+	}}
+}}""")
+    return '\n'.join(blocks) + '\n'
+
+
 def lightmapped_shaders():
     """явные шейдеры для текстур с картой освещения: освещение, текстура и общий крупный рисунок
     (tcGen vector: проекция в мировых координатах, один рисунок на все поверхности подряд)."""
@@ -1490,7 +1605,7 @@ def main():
     ruins_south()
     ruins_middle()
     make_mix_textures()
-    SHADERS += lightmapped_shaders()
+    SHADERS += lightmapped_shaders() + vertex_lit_shaders()
     write_shaders()
     write_map()
     # карта высот для просмотра
