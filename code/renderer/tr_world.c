@@ -281,12 +281,60 @@ static int R_DlightSurface( msurface_t *surf, int dlightBits ) {
 R_AddWorldSurface
 ======================
 */
+/*
+======================
+R_SurfaceBeyond
+
+WALKER: true if the whole surface is further than distance from the view
+======================
+*/
+static qboolean R_SurfaceBeyond( surfaceType_t *data, float distance ) {
+	vec3_t	mins, maxs;
+	int		i;
+
+	switch ( *data ) {
+	case SF_TRIANGLES:
+		VectorCopy( ((srfTriangles_t *)data)->bounds[0], mins );
+		VectorCopy( ((srfTriangles_t *)data)->bounds[1], maxs );
+		break;
+	case SF_GRID:
+		VectorCopy( ((srfGridMesh_t *)data)->meshBounds[0], mins );
+		VectorCopy( ((srfGridMesh_t *)data)->meshBounds[1], maxs );
+		break;
+	case SF_FACE:
+		{
+			srfSurfaceFace_t	*face = (srfSurfaceFace_t *)data;
+			ClearBounds( mins, maxs );
+			for ( i = 0 ; i < face->numPoints ; i++ ) {
+				AddPointToBounds( face->points[i], mins, maxs );
+			}
+		}
+		break;
+	default:
+		return qfalse;
+	}
+	{
+		vec3_t	nearest;
+		for ( i = 0 ; i < 3 ; i++ ) {
+			float	coord = tr.viewParms.or.origin[i];
+			nearest[i] = coord < mins[i] ? mins[i] : ( coord > maxs[i] ? maxs[i] : coord );
+		}
+		return Distance( nearest, tr.viewParms.or.origin ) > distance;
+	}
+}
+
 static void R_AddWorldSurface( msurface_t *surf, int dlightBits ) {
 	if ( surf->viewCount == tr.viewCount ) {
 		return;		// already in this view
 	}
 
 	surf->viewCount = tr.viewCount;
+
+	// WALKER: the water reflection keeps only the near part of the world (and the sky)
+	if ( tr.viewParms.isPortal && r_mirrorDistance->value > 0 && !surf->shader->isSky
+		&& R_SurfaceBeyond( surf->data, r_mirrorDistance->value ) ) {
+		return;
+	}
 	// FIXME: bmodel fog?
 
 	// try to cull before dlighting or adding

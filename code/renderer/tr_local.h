@@ -510,6 +510,9 @@ typedef struct {
 	cplane_t	frustum[4];
 	vec3_t		visBounds[2];
 	float		zFar;
+	// WALKER: a water reflection drawn at reduced size is stretched over this rectangle
+	qboolean	portalScaled;
+	int			fullViewportX, fullViewportY, fullViewportWidth, fullViewportHeight;
 } viewParms_t;
 
 
@@ -906,6 +909,7 @@ typedef struct {
 	image_t					*dlightImage;	// inverse-quare highlight for projective adding
 	image_t					*flareImage;
 	image_t					*whiteImage;			// full of 0xff
+	image_t					*mirrorImage;			// WALKER: reduced water reflection, copied from the frame
 	image_t					*identityLightImage;	// full of tr.identityLightByte
 
 	shader_t				*defaultShader;
@@ -1078,6 +1082,9 @@ extern	cvar_t	*r_lockpvs;
 extern	cvar_t	*r_noportals;
 extern	cvar_t	*r_drawfog;
 extern	cvar_t	*r_waterRipple;
+extern	cvar_t	*r_mirrorScale;
+extern	cvar_t	*r_mirrorDistance;
+extern	cvar_t	*r_mirrorEntities;
 extern	cvar_t	*r_portalOnly;
 
 extern	cvar_t	*r_subdivisions;

@@ -468,6 +468,17 @@ void RB_BeginDrawingView (void) {
 		qglClearColor( 0.0f, 0.0f, 0.0f, 1.0f );	// FIXME: get color of sky
 #endif
 	}
+	// WALKER: a reflection with far surfaces left out: the horizon colour (that of
+	// the map-wide haze, if there is one) shows where they would be
+	if ( backEnd.viewParms.isPortal && r_mirrorDistance->value > 0 && !( backEnd.refdef.rdflags & RDF_NOWORLDMODEL ) )
+	{
+		clearBits |= GL_COLOR_BUFFER_BIT;
+		if ( tr.world && tr.world->numfogs > 1 ) {
+			qglClearColor( tr.world->fogs[1].parms.color[0], tr.world->fogs[1].parms.color[1], tr.world->fogs[1].parms.color[2], 1.0f );
+		} else {
+			qglClearColor( 0.62f, 0.68f, 0.72f, 1.0f );
+		}
+	}
 	// WALKER: with water reflections off no mirror image is drawn under the water;
 	// a pale sky colour stands in for it instead of the previous frame
 	else if ( r_noportals->integer && !( backEnd.refdef.rdflags & RDF_NOWORLDMODEL ) && !backEnd.viewParms.isPortal )
@@ -923,6 +934,67 @@ RB_DrawSurfs
 
 =============
 */
+/*
+=============
+RB_StretchPortalView
+
+WALKER: the water reflection was drawn at reduced size in the lower left corner of
+the view; copy it to a texture and stretch it over the whole view. The main view
+clears only depth, so the stretched picture stays under the water surface.
+=============
+*/
+static void RB_StretchPortalView( void ) {
+	viewParms_t	*view = &backEnd.viewParms;
+	int			width = view->viewportWidth, height = view->viewportHeight;
+	int			textureWidth = 1, textureHeight = 1;
+	float		maxS, maxT;
+
+	while ( textureWidth < width ) {
+		textureWidth <<= 1;
+	}
+	while ( textureHeight < height ) {
+		textureHeight <<= 1;
+	}
+	if ( textureWidth > glConfig.maxTextureSize || textureHeight > glConfig.maxTextureSize ) {
+		return;
+	}
+
+	GL_SelectTexture( 0 );
+	GL_Bind( tr.mirrorImage );
+	if ( tr.mirrorImage->uploadWidth != textureWidth || tr.mirrorImage->uploadHeight != textureHeight ) {
+		tr.mirrorImage->width = tr.mirrorImage->uploadWidth = textureWidth;
+		tr.mirrorImage->height = tr.mirrorImage->uploadHeight = textureHeight;
+		qglTexImage2D( GL_TEXTURE_2D, 0, GL_RGB8, textureWidth, textureHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL );
+		qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
+		qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+		qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
+		qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+	}
+	qglCopyTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, view->viewportX, view->viewportY, width, height );
+
+	qglViewport( view->fullViewportX, view->fullViewportY, view->fullViewportWidth, view->fullViewportHeight );
+	qglScissor( view->fullViewportX, view->fullViewportY, view->fullViewportWidth, view->fullViewportHeight );
+	qglMatrixMode( GL_PROJECTION );
+	qglLoadIdentity();
+	qglOrtho( 0, 1, 0, 1, -1, 1 );
+	qglMatrixMode( GL_MODELVIEW );
+	qglLoadIdentity();
+	qglDisable( GL_CLIP_PLANE0 );
+	GL_Cull( CT_TWO_SIDED );
+	GL_State( GLS_DEPTHTEST_DISABLE );
+	GL_TexEnv( GL_MODULATE );
+	qglColor3f( 1, 1, 1 );
+
+	maxS = (float)width / textureWidth;
+	maxT = (float)height / textureHeight;
+	qglBegin( GL_QUADS );
+	qglTexCoord2f( 0, 0 );			qglVertex2f( 0, 0 );
+	qglTexCoord2f( maxS, 0 );		qglVertex2f( 1, 0 );
+	qglTexCoord2f( maxS, maxT );	qglVertex2f( 1, 1 );
+	qglTexCoord2f( 0, maxT );		qglVertex2f( 0, 1 );
+	qglEnd();
+}
+
 const void	*RB_DrawSurfs( const void *data ) {
 	const drawSurfsCommand_t	*cmd;
 
@@ -937,6 +1009,10 @@ const void	*RB_DrawSurfs( const void *data ) {
 	backEnd.viewParms = cmd->viewParms;
 
 	RB_RenderDrawSurfList( cmd->drawSurfs, cmd->numDrawSurfs );
+
+	if ( backEnd.viewParms.isPortal && backEnd.viewParms.portalScaled ) {
+		RB_StretchPortalView();
+	}
 
 	return (const void *)(cmd + 1);
 }

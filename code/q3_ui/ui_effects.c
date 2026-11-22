@@ -7,7 +7,8 @@ hardware. Each item changes a cvar right away; antialiasing, texture filtering
 and texture quality take effect after APPLY (vid_restart).
 
   SHOW FPS            cg_drawFPS
-  WATER REFLECTIONS   r_noportals (the water mirror draws the scene twice)
+  WATER REFLECTIONS   off: r_noportals 1; fast: r_mirrorScale 0.5, r_mirrorDistance 1500,
+                      r_mirrorEntities 0; full: 1, 0, 1 (the mirror draws the scene again)
   HAZE                r_drawfog (1: OpenGL fog, almost free; 2: the original fog pass)
   WATER RIPPLES       r_waterRipple 0 / 0.25 / 0.55 / 1
   ROBOT SHADOWS       cg_shadows 0 / 1 (round spot) / 2 (stencil, exact shape)
@@ -71,6 +72,7 @@ typedef struct {
 static effectsMenuInfo_t	effectsMenuInfo;
 
 static const char *offOnNames[] = { "off", "on", NULL };
+static const char *reflectionNames[] = { "off", "fast", "full", NULL };
 static const char *detailNames[] = { "high", "normal", "low", NULL };
 static const char *rippleNames[] = { "off", "low", "medium", "high", NULL };
 static const float	rippleValues[] = { 0, 0.25f, 0.55f, 1.0f };
@@ -93,7 +95,13 @@ static void Effects_SetMenuItems( void ) {
 	float	ripple;
 
 	effectsMenuInfo.fps.curvalue = trap_Cvar_VariableValue( "cg_drawFPS" ) != 0;
-	effectsMenuInfo.reflections.curvalue = trap_Cvar_VariableValue( "r_noportals" ) == 0;
+	if ( trap_Cvar_VariableValue( "r_noportals" ) ) {
+		effectsMenuInfo.reflections.curvalue = 0;
+	} else if ( trap_Cvar_VariableValue( "r_mirrorScale" ) >= 1 && trap_Cvar_VariableValue( "r_mirrorEntities" ) ) {
+		effectsMenuInfo.reflections.curvalue = 2;
+	} else {
+		effectsMenuInfo.reflections.curvalue = 1;
+	}
 	effectsMenuInfo.haze.curvalue = trap_Cvar_VariableValue( "r_drawfog" ) != 0;
 	ripple = trap_Cvar_VariableValue( "r_waterRipple" );
 	effectsMenuInfo.ripples.curvalue = ripple < 0.1f ? 0 : ( ripple < 0.4f ? 1 : ( ripple < 0.8f ? 2 : 3 ) );
@@ -116,7 +124,11 @@ controls into the cvars
 */
 static void Effects_StoreItems( void ) {
 	trap_Cvar_SetValue( "cg_drawFPS", effectsMenuInfo.fps.curvalue );
-	trap_Cvar_SetValue( "r_noportals", !effectsMenuInfo.reflections.curvalue );
+	// fast: half size, only the near 1500 units, no robots; full: everything
+	trap_Cvar_SetValue( "r_noportals", effectsMenuInfo.reflections.curvalue == 0 );
+	trap_Cvar_SetValue( "r_mirrorScale", effectsMenuInfo.reflections.curvalue == 2 ? 1 : 0.5f );
+	trap_Cvar_SetValue( "r_mirrorDistance", effectsMenuInfo.reflections.curvalue == 2 ? 0 : 1500 );
+	trap_Cvar_SetValue( "r_mirrorEntities", effectsMenuInfo.reflections.curvalue == 2 );
 	trap_Cvar_SetValue( "r_drawfog", effectsMenuInfo.haze.curvalue );
 	trap_Cvar_SetValue( "r_waterRipple", rippleValues[effectsMenuInfo.ripples.curvalue] );
 	trap_Cvar_SetValue( "cg_shadows", effectsMenuInfo.shadows.curvalue );
@@ -139,7 +151,7 @@ Effects_Preset
 */
 static void Effects_Preset( qboolean fast ) {
 	effectsMenuInfo.fps.curvalue = 1;
-	effectsMenuInfo.reflections.curvalue = !fast;
+	effectsMenuInfo.reflections.curvalue = fast ? 1 : 2;
 	effectsMenuInfo.haze.curvalue = 1;		// OpenGL fog: almost free
 	effectsMenuInfo.ripples.curvalue = 1;
 	effectsMenuInfo.shadows.curvalue = fast ? 1 : 2;
@@ -251,7 +263,7 @@ static void Effects_MenuInit( void ) {
 	effectsMenuInfo.banner.style = UI_CENTER;
 
 	Effects_InitSpin( &effectsMenuInfo.fps, ID_FPS, y, "Show FPS:", offOnNames );					y += EFFECTS_STEP;
-	Effects_InitSpin( &effectsMenuInfo.reflections, ID_REFLECTIONS, y, "Water Reflections:", offOnNames );	y += EFFECTS_STEP;
+	Effects_InitSpin( &effectsMenuInfo.reflections, ID_REFLECTIONS, y, "Water Reflections:", reflectionNames );	y += EFFECTS_STEP;
 	Effects_InitSpin( &effectsMenuInfo.haze, ID_HAZE, y, "Haze:", offOnNames );						y += EFFECTS_STEP;
 	Effects_InitSpin( &effectsMenuInfo.ripples, ID_RIPPLES, y, "Water Ripples:", rippleNames );		y += EFFECTS_STEP;
 	Effects_InitSpin( &effectsMenuInfo.shadows, ID_SHADOWS, y, "Robot Shadows:", shadowNames );		y += EFFECTS_STEP;

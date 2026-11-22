@@ -2155,6 +2155,9 @@ void R_CreateBuiltinImages( void ) {
 		tr.scratchImage[x] = R_CreateImage("*scratch", (byte *)data, DEFAULT_SIZE, DEFAULT_SIZE, qfalse, qtrue, GL_CLAMP );
 	}
 
+	// WALKER: target for the reduced water reflection (resized when first used)
+	tr.mirrorImage = R_CreateImage("*mirror", (byte *)data, DEFAULT_SIZE, DEFAULT_SIZE, qfalse, qfalse, GL_CLAMP );
+
 	R_CreateDlightImage();
 	R_CreateFogImage();
 }

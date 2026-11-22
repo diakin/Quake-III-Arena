@@ -121,6 +121,9 @@ cvar_t	*r_lockpvs;
 cvar_t	*r_noportals;
 cvar_t	*r_drawfog;
 cvar_t	*r_waterRipple;
+cvar_t	*r_mirrorScale;
+cvar_t	*r_mirrorDistance;
+cvar_t	*r_mirrorEntities;
 cvar_t	*r_portalOnly;
 
 cvar_t	*r_subdivisions;
@@ -998,6 +1001,12 @@ void R_Register( void )
 	r_noportals = ri.Cvar_Get ("r_noportals", "0", CVAR_ARCHIVE);
 	r_drawfog = ri.Cvar_Get ("r_drawfog", "1", CVAR_ARCHIVE);
 	r_waterRipple = ri.Cvar_Get ("r_waterRipple", "0.25", CVAR_ARCHIVE);	// WALKER: 0 calm water .. 1 strong ripples
+	// WALKER: cheaper water reflection: drawn at this fraction of the screen size (1 = full,
+	// 0.25..0.5 = reduced and stretched), only world surfaces nearer than r_mirrorDistance
+	// (0 = all; further away the horizon colour shows), robots only with r_mirrorEntities 1
+	r_mirrorScale = ri.Cvar_Get ("r_mirrorScale", "0.5", CVAR_ARCHIVE);
+	r_mirrorDistance = ri.Cvar_Get ("r_mirrorDistance", "1500", CVAR_ARCHIVE);
+	r_mirrorEntities = ri.Cvar_Get ("r_mirrorEntities", "0", CVAR_ARCHIVE);
 	r_shadows = ri.Cvar_Get( "cg_shadows", "1", 0 );
 
 	r_maxpolys = ri.Cvar_Get( "r_maxpolys", va("%d", MAX_POLYS), 0);

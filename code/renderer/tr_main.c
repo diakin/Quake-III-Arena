@@ -946,7 +946,18 @@ qboolean R_MirrorViewBySurface (drawSurf_t *drawSurf, int entityNum) {
 	R_MirrorVector (oldParms.or.axis[1], &surface, &camera, newParms.or.axis[1]);
 	R_MirrorVector (oldParms.or.axis[2], &surface, &camera, newParms.or.axis[2]);
 
-	// OPTIMIZE: restrict the viewport on the mirrored view
+	// WALKER: draw the reflection at reduced size; the back end stretches it over the
+	// whole view afterwards (RB_StretchPortalView)
+	if ( r_mirrorScale->value > 0 && r_mirrorScale->value < 1 ) {
+		float	scale = r_mirrorScale->value < 0.25f ? 0.25f : ( r_mirrorScale->value > 0.5f ? 0.5f : r_mirrorScale->value );
+		newParms.portalScaled = qtrue;
+		newParms.fullViewportX = oldParms.viewportX;
+		newParms.fullViewportY = oldParms.viewportY;
+		newParms.fullViewportWidth = oldParms.viewportWidth;
+		newParms.fullViewportHeight = oldParms.viewportHeight;
+		newParms.viewportWidth = oldParms.viewportWidth * scale;
+		newParms.viewportHeight = oldParms.viewportHeight * scale;
+	}
 
 	// render the mirror view
 	R_RenderView (&newParms);
@@ -1310,6 +1321,11 @@ void R_AddEntitySurfaces (void) {
 		// mirrors, because the true body position will already be drawn
 		//
 		if ( (ent->e.renderfx & RF_FIRST_PERSON) && tr.viewParms.isPortal) {
+			continue;
+		}
+
+		// WALKER: robots and other models are left out of the water reflection
+		if ( tr.viewParms.isPortal && !r_mirrorEntities->integer && ent->e.reType == RT_MODEL ) {
 			continue;
 		}
 

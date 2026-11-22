@@ -202,6 +202,11 @@ TAB - счёт, ~ - консоль, ESC - меню, F12 - снимок экра�
                          следы, сглаживание, фильтрация, качество текстур; FAST / QUALITY / APPLY
   q3_ui/ui_selectbots.c, ui_startserver.c: после ручного выбора ботов bot_minplayers 0, чтобы
                          сервер не добавлял ботов сам (быстрый старт: +set bot_minplayers 6)
+  renderer/tr_main.c, tr_world.c, tr_backend.c: дешёвое отражение воды — r_mirrorScale (0.25..0.5:
+                         рисуется в уменьшенном окне и растягивается, RB_StretchPortalView; 1 —
+                         полный размер), r_mirrorDistance (только поверхности мира ближе этого
+                         расстояния, дальше цвет горизонта; 0 — все), r_mirrorEntities 0 (без
+                         роботов). Меню EFFECTS -> Water Reflections: off / fast / full
   renderer/tr_light.c    на карте с солнцем (q3map_sun) модели освещаются с направления солнца:
                          сетка освещения открытой карты давала свет снизу
   renderer/tr_shadows.c  рёбра объёма тени сопоставляются по положению вершин (швы развёртки не
