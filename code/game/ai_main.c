@@ -1642,7 +1642,9 @@ BotAISetup
 int BotAISetup( int restart ) {
 	int			errnum;
 
-	trap_Cvar_Register(&bot_thinktime, "bot_thinktime", "100", CVAR_CHEAT);
+	// WALKER: 200 (was 100): bots think five times a second; slow robots need no more, and
+	// bot AI on the big open map costs half as much
+	trap_Cvar_Register(&bot_thinktime, "bot_thinktime", "200", CVAR_CHEAT);
 	trap_Cvar_Register(&bot_memorydump, "bot_memorydump", "0", CVAR_CHEAT);
 	trap_Cvar_Register(&bot_saveroutingcache, "bot_saveroutingcache", "0", CVAR_CHEAT);
 	trap_Cvar_Register(&bot_pause, "bot_pause", "0", CVAR_CHEAT);

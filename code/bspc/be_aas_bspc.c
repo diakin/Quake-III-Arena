@@ -1,3 +1,5 @@
+#include <stdlib.h>
+#include <stdio.h>
 /*
 ===========================================================================
 Copyright (C) 1999-2005 Id Software, Inc.
@@ -266,6 +268,29 @@ void AAS_CalcReachAndClusters(struct quakefile_s *qf)
 	if (!qf->pakfile[0]) strcpy(qf->pakfile, qf->filename);
 	//load the map
 	CM_LoadMap((char *) qf, qfalse, &aasworld.bspchecksum);
+	// WALKER: navigation can be built from a simplified copy of a map (coarser
+	// terrain, far fewer areas: bot routing is much cheaper); the AAS file then
+	// carries the checksum of the real map named by BSPC_CHECKSUM_FROM
+	{
+		char	*realMap = getenv( "BSPC_CHECKSUM_FROM" );
+		FILE	*file;
+
+		if ( realMap && realMap[0] && ( file = fopen( realMap, "rb" ) ) != NULL ) {
+			int		length;
+			byte	*buffer;
+
+			fseek( file, 0, SEEK_END );
+			length = ftell( file );
+			fseek( file, 0, SEEK_SET );
+			buffer = malloc( length );
+			if ( buffer && fread( buffer, 1, length, file ) == (size_t)length ) {
+				aasworld.bspchecksum = LittleLong( Com_BlockChecksum( buffer, length ) );
+				Log_Print( "checksum taken from %s: %d\n", realMap, aasworld.bspchecksum );
+			}
+			free( buffer );
+			fclose( file );
+		}
+	}
 	//get a handle to the world model
 	worldmodel = CM_InlineModel(0);		// 0 = world, 1 + are bmodels
 	//initialize bot import structure

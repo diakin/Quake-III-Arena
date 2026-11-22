@@ -371,7 +371,9 @@ void R_AddMD3Surfaces( trRefEntity_t *ent ) {
 		// stencil shadows can't do personal models unless I polyhedron clip
 		// WALKER: the map-wide haze (fog volume without a visible surface) no longer
 		// switches the shadows of the models inside it off
+		// WALKER: no shadow volumes in the water reflection (drawn twice otherwise)
 		if ( !personalModel
+			&& !tr.viewParms.isPortal
 			&& r_shadows->integer == 2 
 			&& ( fogNum == 0 || !tr.world || !tr.world->fogs[fogNum].hasSurface )
 			&& !(ent->e.renderfx & ( RF_NOSHADOW | RF_DEPTHHACK ) ) 

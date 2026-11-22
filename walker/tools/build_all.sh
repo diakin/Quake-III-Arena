@@ -44,10 +44,17 @@ cd "$STAGE/quake3/basewalker/maps"
 "$Q3MAP" -vis wk_islands.map
 # sun + weak light from the sky dome (48 directions, WALKER patch in q3map/light.c)
 "$Q3MAP" -light -skylight 24 48 wk_islands.map
-# bot navigation (AAS): robot box, no jumps
-"$BSPC" -cfg "$ROOT/walker/maps/aas_walker.cfg" -bsp2aas "$STAGE/quake3/basewalker/maps/wk_islands.bsp"
+# bot navigation (AAS): robot box, no jumps. Built from a copy of the map with the
+# terrain on a 64-unit grid (WALKER_NAV=1): ~2.5 times fewer areas, bot routing is
+# much cheaper; the AAS gets the checksum of the real map (BSPC_CHECKSUM_FROM)
+rm -rf "$STAGE/nav" && mkdir -p "$STAGE/nav/data" "$STAGE/nav/quake3/basewalker"
+WALKER_NAV=1 python3 "$TOOLS/make_map_islands.py" "$STAGE/nav/data" "$STAGE/nav/quake3/basewalker"
+(cd "$STAGE/nav/quake3/basewalker/maps" && "$Q3MAP" wk_islands.map)
+BSPC_CHECKSUM_FROM="$STAGE/quake3/basewalker/maps/wk_islands.bsp" \
+	"$BSPC" -cfg "$ROOT/walker/maps/aas_walker.cfg" -bsp2aas "$STAGE/nav/quake3/basewalker/maps/wk_islands.bsp"
 mkdir -p "$STAGE/map/maps" "$STAGE/map/levelshots"
-cp wk_islands.bsp wk_islands.aas "$STAGE/map/maps/"
+cp wk_islands.bsp "$STAGE/map/maps/"
+cp "$STAGE/nav/quake3/basewalker/maps/wk_islands.aas" "$STAGE/map/maps/"
 cp "$ROOT/walker/maps/levelshots/wk_islands.jpg" "$STAGE/map/levelshots/"
 
 echo "== pk3"

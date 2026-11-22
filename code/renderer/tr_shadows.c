@@ -45,6 +45,44 @@ static	edgeDef_t	edgeDefs[SHADER_MAX_VERTEXES][MAX_EDGE_DEFS];
 static	int			numEdgeDefs[SHADER_MAX_VERTEXES];
 static	int			facing[SHADER_MAX_INDEXES/3];
 
+/*
+WALKER: vertices at UV seams and hard edges are duplicated in the robot model.
+Unwelded, every such edge looked like a silhouette edge, and thousands of
+extra shadow quads were drawn per robot per frame, each in its own
+glBegin/glEnd: the frame rate fell with every robot in view. Edges are now
+matched by vertex position (weldIndex), and the silhouette quads of a surface
+are collected once and drawn as one batch per stencil pass.
+*/
+#define	WELD_HASH_SIZE	1024
+static	int			weldIndex[SHADER_MAX_VERTEXES];
+static	int			weldHashHead[WELD_HASH_SIZE];
+static	int			weldHashNext[SHADER_MAX_VERTEXES];
+static	int			silhouette[SHADER_MAX_INDEXES][2];
+static	int			numSilhouette;
+
+static void R_WeldShadowVertexes( void ) {
+	int		i, bucket, other;
+	float	*xyz;
+
+	for ( i = 0 ; i < WELD_HASH_SIZE ; i++ ) {
+		weldHashHead[i] = -1;
+	}
+	for ( i = 0 ; i < tess.numVertexes ; i++ ) {
+		xyz = tess.xyz[i];
+		bucket = ( (int)floor( xyz[0] * 8 ) * 73856093 ^ (int)floor( xyz[1] * 8 ) * 19349663 ^ (int)floor( xyz[2] * 8 ) * 83492791 ) & ( WELD_HASH_SIZE - 1 );
+		weldIndex[i] = i;
+		for ( other = weldHashHead[bucket] ; other >= 0 ; other = weldHashNext[other] ) {
+			if ( fabs( tess.xyz[other][0] - xyz[0] ) < 0.01f && fabs( tess.xyz[other][1] - xyz[1] ) < 0.01f
+				&& fabs( tess.xyz[other][2] - xyz[2] ) < 0.01f ) {
+				weldIndex[i] = weldIndex[other];
+				break;
+			}
+		}
+		weldHashNext[i] = weldHashHead[bucket];
+		weldHashHead[bucket] = i;
+	}
+}
+
 void R_AddEdgeDef( int i1, int i2, int facing ) {
 	int		c;
 
@@ -103,39 +141,51 @@ void R_RenderShadowEdges( void ) {
 	c_edges = 0;
 	c_rejected = 0;
 
-	for ( i = 0 ; i < tess.numVertexes ; i++ ) {
-		c = numEdgeDefs[ i ];
-		for ( j = 0 ; j < c ; j++ ) {
-			if ( !edgeDefs[ i ][ j ].facing ) {
-				continue;
-			}
-
-			hit[0] = 0;
-			hit[1] = 0;
-
-			i2 = edgeDefs[ i ][ j ].i2;
-			c2 = numEdgeDefs[ i2 ];
-			for ( k = 0 ; k < c2 ; k++ ) {
-				if ( edgeDefs[ i2 ][ k ].i2 == i ) {
-					hit[ edgeDefs[ i2 ][ k ].facing ]++;
+	if ( numSilhouette < 0 ) {
+		// collect once per surface (both stencil passes use the same list)
+		numSilhouette = 0;
+		for ( i = 0 ; i < tess.numVertexes ; i++ ) {
+			c = numEdgeDefs[ i ];
+			for ( j = 0 ; j < c ; j++ ) {
+				if ( !edgeDefs[ i ][ j ].facing ) {
+					continue;
 				}
-			}
 
-			// if it doesn't share the edge with another front facing
-			// triangle, it is a sil edge
-			if ( hit[ 1 ] == 0 ) {
-				qglBegin( GL_TRIANGLE_STRIP );
-				qglVertex3fv( tess.xyz[ i ] );
-				qglVertex3fv( tess.xyz[ i + tess.numVertexes ] );
-				qglVertex3fv( tess.xyz[ i2 ] );
-				qglVertex3fv( tess.xyz[ i2 + tess.numVertexes ] );
-				qglEnd();
-				c_edges++;
-			} else {
-				c_rejected++;
+				hit[0] = 0;
+				hit[1] = 0;
+
+				i2 = edgeDefs[ i ][ j ].i2;
+				c2 = numEdgeDefs[ i2 ];
+				for ( k = 0 ; k < c2 ; k++ ) {
+					if ( edgeDefs[ i2 ][ k ].i2 == i ) {
+						hit[ edgeDefs[ i2 ][ k ].facing ]++;
+					}
+				}
+
+				// if it doesn't share the edge with another front facing
+				// triangle, it is a sil edge
+				if ( hit[ 1 ] == 0 && numSilhouette < SHADER_MAX_INDEXES ) {
+					silhouette[ numSilhouette ][0] = i;
+					silhouette[ numSilhouette ][1] = i2;
+					numSilhouette++;
+					c_edges++;
+				} else {
+					c_rejected++;
+				}
 			}
 		}
 	}
+
+	// edge indexes are welded ones: draw with the original vertex of the same position
+	qglBegin( GL_QUADS );
+	for ( i = 0 ; i < numSilhouette ; i++ ) {
+		int		first = silhouette[i][0], second = silhouette[i][1];
+		qglVertex3fv( tess.xyz[ first ] );
+		qglVertex3fv( tess.xyz[ first + tess.numVertexes ] );
+		qglVertex3fv( tess.xyz[ second + tess.numVertexes ] );
+		qglVertex3fv( tess.xyz[ second ] );
+	}
+	qglEnd();
 #endif
 }
 
@@ -180,6 +230,8 @@ void RB_ShadowTessEnd( void ) {
 
 	// decide which triangles face the light
 	Com_Memset( numEdgeDefs, 0, 4 * tess.numVertexes );
+	R_WeldShadowVertexes();
+	numSilhouette = -1;
 
 	numTris = tess.numIndexes / 3;
 	for ( i = 0 ; i < numTris ; i++ ) {
@@ -207,7 +259,10 @@ void RB_ShadowTessEnd( void ) {
 			facing[ i ] = 0;
 		}
 
-		// create the edges
+		// create the edges (between welded vertexes)
+		i1 = weldIndex[ i1 ];
+		i2 = weldIndex[ i2 ];
+		i3 = weldIndex[ i3 ];
 		R_AddEdgeDef( i1, i2, facing[ i ] );
 		R_AddEdgeDef( i2, i3, facing[ i ] );
 		R_AddEdgeDef( i3, i1, facing[ i ] );
