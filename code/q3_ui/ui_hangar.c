@@ -3,8 +3,10 @@
 WALKER: hangar (prototype).
 
 Up to five robots stand in bays along the bottom of the screen. The selected
-robot is shown large in the middle; it turns slowly by itself and can be turned
-with the mouse (drag with the left button) or with the left/right arrow keys.
+robot is shown large in the middle. It can be turned around every axis: drag
+with the left mouse button (left/right - turn, up/down - tilt), drag with the
+right button (roll), arrow keys and PgUp/PgDn; HOME or "RESET VIEW" puts it back.
+"AUTO ROTATE" switches the slow turn by itself on and off (cvar ui_hangarAutoRotate).
 "PILOT" makes the selected robot the player's robot (cvars model/headmodel).
 
 This file is part of WALKER, based on the Quake III Arena source code
@@ -25,6 +27,8 @@ This file is part of WALKER, based on the Quake III Arena source code
 
 #define ID_BACK				10
 #define ID_PILOT			11
+#define ID_AUTOROTATE		12
+#define ID_RESETVIEW		13
 #define ID_BAY0				20
 
 // big preview
@@ -68,14 +72,20 @@ typedef struct {
 	menubitmap_s	bays[MAX_BAYS];
 	menubitmap_s	back;
 	menubitmap_s	pilot;
+	menutext_s		autoRotate;
+	menutext_s		resetView;
 
 	playerInfo_t	players[MAX_BAYS];
 	int				selected;
 	float			previewYaw;
+	float			previewPitch;
+	float			previewRoll;
 	float			bayYaw;
 	int				lastTime;
-	qboolean		dragging;
+	qboolean		dragging;		// left button: turn and tilt
+	qboolean		rolling;		// right button: roll
 	float			dragLastX;
+	float			dragLastY;
 	qhandle_t		backgroundShader;
 	qhandle_t		bayShader;
 	qhandle_t		baySelectedShader;
@@ -115,7 +125,11 @@ static void Hangar_DrawPreview( void *self ) {
 
 	robot = &hangarRobots[hangarMenuInfo.selected];
 	Hangar_FaceYaw( &hangarMenuInfo.players[hangarMenuInfo.selected], hangarMenuInfo.previewYaw );
+	uiPlayerOrbit = qtrue;
+	uiPlayerOrbitPitch = hangarMenuInfo.previewPitch;
+	uiPlayerOrbitRoll = hangarMenuInfo.previewRoll;
 	UI_DrawPlayer( PREVIEW_X, PREVIEW_Y, PREVIEW_W, PREVIEW_H, &hangarMenuInfo.players[hangarMenuInfo.selected], uis.realtime / 2 );
+	uiPlayerOrbit = qfalse;
 
 	UI_DrawProportionalString( 320, PREVIEW_Y + PREVIEW_H - 44, robot->title, UI_CENTER | UI_SMALLFONT, color_white );
 	Com_sprintf( line, sizeof( line ), "ARMOR %i   SPEED %i   %s", robot->armor, robot->speed, robot->weapon );
@@ -163,22 +177,34 @@ static void Hangar_Draw( void ) {
 	seconds = hangarMenuInfo.lastTime ? ( now - hangarMenuInfo.lastTime ) * 0.001f : 0;
 	hangarMenuInfo.lastTime = now;
 
+	if ( hangarMenuInfo.dragging && !trap_Key_IsDown( K_MOUSE1 ) ) {
+		hangarMenuInfo.dragging = qfalse;
+	}
+	if ( hangarMenuInfo.rolling && !trap_Key_IsDown( K_MOUSE2 ) ) {
+		hangarMenuInfo.rolling = qfalse;
+	}
 	if ( hangarMenuInfo.dragging ) {
-		if ( trap_Key_IsDown( K_MOUSE1 ) ) {
-			hangarMenuInfo.previewYaw += ( uis.cursorx - hangarMenuInfo.dragLastX ) * DRAG_SPEED;
-			hangarMenuInfo.dragLastX = uis.cursorx;
-		} else {
-			hangarMenuInfo.dragging = qfalse;
-		}
-	} else {
+		hangarMenuInfo.previewYaw += ( uis.cursorx - hangarMenuInfo.dragLastX ) * DRAG_SPEED;
+		hangarMenuInfo.previewPitch += ( uis.cursory - hangarMenuInfo.dragLastY ) * DRAG_SPEED;
+	} else if ( hangarMenuInfo.rolling ) {
+		hangarMenuInfo.previewRoll += ( uis.cursorx - hangarMenuInfo.dragLastX ) * DRAG_SPEED;
+	} else if ( trap_Cvar_VariableValue( "ui_hangarAutoRotate" ) ) {
 		hangarMenuInfo.previewYaw += TURN_SPEED * seconds;
 	}
+	hangarMenuInfo.dragLastX = uis.cursorx;
+	hangarMenuInfo.dragLastY = uis.cursory;
 	hangarMenuInfo.previewYaw = AngleMod( hangarMenuInfo.previewYaw );
-	hangarMenuInfo.bayYaw = AngleMod( hangarMenuInfo.bayYaw + TURN_SPEED * 0.5f * seconds );
+	hangarMenuInfo.previewPitch = AngleNormalize180( hangarMenuInfo.previewPitch );
+	hangarMenuInfo.previewRoll = AngleNormalize180( hangarMenuInfo.previewRoll );
+	if ( trap_Cvar_VariableValue( "ui_hangarAutoRotate" ) ) {
+		hangarMenuInfo.bayYaw = AngleMod( hangarMenuInfo.bayYaw + TURN_SPEED * 0.5f * seconds );
+	}
+	hangarMenuInfo.autoRotate.string = trap_Cvar_VariableValue( "ui_hangarAutoRotate" ) ? "AUTO ROTATE: ON" : "AUTO ROTATE: OFF";
 
 	UI_DrawHandlePic( 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, hangarMenuInfo.backgroundShader );
 	Menu_Draw( &hangarMenuInfo.menu );
-	UI_DrawString( 320, 466, "drag the robot with the mouse or use the arrow keys to turn it", UI_CENTER | UI_SMALLFONT, hangarDimColor );
+	UI_DrawString( 320, 450, "left button: turn and tilt   right button: roll", UI_CENTER | UI_SMALLFONT, hangarDimColor );
+	UI_DrawString( 320, 466, "arrows, PgUp/PgDn: turn   HOME: reset", UI_CENTER | UI_SMALLFONT, hangarDimColor );
 }
 
 
@@ -190,10 +216,16 @@ Hangar_Key
 static sfxHandle_t Hangar_Key( int key ) {
 	switch ( key ) {
 	case K_MOUSE1:
+	case K_MOUSE2:
 		if ( uis.cursorx >= PREVIEW_X && uis.cursorx <= PREVIEW_X + PREVIEW_W &&
-			uis.cursory >= PREVIEW_Y && uis.cursory <= PREVIEW_Y + PREVIEW_H ) {
-			hangarMenuInfo.dragging = qtrue;
+			uis.cursory >= PREVIEW_Y + 20 && uis.cursory <= PREVIEW_Y + PREVIEW_H - 50 ) {
+			if ( key == K_MOUSE1 ) {
+				hangarMenuInfo.dragging = qtrue;
+			} else {
+				hangarMenuInfo.rolling = qtrue;
+			}
 			hangarMenuInfo.dragLastX = uis.cursorx;
+			hangarMenuInfo.dragLastY = uis.cursory;
 			return 0;
 		}
 		break;
@@ -204,6 +236,28 @@ static sfxHandle_t Hangar_Key( int key ) {
 	case K_RIGHTARROW:
 	case K_KP_RIGHTARROW:
 		hangarMenuInfo.previewYaw += KEY_STEP;
+		return 0;
+	case K_UPARROW:
+	case K_KP_UPARROW:
+		hangarMenuInfo.previewPitch -= KEY_STEP;
+		return 0;
+	case K_DOWNARROW:
+	case K_KP_DOWNARROW:
+		hangarMenuInfo.previewPitch += KEY_STEP;
+		return 0;
+	case K_PGUP:
+	case K_KP_PGUP:
+		hangarMenuInfo.previewRoll -= KEY_STEP;
+		return 0;
+	case K_PGDN:
+	case K_KP_PGDN:
+		hangarMenuInfo.previewRoll += KEY_STEP;
+		return 0;
+	case K_HOME:
+	case K_KP_HOME:
+		hangarMenuInfo.previewYaw = 150;
+		hangarMenuInfo.previewPitch = 0;
+		hangarMenuInfo.previewRoll = 0;
 		return 0;
 	}
 	return Menu_DefaultKey( &hangarMenuInfo.menu, key );
@@ -227,6 +281,14 @@ static void Hangar_Event( void *ptr, int event ) {
 		return;
 	}
 	switch ( id ) {
+	case ID_AUTOROTATE:
+		trap_Cvar_SetValue( "ui_hangarAutoRotate", !trap_Cvar_VariableValue( "ui_hangarAutoRotate" ) );
+		break;
+	case ID_RESETVIEW:
+		hangarMenuInfo.previewYaw = 150;
+		hangarMenuInfo.previewPitch = 0;
+		hangarMenuInfo.previewRoll = 0;
+		break;
 	case ID_PILOT:
 		trap_Cvar_Set( "model", hangarRobots[hangarMenuInfo.selected].model );
 		trap_Cvar_Set( "headmodel", hangarRobots[hangarMenuInfo.selected].model );
@@ -349,8 +411,30 @@ static void Hangar_Init( void ) {
 	for ( index = 0; index < MAX_BAYS; index++ ) {
 		Menu_AddItem( &hangarMenuInfo.menu, &hangarMenuInfo.bays[index] );
 	}
+	hangarMenuInfo.autoRotate.generic.type		= MTYPE_PTEXT;
+	hangarMenuInfo.autoRotate.generic.flags		= QMF_RIGHT_JUSTIFY | QMF_PULSEIFFOCUS;
+	hangarMenuInfo.autoRotate.generic.id		= ID_AUTOROTATE;
+	hangarMenuInfo.autoRotate.generic.callback	= Hangar_Event;
+	hangarMenuInfo.autoRotate.generic.x			= 632;
+	hangarMenuInfo.autoRotate.generic.y			= 60;
+	hangarMenuInfo.autoRotate.string			= "AUTO ROTATE: ON";
+	hangarMenuInfo.autoRotate.style				= UI_RIGHT | UI_SMALLFONT;
+	hangarMenuInfo.autoRotate.color				= color_red;
+
+	hangarMenuInfo.resetView.generic.type		= MTYPE_PTEXT;
+	hangarMenuInfo.resetView.generic.flags		= QMF_RIGHT_JUSTIFY | QMF_PULSEIFFOCUS;
+	hangarMenuInfo.resetView.generic.id			= ID_RESETVIEW;
+	hangarMenuInfo.resetView.generic.callback	= Hangar_Event;
+	hangarMenuInfo.resetView.generic.x			= 632;
+	hangarMenuInfo.resetView.generic.y			= 84;
+	hangarMenuInfo.resetView.string				= "RESET VIEW";
+	hangarMenuInfo.resetView.style				= UI_RIGHT | UI_SMALLFONT;
+	hangarMenuInfo.resetView.color				= color_red;
+
 	Menu_AddItem( &hangarMenuInfo.menu, &hangarMenuInfo.back );
 	Menu_AddItem( &hangarMenuInfo.menu, &hangarMenuInfo.pilot );
+	Menu_AddItem( &hangarMenuInfo.menu, &hangarMenuInfo.autoRotate );
+	Menu_AddItem( &hangarMenuInfo.menu, &hangarMenuInfo.resetView );
 }
 
 

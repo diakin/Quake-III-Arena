@@ -214,6 +214,9 @@ void SP_misc_portal_surface(gentity_t *ent) {
 	ent->s.eType = ET_PORTAL;
 
 	if ( !ent->target ) {
+		// WALKER: a mirror (the water surface) must reach every client, wherever
+		// it stands, or the reflection disappears where the entity is out of the PVS
+		ent->r.svFlags |= SVF_BROADCAST;
 		VectorCopy( ent->s.origin, ent->s.origin2 );
 	} else {
 		ent->think = locateCamera;

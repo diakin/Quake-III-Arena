@@ -22,7 +22,7 @@ if not os.path.exists(FONT_TITLE):
 FOG_COLOR = (0.72, 0.76, 0.77)   # как небо у горизонта
 FOG_DISTANCE = 12000
 SUN_AZIMUTH = 140.0      # градусы, как в q3map_sun
-SUN_ELEVATION = 48.0
+SUN_ELEVATION = 40.0
 
 # ================================================================ текстуры
 
@@ -349,9 +349,11 @@ def tex_water_ripple(seed, wave_number):
     size = 512
     field = ripple_field(size, wave_number, 0.35, seed) + 0.45 * ripple_field(size, wave_number * 2.1, 0.4, seed + 1)
     field /= field.std()
-    crest = np.clip(field, 0, None) ** 1.6
-    trough = np.clip(-field, 0, None) ** 0.9
-    level = 128 + 34 * crest - 26 * trough
+    field = ndimage_blur(field, 1.5, 1.5)
+    field /= field.std()
+    crest = np.clip(field, 0, None) ** 1.3
+    trough = np.clip(-field, 0, None)
+    level = 128 + 11 * crest - 9 * trough
     pixels = np.stack([level * 0.98, level, level * 1.02], axis=-1)
     return Image.fromarray(np.clip(pixels, 0, 255).astype(np.uint8))
 
@@ -360,7 +362,7 @@ def tex_water_deep(seed):
     """цвет толщи воды: тёмный сине-зелёный с крупными пятнами."""
     size = 256
     field = normalize(fft_noise(size, 1.6, seed))
-    color = colorize(field, [(0, (24, 46, 62)), (0.5, (30, 56, 72)), (1, (40, 68, 82))])
+    color = colorize(field, [(0, (50, 72, 86)), (0.5, (56, 78, 92)), (1, (62, 84, 96))])
     return Image.fromarray(np.clip(color, 0, 255).astype(np.uint8))
 
 
@@ -371,13 +373,13 @@ def tex_water_env():
     size = 128
     t = (np.arange(size) + 0.5) / size
     vz = np.clip(1 - 2 * np.minimum(t, 1 - t), 0, 1)
-    fresnel = 0.06 + 0.94 * (1 - vz) ** 3.2
-    horizon = np.array([150, 168, 182]); zenith = np.array([62, 96, 132])
+    fresnel = 0.18 + 0.82 * (1 - vz) ** 1.8          # плавно: без полос между вершинами
+    horizon = np.array([132, 150, 162]); zenith = np.array([70, 100, 128])
     sky = horizon[None, :] * (1 - vz[:, None]) ** 0.6 + zenith[None, :] * (1 - (1 - vz[:, None]) ** 0.6)
     column = sky * fresnel[:, None]
     # облака в отражении: слабые полосы вдоль s (меняются при повороте камеры)
     s = np.arange(size) / size
-    clouds = 1 + 0.12 * np.sin(s * 2 * np.pi * 3 + 1.3) + 0.08 * np.sin(s * 2 * np.pi * 7)
+    clouds = 1 + 0.05 * np.sin(s * 2 * np.pi * 3 + 1.3)
     pixels = column[:, None, :] * clouds[None, :, None]
     return Image.fromarray(np.clip(pixels, 0, 255).astype(np.uint8))
 
@@ -426,16 +428,16 @@ def make_textures():
     TEXTURES['water'] = tex_water_deep(111)
     TEXTURES['water_ripple'] = tex_water_ripple(112, 24)
     TEXTURES['water_ripple2'] = tex_water_ripple(114, 13)
-    TEXTURES['water_env'] = tex_water_env()
-    TEXTURES['water_glint'] = tex_water_glint(116)
     for name, image in TEXTURES.items():
+        if name in ('grass', 'grass2', 'shore', 'seabed'):
+            continue        # только для цветовой карты рельефа
         save_texture(f'textures/walker/{name}', image)
 
 
-def save_texture(path, image):
+def save_texture(path, image, quality=90):
     data_path = os.path.join(DATA, path + '.jpg')
     os.makedirs(os.path.dirname(data_path), exist_ok=True)
-    image.convert('RGB').save(data_path, quality=90)
+    image.convert('RGB').save(data_path, quality=quality)
     compile_path = os.path.join(COMPILE, path + '.tga')
     os.makedirs(os.path.dirname(compile_path), exist_ok=True)
     image.convert('RGB').save(compile_path)
@@ -499,7 +501,7 @@ SHADER_SCALE = {}      # масштаб текстуры по умолчанию
 
 def texture_scale(shader):
     name = shader.split('/')[-1]
-    if name in ('grass', 'grass2', 'rock', 'rockmoss', 'shore', 'seabed') or name.startswith('mix_'):
+    if name in ('grass', 'grass2', 'rock', 'rockmoss', 'shore', 'seabed', 'terrain'):
         return 0.5
     if name.startswith('beacon_') or name == 'helipad':
         return 0.75
@@ -613,7 +615,8 @@ def add_ramp(x0, y0, x1, y1, z_low, z_high, rise_toward, side='concrete_dark', t
 # ================================================================ рельеф
 
 HALF_X, HALF_Y = 1792, 1344          # граница карты (скалы упираются в оболочку неба)
-CELL = 64
+COARSE_CELL = 64                     # шаг, на котором строится форма рельефа
+CELL = 32                            # шаг сетки треугольников (сглаженная форма): берег плавнее
 PLAY_X, PLAY_Y = 1472, 1024          # невидимые стены по краю игровой зоны
 WATER_Z = 0
 SEABED_MIN = -20                     # глубже воды нет: робот всегда идёт, а не плывёт
@@ -631,8 +634,20 @@ FLATTEN = [  # x, y, радиус плоской зоны, высота, шир�
 
 
 def height_map():
-    xs = np.arange(-HALF_X, HALF_X + 1, CELL, dtype=float)
-    ys = np.arange(-HALF_Y, HALF_Y + 1, CELL, dtype=float)
+    """форма рельефа на сетке COARSE_CELL, затем кубическая интерполяция на сетку CELL."""
+    from scipy.interpolate import RectBivariateSpline
+    xs, ys, coarse = coarse_height_map()
+    fine_xs = np.arange(-HALF_X, HALF_X + 1, CELL, dtype=float)
+    fine_ys = np.arange(-HALF_Y, HALF_Y + 1, CELL, dtype=float)
+    spline = RectBivariateSpline(ys, xs, coarse, kx=3, ky=3)
+    fine = spline(fine_ys, fine_xs)
+    fine = np.maximum(fine, SEABED_MIN)
+    return fine_xs, fine_ys, np.round(fine)
+
+
+def coarse_height_map():
+    xs = np.arange(-HALF_X, HALF_X + 1, COARSE_CELL, dtype=float)
+    ys = np.arange(-HALF_Y, HALF_Y + 1, COARSE_CELL, dtype=float)
     grid_x, grid_y = np.meshgrid(xs, ys)
     field = np.zeros_like(grid_x)
     for center_x, center_y, radius, amplitude in ISLANDS:
@@ -658,7 +673,7 @@ def height_map():
         weight = np.clip(1 - (distance - radius) / falloff, 0, 1)
         weight = weight * weight * (3 - 2 * weight)
         height = height * (1 - weight) + level * weight
-    return xs, ys, np.round(height / 2) * 2
+    return xs, ys, height
 
 
 XS, YS, HEIGHTS = None, None, None
@@ -676,76 +691,178 @@ def ground(x, y):
     return (h00 * (1 - frac_x) + h10 * frac_x) * (1 - frac_y) + (h01 * (1 - frac_x) + h11 * frac_x) * frac_y
 
 
-TERRAIN_ORDER = ['seabed', 'shore', 'grass', 'grass2', 'rockmoss', 'rock']
-TERRAIN_MIXES = {}      # пары текстур рельефа, для которых нужен переход: имя -> (a, b)
+COLORMAP_SIZE = 2048
+DETAIL_TILE = 160          # единиц на повтор текстуры мелкой детали
 
 
-def vertex_classes(variety_field):
-    """класс поверхности в каждой вершине сетки рельефа: по высоте, крутизне и шуму."""
-    grad_y, grad_x = np.gradient(HEIGHTS, CELL)
-    normal_z = 1 / np.sqrt(1 + grad_x ** 2 + grad_y ** 2)
-    jitter = fft_noise(0, 1.4, 306, (len(YS) * 2, len(XS) * 2))[:len(YS), :len(XS)]
-    classes = np.full(HEIGHTS.shape, 'grass', dtype=object)
-    classes[variety_field > 0.55] = 'grass2'
-    classes[(HEIGHTS > 105 + 25 * jitter) | (normal_z < 0.86)] = 'rockmoss'
-    classes[(normal_z < 0.74) | ((HEIGHTS > 170) & (normal_z < 0.9))] = 'rock'
-    classes[HEIGHTS < 6 + 4 * jitter] = 'shore'
-    classes[HEIGHTS < -6 + 3 * jitter] = 'seabed'
-    return classes
-
-
-def terrain_shader(points, vertex_class):
-    """текстура треугольника: если все вершины одного класса — она, иначе переход между двумя
-    самыми частыми классами. Крутые грани — всегда камень (или переход к камню)."""
+def terrain_shader(points):
+    """крутые грани — скала (текстура по граням браша), остальное — общая цветовая карта."""
     a, b, c = [np.array(point, dtype=float) for point in points]
     normal = np.cross(b - a, c - a)
     normal /= np.linalg.norm(normal)
-    names = list(vertex_class)
-    if abs(normal[2]) < 0.6:
-        return 'rock'
     if abs(normal[2]) < 0.72:
-        names.append('rock')
-    counts = {}
-    for name in names:
-        counts[name] = counts.get(name, 0) + 1
-    ranked = sorted(counts, key=lambda name: (-counts[name], TERRAIN_ORDER.index(name)))
-    if len(ranked) == 1:
-        return ranked[0]
-    first, second = sorted(ranked[:2], key=TERRAIN_ORDER.index)
-    name = f'mix_{first}_{second}'
-    TERRAIN_MIXES[name] = (first, second)
-    return name
+        return 'rock' if (a[2] + b[2] + c[2]) / 3 > 90 else 'rockmoss'
+    return 'terrain'
+
+
+def terrain_height_at(world_x, world_y):
+    """высота рельефа ровно по треугольникам сетки (как в add_terrain)."""
+    column = np.clip((world_x + HALF_X) / CELL, 0, len(XS) - 1.0001)
+    row = np.clip((world_y + HALF_Y) / CELL, 0, len(YS) - 1.0001)
+    col0 = np.floor(column).astype(int); row0 = np.floor(row).astype(int)
+    fx = column - col0; fy = row - row0
+    h00 = HEIGHTS[row0, col0]; h10 = HEIGHTS[row0, col0 + 1]
+    h01 = HEIGHTS[row0 + 1, col0]; h11 = HEIGHTS[row0 + 1, col0 + 1]
+    even = (row0 + col0) % 2 == 0
+    # чётные клетки: диагональ 00-11; нечётные: диагональ 10-01
+    even_low = h00 + fx * (h10 - h00) + fy * (h11 - h10)
+    even_high = h00 + fx * (h11 - h01) + fy * (h01 - h00)
+    odd_low = h00 + fx * (h10 - h00) + fy * (h01 - h00)
+    odd_high = h11 + (1 - fx) * (h01 - h11) + (1 - fy) * (h10 - h11)
+    return np.where(even, np.where(fx >= fy, even_low, even_high), np.where(fx + fy <= 1, odd_low, odd_high))
+
+
+def sample_tiled(image, world_x, world_y, tile, pixel):
+    """текстура материала в мировых координатах (повтор через tile единиц), заранее уменьшенная
+    так, что тексель равен пикселю цветовой карты (pixel единиц): без мерцания и ряби."""
+    reduced = max(16, int(round(tile / pixel)))
+    array = np.array(image.convert('RGB').resize((reduced, reduced), Image.LANCZOS)).astype(float)
+    u = (world_x / tile) % 1.0 * reduced - 0.5
+    v = (-world_y / tile) % 1.0 * reduced - 0.5
+    x0 = np.floor(u).astype(int); y0 = np.floor(v).astype(int)
+    fx = (u - x0)[..., None]; fy = (v - y0)[..., None]
+    x0 %= reduced; y0 %= reduced
+    x1 = (x0 + 1) % reduced; y1 = (y0 + 1) % reduced
+    top = array[y0, x0] * (1 - fx) + array[y0, x1] * fx
+    bottom = array[y1, x0] * (1 - fx) + array[y1, x1] * fx
+    return top * (1 - fy) + bottom * fy
+
+
+def make_colormap():
+    """одна цветовая карта на весь рельеф: материалы смешаны плавно по высоте, крутизне и шуму,
+    у кромки воды — тёмная мокрая полоса, под водой — дно темнеет с глубиной.
+    Граница материалов не зависит от треугольников сетки."""
+    size = COLORMAP_SIZE
+    span_x, span_y = 2 * HALF_X, 2 * HALF_Y
+    pixel_x = -HALF_X + (np.arange(size) + 0.5) * span_x / size
+    pixel_y = HALF_Y - (np.arange(size) + 0.5) * span_y / size
+    world_x, world_y = np.meshgrid(pixel_x, pixel_y)
+    height = terrain_height_at(world_x, world_y)
+    grad_y, grad_x = np.gradient(HEIGHTS, CELL)
+    normal_grid = 1 / np.sqrt(1 + grad_x ** 2 + grad_y ** 2)
+    from scipy.ndimage import map_coordinates, gaussian_filter
+    coords = np.stack([(world_y + HALF_Y) / CELL, (world_x + HALF_X) / CELL])
+    normal_z = map_coordinates(normal_grid, coords, order=1, mode='nearest')
+
+    def noise(beta, seed):
+        return fft_noise(0, beta, seed, (size, size))
+
+    jitter = noise(1.6, 501)
+    variety = normalize(noise(1.8, 502))
+    patches = normalize(noise(1.3, 503))
+    pixel = span_x / size
+    footprint = pixel
+    grass = sample_tiled(TEXTURES['grass'], world_x, world_y, 256, footprint)
+    grass2 = sample_tiled(TEXTURES['grass2'], world_x + 97, world_y - 41, 256, footprint)
+    rockmoss = sample_tiled(TEXTURES['rockmoss'], world_x, world_y, 256, footprint)
+    rock = sample_tiled(TEXTURES['rock'], world_x, world_y, 256, footprint)
+    sand = sample_tiled(TEXTURES['shore'], world_x, world_y, 256, footprint)
+    sand = sand * 0.5 + gaussian_filter(sand, (1.2, 1.2, 0)) * 0.5        # галька мягче
+    seabed = sample_tiled(TEXTURES['seabed'], world_x, world_y, 256, footprint)
+    seabed = seabed * 0.6 + np.array([92, 84, 66]) * 0.4                  # дно ближе к песку
+
+    def mix(base, other, weight):
+        return base * (1 - weight[..., None]) + other * weight[..., None]
+
+    color = mix(grass, grass2, soft(0.4, 0.7, variety))
+    # тропинки и проплешины
+    color = mix(color, sand * 0.9, 0.55 * soft(0.78, 0.92, patches) * soft(30, 12, np.abs(height - 20)))
+    color = mix(color, rockmoss, soft(95, 150, height + 35 * jitter) * soft(0.6, 0.95, normal_z))
+    color = mix(color, rockmoss, soft(0.93, 0.82, normal_z))
+    color = mix(color, rock, soft(0.84, 0.72, normal_z) * 0.85)
+    # берег: песок с галькой, выше по неровной кромке
+    shore_top = 5 + 3 * jitter
+    color = mix(color, sand, soft(shore_top + 4, shore_top - 2, height))
+    # мокрая полоса у воды и дно
+    wet = soft(5, -1, height)
+    color = color * (1 - 0.32 * wet[..., None]) * np.array([1.0, 1.0, 1.04])
+    color = mix(color, seabed, soft(-1, -7, height))
+    depth = soft(0, -20, height)
+    color = color * (1 - 0.35 * depth[..., None]) + np.array([20, 34, 38]) * 0.35 * depth[..., None]
+    # мягкая крупная светотень по рельефу, которую карта освещения сглаживает
+    color *= (0.92 + 0.08 * normalize(gaussian_filter(jitter, 3)))[..., None]
+    return to_image(color)
+
+
+def tex_detail(seed):
+    """мелкая деталь для рельефа (умножение x2, среднее 128): зерно, травинки, камешки."""
+    size = 512
+    fine = fft_noise(size, 0.5, seed)
+    mid = fft_noise(size, 1.0, seed + 1)
+    level = 128 + 22 * fine + 12 * mid
+    image = Image.fromarray(np.clip(level, 0, 255).astype(np.uint8)).convert('RGB').convert('RGBA')
+    image.alpha_composite(strokes(size, 9000, seed + 2, (3, 7), [(150, 150, 150), (104, 104, 104), (170, 170, 170)]))
+    gray = np.array(image.convert('L')).astype(float)
+    gray = 128 + (gray - gray.mean()) * 0.9
+    return Image.fromarray(np.clip(gray, 0, 255).astype(np.uint8)).convert('RGB')
 
 
 def add_terrain():
-    variety_field = normalize(fft_noise(0, 1.5, 305, (len(YS) * 2, len(XS) * 2))[:len(YS), :len(XS)])
-    classes = vertex_classes(variety_field)
+    """рельеф из треугольных призм; ровные клетки (дно, площадки) сливаются в прямоугольники
+    до 16x16 клеток — иначе брашей больше, чем допускает формат BSP."""
     counts = {}
-    for row in range(len(YS) - 1):
-        for col in range(len(XS) - 1):
+    rows, cols = len(YS) - 1, len(XS) - 1
+    flat = np.zeros((rows, cols), dtype=bool)
+    for row in range(rows):
+        for col in range(cols):
+            corners = HEIGHTS[row:row + 2, col:col + 2]
+            flat[row, col] = corners.min() == corners.max()
+    used = np.zeros_like(flat)
+    for row in range(rows):
+        for col in range(cols):
+            if not flat[row, col] or used[row, col]:
+                continue
+            level = HEIGHTS[row, col]
+            width = 1
+            while (col + width < cols and width < 16 and flat[row, col + width] and not used[row, col + width]
+                   and HEIGHTS[row, col + width] == level):
+                width += 1
+            height = 1
+            while row + height < rows and height < 16:
+                line = slice(col, col + width)
+                if (flat[row + height, line].all() and not used[row + height, line].any()
+                        and (HEIGHTS[row + height, col:col + width + 1] == level).all()):
+                    height += 1
+                else:
+                    break
+            used[row:row + height, col:col + width] = True
+            x0, x1 = int(XS[col]), int(XS[col + width])
+            y0, y1 = int(YS[row]), int(YS[row + height])
+            add_prism([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], TERRAIN_BOTTOM, int(level), 'terrain', CAULK, CAULK, True)
+            counts['terrain (flat)'] = counts.get('terrain (flat)', 0) + 1
+    for row in range(rows):
+        for col in range(cols):
+            if used[row, col]:
+                continue
             x0, x1 = int(XS[col]), int(XS[col + 1])
             y0, y1 = int(YS[row]), int(YS[row + 1])
             h00, h10 = int(HEIGHTS[row, col]), int(HEIGHTS[row, col + 1])
             h01, h11 = int(HEIGHTS[row + 1, col]), int(HEIGHTS[row + 1, col + 1])
             corner00, corner10 = (x0, y0, h00), (x1, y0, h10)
             corner01, corner11 = (x0, y1, h01), (x1, y1, h11)
-            class00, class10 = classes[row, col], classes[row, col + 1]
-            class01, class11 = classes[row + 1, col], classes[row + 1, col + 1]
             if (row + col) % 2 == 0:
-                triangles = [((corner00, corner10, corner11), (class00, class10, class11)),
-                             ((corner00, corner11, corner01), (class00, class11, class01))]
+                triangles = [(corner00, corner10, corner11), (corner00, corner11, corner01)]
             else:
-                triangles = [((corner00, corner10, corner01), (class00, class10, class01)),
-                             ((corner10, corner11, corner01), (class10, class11, class01))]
-            for triangle, vertex_class in triangles:
-                shader = terrain_shader(triangle, vertex_class)
+                triangles = [(corner00, corner10, corner01), (corner10, corner11, corner01)]
+            for triangle in triangles:
+                shader = terrain_shader(triangle)
                 counts[shader] = counts.get(shader, 0) + 1
                 polygon = [(point[0], point[1]) for point in triangle]
                 area = (polygon[1][0] - polygon[0][0]) * (polygon[2][1] - polygon[0][1]) - (polygon[2][0] - polygon[0][0]) * (polygon[1][1] - polygon[0][1])
                 if area < 0:
                     polygon.reverse()
                 add_prism(polygon, TERRAIN_BOTTOM, None, shader, CAULK, CAULK, True, list(triangle))
-    print('terrain triangles:', dict(sorted(counts.items(), key=lambda item: -item[1])))
+    print('terrain brushes:', counts)
 
 
 # ================================================================ постройки
@@ -999,7 +1116,7 @@ def spawn_points():
 
 def write_map():
     worldspawn = {
-        'classname': 'worldspawn', 'message': 'Islands', 'ambient': '20', '_color': '0.75 0.82 0.9',
+        'classname': 'worldspawn', 'message': 'Islands', 'ambient': '10', '_color': '0.75 0.82 0.9',
         'gridsize': '128 128 128', '_blocksize': '0 0 0',
     }
     entities = spawn_points()
@@ -1007,6 +1124,11 @@ def write_map():
     # маяки: target_location нужны ботам как точки сбора и игре для названий мест
     for letter, (x, y, z) in BEACONS.items():
         entities.append({'classname': 'target_location', 'origin': f'{x} {y} {int(z) + 40}', 'message': f'Beacon {letter.upper()}'})
+    # зеркало для воды: точка над водой, в 8 единицах над её плоскостью (отражение рендерит движок)
+    deep = np.argwhere(HEIGHTS <= SEABED_MIN)
+    centre = np.array([len(YS) / 2, len(XS) / 2])
+    row, col = deep[np.argmin(((deep - centre) ** 2).sum(axis=1))]
+    entities.append({'classname': 'misc_portal_surface', 'origin': f'{int(XS[col])} {int(YS[row])} {WATER_Z + 8}'})
     for x, y in [(0, 0), (-1000, 400), (1000, -400), (0, 900), (0, -900)]:
         entities.append({'classname': 'target_speaker', 'origin': f'{x} {y} 120', 'noise': 'sound/world/wind_loop.wav', 'spawnflags': '1'})
     lines = ['// WALKER map wk_islands, generated by walker/tools/make_map_islands.py', '{']
@@ -1050,7 +1172,7 @@ textures/walker/sky
 	surfaceparm noimpact
 	surfaceparm nolightmap
 	surfaceparm nomarks
-	q3map_sun 1 0.95 0.86 160 {SUN_AZIMUTH:g} {SUN_ELEVATION:g}
+	q3map_sun 1 0.95 0.86 240 {SUN_AZIMUTH:g} {SUN_ELEVATION:g}
 	q3map_surfacelight 0
 	skyparms env/walker_sky - -
 }}
@@ -1063,53 +1185,61 @@ textures/walker/water
 	surfaceparm water
 	surfaceparm nolightmap
 	surfaceparm nomarks
-	cull disable
+	// mirror: the engine first draws the scene reflected in the water plane
+	// (misc_portal_surface in the map), then these stages go over it
+	portal
 	tessSize 128
-	deformVertexes wave 160 sin 0 1.2 0 0.25
-	// water body: seabed visible near the camera, opaque far away
+	// water colour over the reflection; writes depth so the seabed brushes stay hidden
 	{{
 		map textures/walker/water.jpg
 		blendFunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA
 		alphaGen const 0.42
 		rgbGen identity
-		tcMod scale 0.3 0.3
-		tcMod scroll 0.004 0.006
+		tcMod scale 0.2 0.2
+		depthWrite
 	}}
+	// seabed seen through the water near the camera (terrain colour map, dimmed),
+	// the reflection takes over with distance
 	{{
-		map textures/walker/water.jpg
-		blendFunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA
-		alphaGen portal 1700
-		rgbGen identity
-		tcMod scale 0.3 0.3
+		clampmap textures/walker/terrain_colormap.jpg
+		blendFunc GL_ONE_MINUS_SRC_ALPHA GL_SRC_ALPHA
+		rgbGen const ( 0.50 0.58 0.60 )
+		alphaGen portal 1000
+		tcGen vector ( {1.0 / (2 * HALF_X):.8f} 0 0 ) ( 0 {-1.0 / (2 * HALF_Y):.8f} 0 )
+		tcMod transform 1 0 0 1 0.5 0.5
 	}}
-	// sky reflection, stronger at grazing angles
-	{{
-		map textures/walker/water_env.jpg
-		tcGen environment
-		blendFunc GL_ONE GL_ONE
-		rgbGen identity
-		tcMod turb 0 0.012 0 0.15
-	}}
-	// two ripple layers (modulate x2): bright crests, dark troughs
+	// gentle ripples (modulate x2, low contrast)
 	{{
 		map textures/walker/water_ripple.jpg
 		blendFunc GL_DST_COLOR GL_SRC_COLOR
-		tcMod scale 0.55 0.55
-		tcMod scroll 0.006 0.035
+		tcMod scale 0.45 0.45
+		tcMod scroll 0.004 0.022
 	}}
 	{{
 		map textures/walker/water_ripple2.jpg
 		blendFunc GL_DST_COLOR GL_SRC_COLOR
-		tcMod transform 0.25 0.19 -0.19 0.25 0 0
-		tcMod scroll -0.012 0.021
+		tcMod transform 0.2 0.15 -0.15 0.2 0 0
+		tcMod scroll -0.008 0.014
 	}}
-	// sun glints
+}}
+textures/walker/terrain
+{{
+	qer_editorimage textures/walker/terrain_detail.tga
 	{{
-		map textures/walker/water_glint.jpg
-		blendFunc GL_ONE GL_ONE
-		rgbGen wave sin 0.35 0.2 0 0.7
-		tcMod scale 0.9 0.9
-		tcMod scroll 0.01 0.05
+		map $lightmap
+		rgbGen identity
+	}}
+	{{
+		clampmap textures/walker/terrain_colormap.jpg
+		blendFunc GL_DST_COLOR GL_ZERO
+		rgbGen identity
+		tcGen vector ( {1.0 / (2 * HALF_X):.8f} 0 0 ) ( 0 {-1.0 / (2 * HALF_Y):.8f} 0 )
+		tcMod transform 1 0 0 1 0.5 0.5
+	}}
+	{{
+		map textures/walker/terrain_detail.jpg
+		blendFunc GL_DST_COLOR GL_SRC_COLOR
+		tcGen vector ( {1.0 / DETAIL_TILE:.6f} 0 0 ) ( 0 {1.0 / DETAIL_TILE:.6f} 0 )
 	}}
 }}
 textures/walker/fog
@@ -1199,10 +1329,9 @@ def write_shaders():
 
 
 def make_mix_textures():
-    for name, (first, second) in sorted(TERRAIN_MIXES.items()):
-        seed = 400 + TERRAIN_ORDER.index(first) * 10 + TERRAIN_ORDER.index(second)
-        save_texture(f'textures/walker/{name}', tex_mix(TEXTURES[first], TEXTURES[second], seed))
     save_texture('textures/walker/macro', tex_macro(131))
+    save_texture('textures/walker/terrain_colormap', make_colormap(), quality=88)
+    save_texture('textures/walker/terrain_detail', tex_detail(141))
 
 
 def lightmapped_shaders():

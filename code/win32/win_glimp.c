@@ -364,6 +364,99 @@ static void GLW_CreatePFD( PIXELFORMATDESCRIPTOR *pPFD, int colorbits, int depth
 /*
 ** GLW_MakeContext
 */
+/*
+** GLW_FindMultisamplePFD
+**
+** WALKER: antialiasing. Pixel formats with several samples per pixel are only
+** listed by wglChoosePixelFormatARB, and that function needs a current GL
+** context, so a hidden window with an ordinary context is made first.
+** Returns 0 when r_ext_multisample is 0 or the driver has no such format.
+*/
+#define WGL_DRAW_TO_WINDOW_ARB		0x2001
+#define WGL_ACCELERATION_ARB		0x2003
+#define WGL_SUPPORT_OPENGL_ARB		0x2010
+#define WGL_DOUBLE_BUFFER_ARB		0x2011
+#define WGL_PIXEL_TYPE_ARB			0x2013
+#define WGL_COLOR_BITS_ARB			0x2014
+#define WGL_DEPTH_BITS_ARB			0x2022
+#define WGL_STENCIL_BITS_ARB		0x2023
+#define WGL_FULL_ACCELERATION_ARB	0x2027
+#define WGL_TYPE_RGBA_ARB			0x202B
+#define WGL_SAMPLE_BUFFERS_ARB		0x2041
+#define WGL_SAMPLES_ARB				0x2042
+
+typedef BOOL ( WINAPI * wglChoosePixelFormatARB_t )( HDC hdc, const int *intAttribs, const FLOAT *floatAttribs, UINT maxFormats, int *formats, UINT *numFormats );
+
+static LRESULT WINAPI GLW_DummyWndProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam ) {
+	return DefWindowProc( hWnd, msg, wParam, lParam );
+}
+
+static int GLW_FindMultisamplePFD( HDC hDC, const PIXELFORMATDESCRIPTOR *pPFD )
+{
+	cvar_t						*multisample;
+	WNDCLASS					wc;
+	HWND						dummyWindow;
+	HDC							dummyDC;
+	HGLRC						dummyContext;
+	PIXELFORMATDESCRIPTOR		dummyPFD;
+	int							dummyFormat, samples, found = 0;
+	wglChoosePixelFormatARB_t	choosePixelFormat;
+
+	multisample = ri.Cvar_Get( "r_ext_multisample", "4", CVAR_ARCHIVE | CVAR_LATCH );
+	if ( multisample->integer < 2 || glConfig.driverType != GLDRV_ICD ) {
+		return 0;
+	}
+
+	memset( &wc, 0, sizeof( wc ) );
+	wc.lpfnWndProc = GLW_DummyWndProc;
+	wc.hInstance = g_wv.hInstance;
+	wc.lpszClassName = "WalkerDummyGL";
+	RegisterClass( &wc );
+	dummyWindow = CreateWindow( "WalkerDummyGL", "", WS_POPUP, 0, 0, 1, 1, NULL, NULL, g_wv.hInstance, NULL );
+	if ( !dummyWindow ) {
+		return 0;
+	}
+	dummyDC = GetDC( dummyWindow );
+	dummyPFD = *pPFD;
+	dummyFormat = ChoosePixelFormat( dummyDC, &dummyPFD );
+	if ( dummyFormat && SetPixelFormat( dummyDC, dummyFormat, &dummyPFD ) ) {
+		dummyContext = qwglCreateContext( dummyDC );
+		if ( dummyContext ) {
+			if ( qwglMakeCurrent( dummyDC, dummyContext ) ) {
+				choosePixelFormat = ( wglChoosePixelFormatARB_t ) qwglGetProcAddress( "wglChoosePixelFormatARB" );
+				for ( samples = multisample->integer; choosePixelFormat && samples >= 2 && !found; samples /= 2 ) {
+					int		attribs[] = {
+						WGL_DRAW_TO_WINDOW_ARB, 1,
+						WGL_SUPPORT_OPENGL_ARB, 1,
+						WGL_DOUBLE_BUFFER_ARB, 1,
+						WGL_ACCELERATION_ARB, WGL_FULL_ACCELERATION_ARB,
+						WGL_PIXEL_TYPE_ARB, WGL_TYPE_RGBA_ARB,
+						WGL_COLOR_BITS_ARB, pPFD->cColorBits >= 24 ? 24 : 16,	// without alpha
+						WGL_DEPTH_BITS_ARB, pPFD->cDepthBits,
+						WGL_STENCIL_BITS_ARB, pPFD->cStencilBits,
+						WGL_SAMPLE_BUFFERS_ARB, 1,
+						WGL_SAMPLES_ARB, samples,
+						0 };
+					int		format = 0;
+					UINT	count = 0;
+					if ( choosePixelFormat( hDC, attribs, NULL, 1, &format, &count ) && count > 0 && format > 0 ) {
+						found = format;
+						ri.Printf( PRINT_ALL, "...using %dx multisample antialiasing (pixel format %d)\n", samples, format );
+					}
+				}
+				qwglMakeCurrent( NULL, NULL );
+			}
+			qwglDeleteContext( dummyContext );
+		}
+	}
+	ReleaseDC( dummyWindow, dummyDC );
+	DestroyWindow( dummyWindow );
+	if ( !found ) {
+		ri.Printf( PRINT_ALL, "...multisample antialiasing not available\n" );
+	}
+	return found;
+}
+
 static int GLW_MakeContext( PIXELFORMATDESCRIPTOR *pPFD )
 {
 	int pixelformat;
@@ -379,7 +472,8 @@ static int GLW_MakeContext( PIXELFORMATDESCRIPTOR *pPFD )
 		// using a minidriver then we need to bypass the GDI functions,
 		// otherwise use the GDI functions.
 		//
-		if ( ( pixelformat = GLW_ChoosePFD( glw_state.hDC, pPFD ) ) == 0 )
+		pixelformat = GLW_FindMultisamplePFD( glw_state.hDC, pPFD );
+		if ( !pixelformat && ( pixelformat = GLW_ChoosePFD( glw_state.hDC, pPFD ) ) == 0 )
 		{
 			ri.Printf( PRINT_ALL, "...GLW_ChoosePFD failed\n");
 			return TRY_PFD_FAIL_SOFT;
@@ -1397,7 +1491,10 @@ void GLimp_Init( void )
 	{
 		glConfig.hardwareType = GLHW_GENERIC;
 
-		ri.Cvar_Set( "r_textureMode", "GL_LINEAR_MIPMAP_NEAREST" );
+		// WALKER: id lowered texture quality on the first start with a new video
+		// card (r_picmip 1, bilinear mipmaps) for 1999 hardware; every card that
+		// runs Windows 7 handles full-size textures with trilinear filtering
+		ri.Cvar_Set( "r_textureMode", "GL_LINEAR_MIPMAP_LINEAR" );
 
 		// VOODOO GRAPHICS w/ 2MB
 		if ( strstr( buf, "voodoo graphics/1 tmu/2 mb" ) )
@@ -1407,8 +1504,6 @@ void GLimp_Init( void )
 		}
 		else
 		{
-			ri.Cvar_Set( "r_picmip", "1" );
-
 			if ( strstr( buf, "rage 128" ) || strstr( buf, "rage128" ) )
 			{
 				ri.Cvar_Set( "r_finish", "0" );

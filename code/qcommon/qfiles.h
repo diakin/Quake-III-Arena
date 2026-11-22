@@ -327,7 +327,7 @@ typedef struct {
 #define	MAX_MAP_FOGS		0x100
 #define	MAX_MAP_PLANES		0x20000
 #define	MAX_MAP_NODES		0x20000
-#define	MAX_MAP_BRUSHSIDES	0x20000
+#define	MAX_MAP_BRUSHSIDES	0x40000	// WALKER: was 0x20000, terrain needs more
 #define	MAX_MAP_LEAFS		0x20000
 #define	MAX_MAP_LEAFFACES	0x20000
 #define	MAX_MAP_LEAFBRUSHES 0x40000

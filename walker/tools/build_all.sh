@@ -42,8 +42,8 @@ python3 "$TOOLS/make_map_islands.py" "$STAGE/map" "$STAGE/quake3/basewalker"
 cd "$STAGE/quake3/basewalker/maps"
 "$Q3MAP" wk_islands.map
 "$Q3MAP" -vis wk_islands.map
-# sun + light from the sky dome (48 directions, WALKER patch in q3map/light.c), 2x2 supersampling
-"$Q3MAP" -light -skylight 55 48 -extra wk_islands.map
+# sun + weak light from the sky dome (48 directions, WALKER patch in q3map/light.c)
+"$Q3MAP" -light -skylight 24 48 wk_islands.map
 # bot navigation (AAS): robot box, no jumps
 "$BSPC" -cfg "$ROOT/walker/maps/aas_walker.cfg" -bsp2aas "$STAGE/quake3/basewalker/maps/wk_islands.bsp"
 mkdir -p "$STAGE/map/maps" "$STAGE/map/levelshots"

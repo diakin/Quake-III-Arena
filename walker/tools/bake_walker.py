@@ -467,6 +467,16 @@ class Part:
         color = color * (1 - mud) + mud_color * (0.8 + 0.4 * self.grain[:, None]) * mud
         dust = (self.dust * 0.22)[:, None] * rough[:, None]
         color = color * (1 - dust) + dust_color * dust
+        # дюзы (engine_glow): не плоский оранжевый, а приглушённое свечение — горячая
+        # середина пластины, тёмно-красные края, у самого ребра почти чёрный металл
+        texel = 1.0 / self.texels_per_unit
+        engine = materials == 'engine_glow'
+        if np.any(engine):
+            inner = smoothstep(texel * 0.5, texel * 5.0, self.sample_convex[engine])
+            flicker = 0.85 + 0.3 * fbm(self.sample_position[engine] * 30.0, 2)
+            hot = np.array([236, 118, 52]); warm = np.array([150, 50, 22]); edge = np.array([46, 22, 14])
+            glow = edge + (warm - edge) * smoothstep(0.0, 0.35, inner)[:, None] + (hot - warm) * smoothstep(0.35, 1.0, inner)[:, None]
+            color[engine] = glow * flicker[:, None] * 0.82
         # затенение: сильное в щелях, светящиеся детали не затеняются
         shade = 0.22 + 0.78 * np.clip(ao, 0, 1) ** 1.25
         shade = np.where(glowing, 0.75 + 0.25 * shade, shade)
@@ -695,7 +705,7 @@ def write_shaders(parts):
 {{
 	{{
 		map {atlas}
-		rgbGen identity
+		rgbGen wave sin 0.9 0.08 0 0.4
 	}}
 }}""")
     path = os.path.join(DATA_ROOT, 'scripts', 'walker_player.shader')

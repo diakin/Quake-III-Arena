@@ -722,6 +722,28 @@ static void UI_PlayerModelExtent( playerInfo_t *pi, vec3_t mins, vec3_t maxs ) {
 UI_DrawPlayer
 ===============
 */
+qboolean	uiPlayerOrbit;
+float		uiPlayerOrbitPitch;
+float		uiPlayerOrbitRoll;
+
+/*
+===============
+UI_OrbitVector
+
+WALKER: turns a vector by the hangar pitch and roll (pitch about the camera's
+side axis, roll about the line of sight)
+===============
+*/
+static void UI_OrbitVector( vec3_t rotation[3], const vec3_t in, vec3_t out ) {
+	vec3_t	result;
+	int		i;
+
+	for ( i = 0; i < 3; i++ ) {
+		result[i] = in[0] * rotation[0][i] + in[1] * rotation[1][i] + in[2] * rotation[2][i];
+	}
+	VectorCopy( result, out );
+}
+
 void UI_DrawPlayer( float x, float y, float w, float h, playerInfo_t *pi, int time ) {
 	refdef_t		refdef;
 	refEntity_t		legs;
@@ -789,6 +811,11 @@ void UI_DrawPlayer( float x, float y, float w, float h, playerInfo_t *pi, int ti
 			if ( fabs( maxs[axis] ) > radius ) radius = fabs( maxs[axis] );
 		}
 		height = maxs[2] - mins[2];
+		if ( uiPlayerOrbit ) {
+			// any side may face the camera: fit the bounding sphere both ways
+			radius = sqrt( radius * radius + 0.25f * height * height );
+			height = 2 * radius;
+		}
 		alongX = radius / ( 0.85f * tan( DEG2RAD(refdef.fov_x) * 0.5 ) );
 		alongY = 0.5f * height / ( 0.85f * tan( DEG2RAD(refdef.fov_y) * 0.5 ) );
 		len = alongX > alongY ? alongX : alongY;
@@ -803,6 +830,23 @@ void UI_DrawPlayer( float x, float y, float w, float h, playerInfo_t *pi, int ti
 
 	// get the rotation information
 	UI_PlayerAngles( pi, legs.axis, torso.axis, head.axis );
+
+	// WALKER: hangar pitch and roll turn the legs (torso and head follow their
+	// tags) around the model centre, which sits on the line of sight
+	if ( uiPlayerOrbit ) {
+		vec3_t	orbitAngles, rotation[3], centre, offset;
+		int		i;
+
+		VectorSet( orbitAngles, uiPlayerOrbitPitch, 0, uiPlayerOrbitRoll );
+		AnglesToAxis( orbitAngles, rotation );
+		for ( i = 0; i < 3; i++ ) {
+			UI_OrbitVector( rotation, legs.axis[i], legs.axis[i] );
+		}
+		VectorSet( centre, origin[0], origin[1], 0 );
+		VectorSubtract( origin, centre, offset );
+		UI_OrbitVector( rotation, offset, offset );
+		VectorAdd( centre, offset, origin );
+	}
 	
 	// get the animation state (after rotation, to allow feet shuffle)
 	UI_PlayerAnimation( pi, &legs.oldframe, &legs.frame, &legs.backlerp,
