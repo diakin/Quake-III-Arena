@@ -997,7 +997,7 @@ void R_Register( void )
 	// WALKER: settings menu switches: water reflections (mirror) and haze (fog volumes)
 	r_noportals = ri.Cvar_Get ("r_noportals", "0", CVAR_ARCHIVE);
 	r_drawfog = ri.Cvar_Get ("r_drawfog", "1", CVAR_ARCHIVE);
-	r_waterRipple = ri.Cvar_Get ("r_waterRipple", "0.35", CVAR_ARCHIVE);	// WALKER: 0 calm water .. 1 strong ripples
+	r_waterRipple = ri.Cvar_Get ("r_waterRipple", "0.25", CVAR_ARCHIVE);	// WALKER: 0 calm water .. 1 strong ripples
 	r_shadows = ri.Cvar_Get( "cg_shadows", "1", 0 );
 
 	r_maxpolys = ri.Cvar_Get( "r_maxpolys", va("%d", MAX_POLYS), 0);

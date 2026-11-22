@@ -440,6 +440,14 @@ static int GLW_FindMultisamplePFD( HDC hDC, const PIXELFORMATDESCRIPTOR *pPFD )
 					int		format = 0;
 					UINT	count = 0;
 					if ( choosePixelFormat( hDC, attribs, NULL, 1, &format, &count ) && count > 0 && format > 0 ) {
+						PIXELFORMATDESCRIPTOR	check;
+						// some drivers give a multisample format without the stencil
+						// asked for (no robot shadows then): use the classic choice
+						DescribePixelFormat( hDC, format, sizeof( check ), &check );
+						if ( check.cStencilBits < pPFD->cStencilBits || check.cDepthBits < 16 ) {
+							ri.Printf( PRINT_ALL, "...multisample format %d has stencil %d, depth %d: skipped\n", format, check.cStencilBits, check.cDepthBits );
+							continue;
+						}
 						found = format;
 						ri.Printf( PRINT_ALL, "...using %dx multisample antialiasing (pixel format %d)\n", samples, format );
 					}

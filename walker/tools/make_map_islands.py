@@ -353,7 +353,7 @@ def tex_water_ripple(seed, wave_number):
     field /= field.std()
     crest = np.clip(field, 0, None) ** 1.3
     trough = np.clip(-field, 0, None)
-    level = 128 + 11 * crest - 9 * trough
+    level = 128 + 42 * crest - 34 * trough        # сила ряби в игре задаёт r_waterRipple
     pixels = np.stack([level * 0.98, level, level * 1.02], axis=-1)
     return Image.fromarray(np.clip(pixels, 0, 255).astype(np.uint8))
 
@@ -362,7 +362,7 @@ def tex_water_deep(seed):
     """цвет толщи воды: тёмный сине-зелёный с крупными пятнами."""
     size = 256
     field = normalize(fft_noise(size, 1.6, seed))
-    color = colorize(field, [(0, (36, 60, 72)), (0.5, (42, 66, 78)), (1, (48, 72, 84))])
+    color = colorize(field, [(0, (40, 46, 32)), (0.5, (46, 52, 37)), (1, (52, 58, 41))])    # тёмная зеленовато-бурая
     return Image.fromarray(np.clip(color, 0, 255).astype(np.uint8))
 
 
@@ -843,7 +843,7 @@ def make_water_shallow():
 
 MIRROR_START = 120.0       # от берега до начала зеркальной воды, единиц (около 20 м)
 BAND_FALL = 70.0           # за границей зеркала цвет воды уступает отражению на этой ширине
-SHALLOW_COLOR = (40, 64, 74)   # тёмная стальная вода, ближе к образцам
+SHALLOW_COLOR = (44, 50, 35)   # тёмная зеленовато-бурая вода
 
 
 SEABED_LIGHT = 1.0         # подобрано по скриншоту: суша у кромки и дно у кромки одной яркости
@@ -1261,38 +1261,38 @@ textures/walker/water
 	{{
 		map textures/walker/water.jpg
 		blendFunc GL_ONE_MINUS_SRC_ALPHA GL_SRC_ALPHA
-		alphaGen portal 2000
+		alphaGen portal 1300
 		rgbGen identity
 		tcMod scale 0.2 0.2
 	}}
 	{{
 		map textures/walker/water.jpg
 		blendFunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA
-		alphaGen const 0.18
+		alphaGen const 0.12
 		rgbGen identity
 		tcMod scale 0.2 0.2
 	}}
 	// ripples and glints over the reflection only (the shallows near the shore are
-	// drawn over them by the terrain): none close to the camera, full from 1100 units
+	// drawn over them by the terrain): none close to the camera, full from 600 units
 	// on, strength set by r_waterRipple (menu EFFECTS -> Water Ripples)
 	{{
 		map textures/walker/water_ripple.jpg
 		blendFunc GL_DST_COLOR GL_ONE_MINUS_SRC_ALPHA
-		rgbGen waterRipple 120 1100
+		rgbGen waterRipple 60 600
 		tcMod scale 0.45 0.45
 		tcMod scroll 0.004 0.022
 	}}
 	{{
 		map textures/walker/water_ripple2.jpg
 		blendFunc GL_DST_COLOR GL_ONE_MINUS_SRC_ALPHA
-		rgbGen waterRipple 120 1100
+		rgbGen waterRipple 60 600
 		tcMod transform 0.2 0.15 -0.15 0.2 0 0
 		tcMod scroll -0.008 0.014
 	}}
 	{{
 		map textures/walker/water_glint.jpg
 		blendFunc GL_ONE GL_ONE
-		rgbGen waterGlint 200 1400 0.3
+		rgbGen waterGlint 100 900 0.35
 		tcMod scale 0.45 0.45
 		tcMod scroll 0.004 0.022
 	}}

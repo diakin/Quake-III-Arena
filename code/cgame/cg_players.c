@@ -2057,11 +2057,21 @@ static qboolean CG_PlayerShadow( centity_t *cent, float *shadowPlane ) {
 	vec3_t		end, mins = {-15, -15, 0}, maxs = {15, 15, 2};
 	trace_t		trace;
 	float		alpha;
+	int			shadowMode = cg_shadows.integer;
 
 	*shadowPlane = 0;
 
-	if ( cg_shadows.integer == 0 ) {
+	if ( shadowMode == 0 ) {
 		return qfalse;
+	}
+	// WALKER: without a stencil buffer the full shadow can not be drawn: use the spot
+	if ( shadowMode == 2 && cgs.glconfig.stencilBits < 4 ) {
+		static qboolean	warned;
+		if ( !warned ) {
+			CG_Printf( "full robot shadows need a stencil buffer (stencil bits: %i), drawing the simple shadow\n", cgs.glconfig.stencilBits );
+			warned = qtrue;
+		}
+		shadowMode = 1;
 	}
 
 	// no shadows when invisible
@@ -2082,12 +2092,12 @@ static qboolean CG_PlayerShadow( centity_t *cent, float *shadowPlane ) {
 
 	*shadowPlane = trace.endpos[2] + 1;
 
-	if ( cg_shadows.integer != 1 ) {	// no mark for stencil or projection shadows
+	if ( shadowMode != 1 ) {	// no mark for stencil or projection shadows
 		return qtrue;
 	}
 
-	// fade the shadow out with height
-	alpha = 1.0 - trace.fraction;
+	// fade the shadow out with height (WALKER: slower, the robot stands 24 units up)
+	alpha = 1.0 - trace.fraction * 0.6;
 
 	// bk0101022 - hack / FPE - bogus planes?
 	//assert( DotProduct( trace.plane.normal, trace.plane.normal ) != 0.0f ) 

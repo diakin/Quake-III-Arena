@@ -88,7 +88,7 @@ seta cg_marks "1"
 seta cg_shadows "2"
 seta cg_drawFPS "1"
 seta r_drawfog "1"
-seta r_waterRipple "0.35"
+seta r_waterRipple "0.25"
 seta r_noportals "0"
 seta r_stencilbits "8"
 seta r_textureMode "GL_LINEAR_MIPMAP_LINEAR"
@@ -864,7 +864,8 @@ def effects():
     save('gfx/damage/burn_med_mrk.tga', mark(smoke(128, 9, 0.12)))
     save('gfx/damage/hole_lg_mrk.tga', mark(radial(64, 0.2, 1.0, (20, 18, 16), 0.8)))
     save('gfx/damage/plasma_mrk.tga', radial(64, 0.2, 1.0, (40, 60, 90), 0.8))
-    save('gfx/marks/shadow.tga', mark(radial(64, 0.1, 1.0, (60, 60, 60), 1.2)))
+    # пятно тени робота: плотная середина (затемнение ~0.8), мягкий край
+    save('gfx/marks/shadow.tga', mark(radial(64, 0.3, 1.0, (40, 40, 40), 0.9)))
     save('gfx/misc/spark.tga', premultiply(radial(32, 0.0, 1.0, (255, 200, 120), 2.5)))
     save('gfx/misc/flare.tga', premultiply(radial(64, 0.0, 1.0, (255, 230, 190), 2.0)))
     save('gfx/misc/wake.tga', premultiply(wake_ring()))

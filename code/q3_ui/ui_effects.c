@@ -9,7 +9,7 @@ and texture quality take effect after APPLY (vid_restart).
   SHOW FPS            cg_drawFPS
   WATER REFLECTIONS   r_noportals (the water mirror draws the scene twice)
   HAZE                r_drawfog (1: OpenGL fog, almost free; 2: the original fog pass)
-  WATER RIPPLES       r_waterRipple 0 / 0.35 / 0.65 / 1
+  WATER RIPPLES       r_waterRipple 0 / 0.25 / 0.55 / 1
   ROBOT SHADOWS       cg_shadows 0 / 1 (round spot) / 2 (stencil, exact shape)
   DYNAMIC LIGHTS      r_dynamiclight (shots, explosions)
   MARKS ON WALLS      cg_marks
@@ -69,7 +69,7 @@ static effectsMenuInfo_t	effectsMenuInfo;
 
 static const char *offOnNames[] = { "off", "on", NULL };
 static const char *rippleNames[] = { "off", "low", "medium", "high", NULL };
-static const float	rippleValues[] = { 0, 0.35f, 0.65f, 1.0f };
+static const float	rippleValues[] = { 0, 0.25f, 0.55f, 1.0f };
 static const char *shadowNames[] = { "off", "simple", "full", NULL };
 static const char *antialiasNames[] = { "off", "2x", "4x", NULL };
 static const char *filterNames[] = { "trilinear", "anisotropic", NULL };
@@ -92,7 +92,7 @@ static void Effects_SetMenuItems( void ) {
 	effectsMenuInfo.reflections.curvalue = trap_Cvar_VariableValue( "r_noportals" ) == 0;
 	effectsMenuInfo.haze.curvalue = trap_Cvar_VariableValue( "r_drawfog" ) != 0;
 	ripple = trap_Cvar_VariableValue( "r_waterRipple" );
-	effectsMenuInfo.ripples.curvalue = ripple < 0.15f ? 0 : ( ripple < 0.5f ? 1 : ( ripple < 0.85f ? 2 : 3 ) );
+	effectsMenuInfo.ripples.curvalue = ripple < 0.1f ? 0 : ( ripple < 0.4f ? 1 : ( ripple < 0.8f ? 2 : 3 ) );
 	effectsMenuInfo.shadows.curvalue = Com_Clamp( 0, 2, trap_Cvar_VariableValue( "cg_shadows" ) );
 	effectsMenuInfo.dlights.curvalue = trap_Cvar_VariableValue( "r_dynamiclight" ) != 0;
 	effectsMenuInfo.marks.curvalue = trap_Cvar_VariableValue( "cg_marks" ) != 0;
