@@ -202,7 +202,8 @@ typedef enum {
 	CGEN_WAVEFORM,			// programmatically generated
 	CGEN_LIGHTING_DIFFUSE,
 	CGEN_FOG,				// standard fog
-	CGEN_CONST				// fixed color
+	CGEN_CONST,				// fixed color
+	CGEN_ONE_MINUS_PORTAL	// WALKER: white near the camera, black at portalRange and further
 } colorGen_t;
 
 typedef enum {

@@ -362,7 +362,7 @@ def tex_water_deep(seed):
     """цвет толщи воды: тёмный сине-зелёный с крупными пятнами."""
     size = 256
     field = normalize(fft_noise(size, 1.6, seed))
-    color = colorize(field, [(0, (50, 72, 86)), (0.5, (56, 78, 92)), (1, (62, 84, 96))])
+    color = colorize(field, [(0, (38, 72, 80)), (0.5, (44, 80, 88)), (1, (50, 88, 94))])
     return Image.fromarray(np.clip(color, 0, 255).astype(np.uint8))
 
 
@@ -385,14 +385,14 @@ def tex_water_env():
 
 
 def tex_water_glint(seed):
-    """блёстки солнца на гребнях: редкие яркие точки, вытянутые вдоль гребней."""
-    size = 256
-    field = ripple_field(size, 22, 0.3, seed)
-    local = np.random.default_rng(seed + 5)
-    dots = local.random((size, size)) > 0.9965
-    mask = ndimage_blur(dots.astype(float), 1.2, 0.5) * np.clip(field, 0, None)
-    level = np.clip(mask / (mask.max() + 1e-9) * 2.2, 0, 1) * 255
-    pixels = np.stack([level, level * 0.97, level * 0.9], axis=-1)
+    """блики неба на гребнях ряби (для сложения): тонкие светлые гребни, остальное чёрное."""
+    size = 512
+    field = ripple_field(size, 20, 0.35, seed) + 0.5 * ripple_field(size, 41, 0.4, seed + 1)
+    field = ndimage_blur(field, 1.0, 1.0)
+    field /= field.std()
+    level = np.clip(field - 1.2, 0, None) ** 1.4
+    level = np.clip(level / (np.percentile(level, 99.7) + 1e-9), 0, 1) * 255
+    pixels = np.stack([level * 0.92, level * 0.96, level], axis=-1)
     return Image.fromarray(pixels.astype(np.uint8))
 
 
@@ -428,6 +428,7 @@ def make_textures():
     TEXTURES['water'] = tex_water_deep(111)
     TEXTURES['water_ripple'] = tex_water_ripple(112, 24)
     TEXTURES['water_ripple2'] = tex_water_ripple(114, 13)
+    TEXTURES['water_glint'] = tex_water_glint(116)
     for name, image in TEXTURES.items():
         if name in ('grass', 'grass2', 'shore', 'seabed'):
             continue        # только для цветовой карты рельефа
@@ -642,6 +643,10 @@ def height_map():
     spline = RectBivariateSpline(ys, xs, coarse, kx=3, ky=3)
     fine = spline(fine_ys, fine_xs)
     fine = np.maximum(fine, SEABED_MIN)
+    # пологая отмель у берега: глубина растёт медленно у кромки и быстрее дальше,
+    # чтобы полоса мелкой воды, сквозь которую видно дно, была шире
+    underwater = fine < 0
+    fine[underwater] = SEABED_MIN * (fine[underwater] / SEABED_MIN) ** 1.7
     return fine_xs, fine_ys, np.round(fine)
 
 
@@ -792,6 +797,58 @@ def make_colormap():
     # мягкая крупная светотень по рельефу, которую карта освещения сглаживает
     color *= (0.92 + 0.08 * normalize(gaussian_filter(jitter, 3)))[..., None]
     return to_image(color)
+
+
+SHALLOW_CLEAR = 9.0        # глубина (единиц), на которой дно видно уже в e раз слабее
+SHALLOW_MAX = 0.93         # у самого берега сквозь воду видно 90% дна, 10% — отражение
+SHALLOW_RANGE = 220.0      # ширина полосы мелководья от берега, единиц (около 40 м)
+
+
+def make_water_shallow(colormap):
+    """дно, просвечивающее сквозь мелкую воду. Две текстуры в проекции цветовой карты:
+    water_mask — сколько дна видно (серый, по глубине воды), water_seabed — цвет дна,
+    уже умноженный на маску (приближённое освещение солнцем, бирюзовый оттенок толщи).
+    В шейдере воды: кадр умножается на (1 - маска), затем прибавляется дно — без альфа-канала."""
+    size = COLORMAP_SIZE
+    span_x, span_y = 2 * HALF_X, 2 * HALF_Y
+    pixel_x = -HALF_X + (np.arange(size) + 0.5) * span_x / size
+    pixel_y = HALF_Y - (np.arange(size) + 0.5) * span_y / size
+    world_x, world_y = np.meshgrid(pixel_x, pixel_y)
+    height = terrain_height_at(world_x, world_y)
+    depth = np.clip(WATER_Z - height, 0, None)
+    # видимость дна считается по расстоянию от берега по горизонтали (берега островов
+    # круто уходят под воду, и по настоящей глубине полоса мелководья была бы в пару
+    # шагов шириной); дно здесь — текстура, геометрия дна на картинку не влияет
+    from scipy.ndimage import distance_transform_edt
+    pixel = span_x / size
+    shore_distance = distance_transform_edt(height < WATER_Z) * pixel
+    visual_depth = shore_distance / SHALLOW_RANGE
+    mask = SHALLOW_MAX * np.exp(-visual_depth * 0.9) * (0.8 + 0.2 * np.exp(-depth / SHALLOW_CLEAR))
+    # освещение дна: солнце по нормали рельефа (карта освещения под водой не видна)
+    grad_y, grad_x = np.gradient(HEIGHTS, CELL)
+    from scipy.ndimage import map_coordinates
+    coords = np.stack([(world_y + HALF_Y) / CELL, (world_x + HALF_X) / CELL])
+    slope_x = map_coordinates(grad_x, coords, order=1, mode='nearest')
+    slope_y = map_coordinates(grad_y, coords, order=1, mode='nearest')
+    normal = np.stack([-slope_x, -slope_y, np.ones_like(slope_x)], axis=-1)
+    normal /= np.linalg.norm(normal, axis=-1, keepdims=True)
+    azimuth, elevation = np.radians(SUN_AZIMUTH), np.radians(SUN_ELEVATION)
+    sun = np.array([np.cos(elevation) * np.cos(azimuth), np.cos(elevation) * np.sin(azimuth), np.sin(elevation)])
+    light = SEABED_LIGHT * (0.45 + 0.55 * np.clip(normal @ sun, 0, 1) / max(sun[2], 0.3))
+    # у берега дно — светлый песок с галькой (как на суше у кромки), дальше — дно из
+    # цветовой карты; яркость под стать освещённой суше
+    sand = sample_tiled(TEXTURES['shore'], world_x, world_y, 256, pixel)
+    bottom = np.array(colormap).astype(float)
+    near = np.exp(-visual_depth * 1.3)[..., None]
+    color = (sand * 1.05 * near + bottom * 1.25 * (1 - near)) * light[..., None]
+    tint = (0.45 * (1 - np.exp(-visual_depth * 1.2)))[..., None]
+    color = color * (1 - tint) + np.array([60, 110, 112]) * tint
+    seabed = color * mask[..., None]
+    mask_image = Image.fromarray(np.clip(mask * 255, 0, 255).astype(np.uint8)).convert('RGB').resize((1024, 1024), Image.LANCZOS)
+    return to_image(seabed), mask_image
+
+
+SEABED_LIGHT = 1.0         # подобрано по скриншоту: суша у кромки и дно у кромки одной яркости
 
 
 def tex_detail(seed):
@@ -1189,22 +1246,38 @@ textures/walker/water
 	// (misc_portal_surface in the map), then these stages go over it
 	portal
 	tessSize 128
-	// water colour over the reflection; writes depth so the seabed brushes stay hidden
+	// water colour over the reflection, like Fresnel: looking down close to the camera
+	// one sees into the water (its colour), at grazing angles far away the reflection;
+	// writes depth so the seabed brushes stay hidden
 	{{
 		map textures/walker/water.jpg
-		blendFunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA
-		alphaGen const 0.42
+		blendFunc GL_ONE_MINUS_SRC_ALPHA GL_SRC_ALPHA
+		alphaGen portal 2000
 		rgbGen identity
 		tcMod scale 0.2 0.2
 		depthWrite
 	}}
-	// seabed seen through the water near the camera (terrain colour map, dimmed),
-	// the reflection takes over with distance
 	{{
-		clampmap textures/walker/terrain_colormap.jpg
-		blendFunc GL_ONE_MINUS_SRC_ALPHA GL_SRC_ALPHA
-		rgbGen const ( 0.50 0.58 0.60 )
-		alphaGen portal 1000
+		map textures/walker/water.jpg
+		blendFunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA
+		alphaGen const 0.18
+		rgbGen identity
+		tcMod scale 0.2 0.2
+	}}
+	// shallow water shows the bottom: the picture is darkened by the mask (seabed
+	// visibility by water depth), then the seabed premultiplied by the mask is added;
+	// both fade with distance, where the reflection takes over
+	{{
+		clampmap textures/walker/water_mask.jpg
+		blendFunc GL_ZERO GL_ONE_MINUS_SRC_COLOR
+		rgbGen oneMinusPortal 2000
+		tcGen vector ( {1.0 / (2 * HALF_X):.8f} 0 0 ) ( 0 {-1.0 / (2 * HALF_Y):.8f} 0 )
+		tcMod transform 1 0 0 1 0.5 0.5
+	}}
+	{{
+		clampmap textures/walker/water_seabed.jpg
+		blendFunc GL_ONE GL_ONE
+		rgbGen oneMinusPortal 2000
 		tcGen vector ( {1.0 / (2 * HALF_X):.8f} 0 0 ) ( 0 {-1.0 / (2 * HALF_Y):.8f} 0 )
 		tcMod transform 1 0 0 1 0.5 0.5
 	}}
@@ -1220,6 +1293,14 @@ textures/walker/water
 		blendFunc GL_DST_COLOR GL_SRC_COLOR
 		tcMod transform 0.2 0.15 -0.15 0.2 0 0
 		tcMod scroll -0.008 0.014
+	}}
+	// sky glints on the ripple crests
+	{{
+		map textures/walker/water_glint.jpg
+		blendFunc GL_ONE GL_ONE
+		rgbGen const ( 0.16 0.16 0.16 )
+		tcMod scale 0.45 0.45
+		tcMod scroll 0.004 0.022
 	}}
 }}
 textures/walker/terrain
@@ -1330,7 +1411,11 @@ def write_shaders():
 
 def make_mix_textures():
     save_texture('textures/walker/macro', tex_macro(131))
-    save_texture('textures/walker/terrain_colormap', make_colormap(), quality=88)
+    colormap = make_colormap()
+    save_texture('textures/walker/terrain_colormap', colormap, quality=88)
+    seabed, mask = make_water_shallow(colormap)
+    save_texture('textures/walker/water_seabed', seabed, quality=88)
+    save_texture('textures/walker/water_mask', mask, quality=92)
     save_texture('textures/walker/terrain_detail', tex_detail(141))
 
 

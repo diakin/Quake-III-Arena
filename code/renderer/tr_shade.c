@@ -664,8 +664,9 @@ static void RB_HardwareFogStage( int stateBits ) {
 		VectorSet( color, 1, 1, 1 );			// multiply: fade to "no change"
 	} else if ( srcBlend == GLS_SRCBLEND_DST_COLOR && dstBlend == GLS_DSTBLEND_SRC_COLOR ) {
 		VectorSet( color, 0.5f, 0.5f, 0.5f );	// multiply x2
-	} else if ( dstBlend == GLS_DSTBLEND_ONE ) {
-		VectorSet( color, 0, 0, 0 );			// additive
+	} else if ( dstBlend == GLS_DSTBLEND_ONE
+		|| ( srcBlend == GLS_SRCBLEND_ZERO && dstBlend == GLS_DSTBLEND_ONE_MINUS_SRC_COLOR ) ) {
+		VectorSet( color, 0, 0, 0 );			// additive, or darken by the source colour
 	} else {
 		VectorCopy( hardwareFogColor, color );
 	}
@@ -802,6 +803,20 @@ static void ComputeColors( shaderStage_t *pStage )
 			break;
 		case CGEN_ONE_MINUS_ENTITY:
 			RB_CalcColorFromOneMinusEntity( ( unsigned char * ) tess.svars.colors );
+			break;
+		case CGEN_ONE_MINUS_PORTAL:
+			for ( i = 0; i < tess.numVertexes; i++ )
+			{
+				vec3_t	toVertex;
+				float	nearness;
+				byte	level;
+
+				VectorSubtract( tess.xyz[i], backEnd.viewParms.or.origin, toVertex );
+				nearness = 1.0f - VectorLength( toVertex ) / tess.shader->portalRange;
+				level = nearness <= 0 ? 0 : ( nearness >= 1 ? 255 : (byte)( nearness * 255 ) );
+				tess.svars.colors[i][0] = tess.svars.colors[i][1] = tess.svars.colors[i][2] = level;
+				tess.svars.colors[i][3] = 255;
+			}
 			break;
 	}
 

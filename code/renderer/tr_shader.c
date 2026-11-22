@@ -841,6 +841,14 @@ static qboolean ParseStage( shaderStage_t *stage, char **text )
 			{
 				stage->rgbGen = CGEN_ONE_MINUS_ENTITY;
 			}
+			// WALKER: "rgbGen oneMinusPortal <range>" fades a stage out with distance
+			// (the seabed under shallow water: seen from close, not at grazing angles)
+			else if ( !Q_stricmp( token, "oneMinusPortal" ) )
+			{
+				stage->rgbGen = CGEN_ONE_MINUS_PORTAL;
+				token = COM_ParseExt( text, qfalse );
+				shader.portalRange = token[0] ? atof( token ) : 256;
+			}
 			else if ( !Q_stricmp( token, "vertex" ) )
 			{
 				stage->rgbGen = CGEN_VERTEX;
