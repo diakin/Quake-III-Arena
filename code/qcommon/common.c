@@ -2351,7 +2351,7 @@ Com_Init
 void Com_Init( char *commandLine ) {
 	char	*s;
 
-	Com_Printf( "%s %s %s\n", Q3_VERSION, CPUSTRING, __DATE__ );
+	Com_Printf( "Walker ver %s (%s %s %s)\n", WALKER_VERSION, Q3_VERSION, CPUSTRING, __DATE__ );
 
 	if ( setjmp (abortframe) ) {
 		Sys_Error ("Error during initialization");

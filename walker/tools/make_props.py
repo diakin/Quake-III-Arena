@@ -413,8 +413,9 @@ def rounded_surface(inside, step, radius_convex, radius_concave, error=0.15, max
     distance = _signed_distance(distance <= -radius_convex, step) - radius_convex
     if radius_concave > 0:
         distance = _signed_distance(distance <= radius_concave, step) + radius_concave
+    distance = gaussian_filter(distance, 0.7)       # гладкие грани опалубки
     if displacement is not None:
-        distance = distance + displacement          # бугристый излом
+        distance = distance + displacement          # излом: острые грани, без сглаживания
     # мелкие оторванные куски (тонкая перемычка над проёмом после скругления) — убрать
     from scipy.ndimage import label
     pieces, count = label(distance < 0)
@@ -423,7 +424,6 @@ def rounded_surface(inside, step, radius_convex, radius_concave, error=0.15, max
         small = np.nonzero(sizes < max(400, sizes[1:].max() * 0.02))[0]
         small = small[small > 0]
         distance[np.isin(pieces, small)] = step
-    distance = gaussian_filter(distance, 0.7)
     positions, faces, _, _ = marching_cubes(distance, 0.0, spacing=(step, step, step))
     destination = np.zeros(faces.size, dtype=np.uint32)
     count = meshoptimizer.simplify(destination, np.ascontiguousarray(faces.reshape(-1), dtype=np.uint32),
@@ -446,6 +446,31 @@ def rounded_surface(inside, step, radius_convex, radius_concave, error=0.15, max
     return _split_long_edges(positions, normals, faces, max_edge)
 
 
+def faceted_break(points, weight, local):
+    """неровность излома: мелкие плоские площадки разного наклона со ступеньками между ними
+    (ячейки Вороного, в каждой своя плоскость) — острые края и изломы, без круглых бугров.
+    Два масштаба: площадки ~BREAK_FACET и вдвое мельче. Поверхность больше выбирается, чем
+    выступает (скол). Возвращает добавку к полю расстояний (единицы)."""
+    from scipy.spatial import cKDTree
+    shape = points.shape[:-1]
+    flat = points.reshape(-1, 3)
+    active = weight.reshape(-1) > 0.02
+    result = np.zeros(flat.shape[0])
+    if not np.any(active):
+        return result.reshape(shape)
+    selected = flat[active]
+    low, high = selected.min(axis=0) - 4, selected.max(axis=0) + 4
+    for facet, amplitude in ((BREAK_FACET, BREAK_ROUGHNESS), (BREAK_FACET / 2, BREAK_ROUGHNESS * 0.45)):
+        count = int(np.prod((high - low) / facet)) + 8
+        centres = low + local.random((count, 3)) * (high - low)
+        heights = local.uniform(-0.4, 1.0, count)              # чаще выбоина, чем выступ
+        slopes = local.normal(0, 0.55, (count, 3))
+        nearest = cKDTree(centres).query(selected)[1]
+        offset = (selected - centres[nearest]) / facet
+        result[active] += amplitude * (heights[nearest] + np.sum(slopes[nearest] * offset, axis=1))
+    return (result * weight.reshape(-1)).reshape(shape)
+
+
 # ================================================================ разрушенная стена
 
 def chunk(mesh, material, center, size, seed):
@@ -462,7 +487,8 @@ def chunk(mesh, material, center, size, seed):
 WALL_EDGE_RADIUS = 1.5       # скругление рёбер опалубки (несколько полос вместо острого ребра)
 WALL_CORNER_RADIUS = 1.5     # скругление внутренних углов (проёмы, надломы)
 BREAK_DEPTH = 7.0            # излом: зона от рваного верха вниз, где поверхность бугристая
-BREAK_ROUGHNESS = 1.6        # неровность излома (единицы, среднеквадратично)
+BREAK_ROUGHNESS = 1.4        # глубина площадок излома (единицы)
+BREAK_FACET = 4.0            # размер площадок излома (единицы)
 REBAR_SHARE = 0.4            # доля мест, где из излома выходит стержень арматуры
 WALL_MESH_ERROR = 0.3        # допуск упрощения сетки стены (единицы)
 
@@ -550,10 +576,7 @@ def ruined_wall(start, end, base_z, height, thickness, seed, windows=True, mater
         chip_weight = np.maximum(chip_weight, np.clip(1 - (reach - radius) / 3, 0, 1))
     # излом: верх стены (до BREAK_DEPTH вниз от рваного профиля) и дно сколов
     broken_weight = np.maximum(np.clip(1 - (top_at - grid_z) / BREAK_DEPTH, 0, 1), chip_weight)
-    noise_points = np.stack([grid_u, grid_v, grid_z], axis=-1).reshape(-1, 3) + seed * 37.0
-    roughness = (fbm(noise_points / 4.5, 3) * 0.7 + value_noise(noise_points / 1.8) * 0.3).reshape(inside.shape)
-    roughness = (roughness - roughness.mean()) / (roughness.std() + 1e-9)
-    displacement = BREAK_ROUGHNESS * roughness * broken_weight
+    displacement = faceted_break(np.stack([grid_u, grid_v, grid_z], axis=-1), broken_weight, local)
     local_points, local_normals, faces = rounded_surface(inside, step, WALL_EDGE_RADIUS, WALL_CORNER_RADIUS,
                                                           error=WALL_MESH_ERROR, displacement=displacement)
     local_points += np.array([us[0], vs[0], zs[0]])
@@ -564,8 +587,17 @@ def ruined_wall(start, end, base_z, height, thickness, seed, windows=True, mater
     cell = np.clip(np.round((centre - np.array([us[0], vs[0], zs[0]])) / step).astype(int), 0, np.array(inside.shape) - 1)
     broken = broken_weight[cell[:, 0], cell[:, 1], cell[:, 2]] > 0.35
     for part_material, selected in ((material, ~broken), ('concrete_broken', broken)):
-        if np.any(selected):
-            chosen = faces[selected]
+        if not np.any(selected):
+            continue
+        chosen = faces[selected]
+        if part_material == 'concrete_broken':
+            # излом — каждая грань со своей нормалью: края площадок острые
+            corners = points[chosen]
+            face_normal = np.cross(corners[:, 1] - corners[:, 0], corners[:, 2] - corners[:, 0])
+            face_normal /= np.linalg.norm(face_normal, axis=1, keepdims=True) + 1e-9
+            mesh.add(part_material, corners.reshape(-1, 3), np.repeat(face_normal, 3, axis=0),
+                     np.arange(len(chosen) * 3).reshape(-1, 3))
+        else:
             used = np.unique(chosen)
             remap = np.full(len(points), -1)
             remap[used] = np.arange(len(used))

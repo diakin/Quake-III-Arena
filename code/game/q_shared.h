@@ -27,6 +27,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // A user mod should never modify this file
 
 #define	Q3_VERSION		"Q3 1.32b"
+#define	WALKER_VERSION	"0.22"		// WALKER: shown in the window title and the console
 // 1.32 released 7-10-2002
 
 #define MAX_TEAMNAME 32
