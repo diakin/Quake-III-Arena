@@ -398,11 +398,12 @@ def _split_long_edges(positions, normals, faces, max_edge):
     return np.array(positions), np.array(normals), np.array(faces)
 
 
-def rounded_surface(inside, step, radius_convex, radius_concave, error=0.15, max_edge=24):
+def rounded_surface(inside, step, radius_convex, radius_concave, error=0.15, max_edge=24, displacement=None):
     """поверхность тела, заданного вокселями inside (шаг step), со скруглёнными рёбрами и углами:
     выпуклые — радиус radius_convex (морфологическое открытие поля расстояний), вогнутые
     (углы проёмов, надломы) — radius_concave (закрытие). Marching cubes, затем упрощение
-    плоских участков (meshoptimizer, допуск error) и деление длинных рёбер.
+    плоских участков (meshoptimizer, допуск error) и деление длинных рёбер. displacement
+    (единицы, та же сетка) прибавляется к полю после скругления — неровности излома.
     Возвращает вершины (в единицах от угла сетки), нормали, треугольники против часовой
     стрелки снаружи."""
     from scipy.ndimage import gaussian_filter
@@ -412,6 +413,8 @@ def rounded_surface(inside, step, radius_convex, radius_concave, error=0.15, max
     distance = _signed_distance(distance <= -radius_convex, step) - radius_convex
     if radius_concave > 0:
         distance = _signed_distance(distance <= radius_concave, step) + radius_concave
+    if displacement is not None:
+        distance = distance + displacement          # бугристый излом
     # мелкие оторванные куски (тонкая перемычка над проёмом после скругления) — убрать
     from scipy.ndimage import label
     pieces, count = label(distance < 0)
@@ -456,8 +459,12 @@ def chunk(mesh, material, center, size, seed):
     oriented_box(mesh, material, center, axis_x, axis_y, axis_z, half, False, 64)
 
 
-WALL_EDGE_RADIUS = 3.0       # скругление рёбер стен (несколько полос вместо острого ребра)
-WALL_CORNER_RADIUS = 2.0     # скругление внутренних углов (проёмы, надломы)
+WALL_EDGE_RADIUS = 1.5       # скругление рёбер опалубки (несколько полос вместо острого ребра)
+WALL_CORNER_RADIUS = 1.5     # скругление внутренних углов (проёмы, надломы)
+BREAK_DEPTH = 7.0            # излом: зона от рваного верха вниз, где поверхность бугристая
+BREAK_ROUGHNESS = 1.6        # неровность излома (единицы, среднеквадратично)
+REBAR_SHARE = 0.4            # доля мест, где из излома выходит стержень арматуры
+WALL_MESH_ERROR = 0.3        # допуск упрощения сетки стены (единицы)
 
 
 def ruined_wall(start, end, base_z, height, thickness, seed, windows=True, material='concrete'):
@@ -525,20 +532,62 @@ def ruined_wall(start, end, base_z, height, thickness, seed, windows=True, mater
     for first, last, sill, lintel in openings:
         u0, u1 = first * length / columns, last * length / columns
         inside &= ~((grid_u >= u0) & (grid_u <= u1) & (grid_z >= sill) & (grid_z <= lintel))
-    local_points, local_normals, faces = rounded_surface(inside, step, WALL_EDGE_RADIUS, WALL_CORNER_RADIUS)
+    # сколы на рёбрах торцов и проёмов: вогнутые выбоины с шершавым дном
+    chips = []
+    for _ in range(int(local.integers(2, 5))):
+        if openings and local.random() < 0.5:
+            first, last, sill, lintel = openings[int(local.integers(0, len(openings)))]
+            chip_u = (first if local.random() < 0.5 else last) * length / columns
+            chip_z = local.uniform(sill, min(lintel, float(np.interp(chip_u, np.linspace(0, length, columns + 1), tops))))
+        else:
+            chip_u = 0.0 if local.random() < 0.5 else length
+            chip_z = local.uniform(bottom + 30, float(np.interp(chip_u, np.linspace(0, length, columns + 1), tops)) - 8)
+        chips.append((chip_u, half * (1 if local.random() < 0.5 else -1), chip_z, local.uniform(4, 8)))
+    chip_weight = np.zeros(inside.shape)
+    for chip_u, chip_v, chip_z, radius in chips:
+        reach = np.sqrt((grid_u - chip_u) ** 2 + ((grid_v - chip_v) * 1.3) ** 2 + ((grid_z - chip_z) * 0.8) ** 2)
+        inside &= ~(reach < radius)
+        chip_weight = np.maximum(chip_weight, np.clip(1 - (reach - radius) / 3, 0, 1))
+    # излом: верх стены (до BREAK_DEPTH вниз от рваного профиля) и дно сколов
+    broken_weight = np.maximum(np.clip(1 - (top_at - grid_z) / BREAK_DEPTH, 0, 1), chip_weight)
+    noise_points = np.stack([grid_u, grid_v, grid_z], axis=-1).reshape(-1, 3) + seed * 37.0
+    roughness = (fbm(noise_points / 4.5, 3) * 0.7 + value_noise(noise_points / 1.8) * 0.3).reshape(inside.shape)
+    roughness = (roughness - roughness.mean()) / (roughness.std() + 1e-9)
+    displacement = BREAK_ROUGHNESS * roughness * broken_weight
+    local_points, local_normals, faces = rounded_surface(inside, step, WALL_EDGE_RADIUS, WALL_CORNER_RADIUS,
+                                                          error=WALL_MESH_ERROR, displacement=displacement)
     local_points += np.array([us[0], vs[0], zs[0]])
     points = start + np.outer(local_points[:, 0], along) + np.outer(local_points[:, 1], across) + np.outer(local_points[:, 2], [0, 0, 1])
     normals = np.outer(local_normals[:, 0], along) + np.outer(local_normals[:, 1], across) + np.outer(local_normals[:, 2], [0, 0, 1])
-    # изломы и подоконники (смотрят вверх) — тёмный бетон скола
-    face_normals = normals[faces].mean(axis=1)
-    broken = face_normals[:, 2] > 0.6
-    for part_material, selected in ((material, ~broken), ('concrete_dark', broken)):
+    # излом и сколы — текстура скола (цемент со щебнем), остальное — гладкий бетон опалубки
+    centre = local_points[faces].mean(axis=1)
+    cell = np.clip(np.round((centre - np.array([us[0], vs[0], zs[0]])) / step).astype(int), 0, np.array(inside.shape) - 1)
+    broken = broken_weight[cell[:, 0], cell[:, 1], cell[:, 2]] > 0.35
+    for part_material, selected in ((material, ~broken), ('concrete_broken', broken)):
         if np.any(selected):
             chosen = faces[selected]
             used = np.unique(chosen)
             remap = np.full(len(points), -1)
             remap[used] = np.arange(len(used))
             mesh.add(part_material, points[used], normals[used], remap[chosen])
+    # арматура: вертикальные стержни у обеих граней внутри стены, видны только концы,
+    # выходящие из излома на несколько единиц (часть загнута)
+    for bar_u in np.arange(7, length - 4, 14):
+        top_here = float(np.interp(bar_u, np.linspace(0, length, columns + 1), tops))
+        in_opening = any(first * length / columns - 2 < bar_u < last * length / columns + 2 for first, last, _, _ in openings)
+        lintel_here = max([lintel for first, last, _, lintel in openings if first * length / columns - 2 < bar_u < last * length / columns + 2], default=bottom)
+        if in_opening and top_here < lintel_here + 6:
+            continue                # над проёмом нет бетона — торчало бы из подоконника
+        for bar_v in (-(half - 3.5), half - 3.5):
+            if local.random() > REBAR_SHARE:
+                continue
+            base = start + along * bar_u + across * bar_v
+            low = base + np.array([0, 0, top_here - 10])
+            tip = base + np.array([0, 0, top_here + local.uniform(3, 7)])
+            beam(mesh, 'metal_rust', low, tip, 1.1)
+            if local.random() < 0.35:
+                bend = along * local.uniform(-1, 1) + across * local.uniform(-0.6, 0.6) + np.array([0, 0, local.uniform(0.2, 0.8)])
+                beam(mesh, 'metal_rust', tip, tip + bend / (np.linalg.norm(bend) + 1e-9) * local.uniform(3, 6), 1.1)
     # коллизия: отрезки по 48 единиц высотой до нижней точки излома на отрезке
     clips = []
     segments = max(1, int(round(length / 48)))

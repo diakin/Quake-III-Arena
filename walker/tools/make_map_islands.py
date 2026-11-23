@@ -283,6 +283,51 @@ def tex_concrete(seed, tone=1.0, panels=None, moss=0.25, tiles=False, size=TEX):
     return Image.fromarray(np.clip(color, 0, 255).astype(np.uint8))
 
 
+def tex_concrete_broken(seed, size=TEX):
+    """излом бетона: щебень — угловатые зёрна (ячейки Вороного, около половины площади;
+    серые, тёмные, изредка рыжеватые, со светотенью), между ними светлый шершавый цемент с
+    выбоинами. Бесшовная (ячейки с переносом через край)."""
+    from scipy.spatial import cKDTree
+    local = np.random.default_rng(seed + 21)
+    scale = size / 512
+    cement = 170 + 12 * normalize(fft_noise(size, 1.2, seed))
+    color = np.zeros((size, size, 3))
+    color[:] = cement[..., None]
+    color *= (1 + 0.12 * fft_noise(size, 0.1, seed + 1))[..., None]
+    pits = normalize(fft_noise(size, 0.2, seed + 5))
+    color *= (1 - 0.4 * soft(0.78, 0.95, pits))[..., None]
+    y, x = np.mgrid[0:size, 0:size]
+    pixels = np.stack([x.ravel(), y.ravel()], axis=1).astype(float)
+    wobble = fft_noise(size, 0.9, seed + 7) * 2.5 * scale
+    for count, keep in ((450, 0.5), (2200, 0.45)):
+        centres = local.random((count, 2)) * size
+        tree = cKDTree(centres, boxsize=size)
+        distance, nearest = tree.query(pixels, k=2)
+        first = distance[:, 0].reshape(size, size)
+        second = distance[:, 1].reshape(size, size)
+        owner = nearest[:, 0].reshape(size, size)
+        kept = local.random(count) < keep
+        tones = local.choice([0.58, 0.68, 0.78, 0.88, 0.95], count) * local.uniform(0.94, 1.06, count)
+        tint = np.where(local.random(count) < 0.06, 1, 0)
+        gap = (1.2 + 1.0 * local.random(count)) * scale
+        inside_cell = np.clip((second - first + wobble - gap[owner] * 2) / (1.2 * scale), 0, 1) * kept[owner]
+        # светотень зерна: свет сверху слева, по смещению от центра ячейки
+        offset = pixels.reshape(size, size, 2) - centres[owner]
+        offset = (offset + size / 2) % size - size / 2
+        reach = np.sqrt(size * size / count / np.pi)
+        light = 1 - 0.18 * np.clip((offset[..., 0] + offset[..., 1]) / (reach * 1.4), -1, 1)
+        stone = cement[..., None] * (tones[owner] * light)[..., None]
+        stone = np.where(tint[owner][..., None] == 1, stone * np.array([1.1, 0.96, 0.82]), stone)
+        stone *= (1 + 0.08 * fft_noise(size, 0.0, seed + count))[..., None]
+        # тёмная щель по краю зерна
+        rim = np.clip(1 - np.abs(second - first - gap[owner] * 2) / (1.6 * scale), 0, 1) * kept[owner] * 0.3
+        color = color * (1 - rim)[..., None]
+        color = color * (1 - inside_cell[..., None]) + stone * inside_cell[..., None]
+    # шершавость излома: крупные и мелкие перепады освещённости
+    color *= (1 + 0.16 * fft_noise(size, 0.7, seed + 11) + 0.1 * fft_noise(size, 0.25, seed + 12))[..., None]
+    return Image.fromarray(np.clip(color, 0, 255).astype(np.uint8))
+
+
 def tex_metal(seed, base, panel=64, rust=0.2, rivets=True):
     size = TEX
     panel *= size // 256
@@ -435,6 +480,7 @@ def make_textures():
     TEXTURES['concrete'] = tex_concrete(51)
     TEXTURES['concrete_dark'] = tex_concrete(52, 0.72, None, 0.35)
     TEXTURES['concrete_tiles'] = tex_concrete(53, 0.95, 128, 0.2, tiles=True)
+    TEXTURES['concrete_broken'] = tex_concrete_broken(54)
     TEXTURES['metal_panel'] = tex_metal(61, (112, 122, 128), 64, 0.15)
     TEXTURES['metal_rust'] = tex_metal(62, (100, 92, 84), 32, 0.55)
     TEXTURES['metal_grate'] = tex_grate(63)
@@ -1636,7 +1682,7 @@ def make_mix_textures():
     save_texture('textures/walker/terrain_detail', tex_detail(141))
 
 
-PROP_MATERIALS = ['rock', 'rockmoss', 'concrete', 'concrete_dark', 'metal_rust', 'metal_panel', 'hazard',
+PROP_MATERIALS = ['rock', 'rockmoss', 'concrete', 'concrete_dark', 'concrete_broken', 'metal_rust', 'metal_panel', 'hazard',
                   'container_red', 'container_blue', 'container_orange']
 
 
