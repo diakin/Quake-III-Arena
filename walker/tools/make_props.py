@@ -410,17 +410,9 @@ def _split_long_edges(positions, normals, faces, max_edge):
     return np.array(positions), np.array(normals), np.array(faces)
 
 
-def rounded_surface(inside, step, radius_convex, radius_concave, error=0.15, max_edge=24, displacement=None):
-    """поверхность тела, заданного вокселями inside (шаг step), со скруглёнными рёбрами и углами:
-    выпуклые — радиус radius_convex (морфологическое открытие поля расстояний), вогнутые
-    (углы проёмов, надломы) — radius_concave (закрытие). Marching cubes, затем упрощение
-    плоских участков (meshoptimizer, допуск error) и деление длинных рёбер. displacement
-    (единицы, та же сетка) прибавляется к полю после скругления — неровности излома.
-    Возвращает вершины (в единицах от угла сетки), нормали, треугольники против часовой
-    стрелки снаружи."""
+def rounded_field(inside, step, radius_convex, radius_concave, displacement=None):
+    """поле расстояний тела со скруглёнными рёбрами и неровностями излома (см. rounded_surface)."""
     from scipy.ndimage import gaussian_filter
-    from skimage.measure import marching_cubes
-    import meshoptimizer
     distance = _signed_distance(inside, step)
     distance = _signed_distance(distance <= -radius_convex, step) - radius_convex
     if radius_concave > 0:
@@ -428,12 +420,29 @@ def rounded_surface(inside, step, radius_convex, radius_concave, error=0.15, max
     distance = gaussian_filter(distance, 0.7)       # гладкие грани опалубки
     if displacement is not None:
         distance = distance + displacement          # излом: острые грани, без сглаживания
+    return distance
+
+
+def rounded_surface(inside, step, radius_convex, radius_concave, error=0.15, max_edge=24, displacement=None,
+                    field=None):
+    """поверхность тела, заданного вокселями inside (шаг step), со скруглёнными рёбрами и углами:
+    выпуклые — радиус radius_convex (морфологическое открытие поля расстояний), вогнутые
+    (углы проёмов, надломы) — radius_concave (закрытие). Marching cubes, затем упрощение
+    плоских участков (meshoptimizer, допуск error) и деление длинных рёбер. displacement
+    (единицы, та же сетка) прибавляется к полю после скругления — неровности излома.
+    Возвращает вершины (в единицах от угла сетки), нормали, треугольники против часовой
+    стрелки снаружи."""
+    from skimage.measure import marching_cubes
+    import meshoptimizer
+    # field — готовое поле (простой уровень детализации строится по полю подробного)
+    distance = field if field is not None else rounded_field(inside, step, radius_convex, radius_concave, displacement)
+    distance = distance.copy()
     # мелкие оторванные куски (тонкая перемычка над проёмом после скругления) — убрать
     from scipy.ndimage import label
     pieces, count = label(distance < 0)
     if count > 1:
         sizes = np.bincount(pieces.ravel())
-        small = np.nonzero(sizes < max(400, sizes[1:].max() * 0.02))[0]
+        small = np.nonzero(sizes < max(400 / (step ** 3), sizes[1:].max() * 0.02))[0]
         small = small[small > 0]
         distance[np.isin(pieces, small)] = step
     positions, faces, _, _ = marching_cubes(distance, 0.0, spacing=(step, step, step))
@@ -589,8 +598,9 @@ def ruined_wall(start, end, base_z, height, thickness, seed, windows=True, mater
     # излом: верх стены (до BREAK_DEPTH вниз от рваного профиля) и дно сколов
     broken_weight = np.maximum(np.clip(1 - (top_at - grid_z) / BREAK_DEPTH, 0, 1), chip_weight)
     displacement = faceted_break(np.stack([grid_u, grid_v, grid_z], axis=-1), broken_weight, local)
+    field = rounded_field(inside, step, WALL_EDGE_RADIUS, WALL_CORNER_RADIUS, displacement)
     local_points, local_normals, faces = rounded_surface(inside, step, WALL_EDGE_RADIUS, WALL_CORNER_RADIUS,
-                                                          error=WALL_MESH_ERROR, displacement=displacement)
+                                                          error=WALL_MESH_ERROR, field=field)
     local_points += np.array([us[0], vs[0], zs[0]])
     points = start + np.outer(local_points[:, 0], along) + np.outer(local_points[:, 1], across) + np.outer(local_points[:, 2], [0, 0, 1])
     normals = np.outer(local_normals[:, 0], along) + np.outer(local_normals[:, 1], across) + np.outer(local_normals[:, 2], [0, 0, 1])
@@ -617,7 +627,12 @@ def ruined_wall(start, end, base_z, height, thickness, seed, windows=True, mater
     # дальняя детализация: то же тело (с вырезами и сколами) на сетке вдвое крупнее, без
     # неровностей излома и арматуры, упрощение грубее
     far_mesh = Mesh()
-    far_points, far_normals, far_faces = rounded_surface(inside[::2, ::2, ::2], step * 2, 2.0, 2.0, error=0.8, max_edge=48)
+    # простой уровень — из поля подробного: сглаженное поле берётся в каждой второй точке.
+    # Раньше он строился по прореженным вокселям тела и выходил на 1-2 ед. толще с каждой
+    # стороны: при смене уровня стена заметно меняла толщину
+    from scipy.ndimage import gaussian_filter
+    far_points, far_normals, far_faces = rounded_surface(None, step * 2, 0, 0, error=0.8, max_edge=48,
+                                                         field=gaussian_filter(field, 1.0)[::2, ::2, ::2])
     far_points += np.array([us[0], vs[0], zs[0]])
     far_cell = np.clip(np.round((far_points[far_faces].mean(axis=1) - np.array([us[0], vs[0], zs[0]])) / step).astype(int),
                        0, np.array(inside.shape) - 1)
