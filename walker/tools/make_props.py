@@ -322,18 +322,29 @@ def boulder(mesh, center, radius_x, radius_y, height, seed, sink, level=3, rough
             mesh.add(material, corner_positions, corner_normals, np.arange(len(corner_positions)).reshape(-1, 3))
 
 
-def rock_cluster(center, height, radius, seed):
-    """скальный выход: главный валун и 2-4 поменьше вокруг. Возвращает сетку и
-    (радиус, высоту) для невидимого браша коллизии главного валуна."""
+def rock_cluster(center, height, radius, seed, ground_min=None):
+    """скальный выход: главный валун и 2-4 поменьше вокруг. ground_min(x0, y0, x1, y1) —
+    самая низкая точка рельефа под прямоугольником: каждый валун ставится по ней (на склоне
+    иначе нижний край висит в воздухе)."""
     local = np.random.default_rng(seed)
     mesh = Mesh()
-    boulder(mesh, center, radius * local.uniform(0.9, 1.1), radius * local.uniform(0.75, 0.95), height, seed, 18)
+
+    def seat(spot, size):
+        if ground_min is None:
+            return spot
+        low = ground_min(spot[0] - size * 0.7, spot[1] - size * 0.7, spot[0] + size * 0.7, spot[1] + size * 0.7)
+        return np.array([spot[0], spot[1], min(spot[2], low)])
+
+    main_x, main_y = radius * local.uniform(0.9, 1.1), radius * local.uniform(0.75, 0.95)
+    boulder(mesh, seat(np.asarray(center, dtype=float), max(main_x, main_y)), main_x, main_y, height, seed, 18)
     for index in range(local.integers(2, 5)):
         angle = local.uniform(0, 2 * math.pi)
         distance = radius * local.uniform(0.8, 1.3)
         size = radius * local.uniform(0.3, 0.55)
         spot = np.asarray(center, dtype=float) + [math.cos(angle) * distance, math.sin(angle) * distance, 0]
-        boulder(mesh, spot, size, size * local.uniform(0.7, 1.0), size * local.uniform(0.9, 1.6), seed * 7 + index, size * 0.3, 2)
+        if ground_min is not None:
+            spot[2] = ground_min(spot[0], spot[1], spot[0], spot[1])     # своя высота земли
+        boulder(mesh, seat(spot, size), size, size * local.uniform(0.7, 1.0), size * local.uniform(0.9, 1.6), seed * 7 + index, size * 0.3, 2)
     return mesh
 
 

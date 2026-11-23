@@ -846,15 +846,30 @@ XS, YS, HEIGHTS = None, None, None
 
 
 def ground(x, y):
-    """высота рельефа в точке (билинейно)."""
-    column = (x + HALF_X) / CELL
-    row = (y + HALF_Y) / CELL
+    """высота рельефа в точке — по тем же треугольникам, что в add_terrain (диагональ клетки
+    чередуется), а не билинейно: на склоне билинейная высота расходится с картой на единицы."""
+    column = (x - XS[0]) / CELL
+    row = (y - YS[0]) / CELL
     col0, row0 = int(math.floor(column)), int(math.floor(row))
     col0 = min(max(col0, 0), len(XS) - 2); row0 = min(max(row0, 0), len(YS) - 2)
     frac_x, frac_y = column - col0, row - row0
-    h00, h10 = HEIGHTS[row0, col0], HEIGHTS[row0, col0 + 1]
-    h01, h11 = HEIGHTS[row0 + 1, col0], HEIGHTS[row0 + 1, col0 + 1]
-    return (h00 * (1 - frac_x) + h10 * frac_x) * (1 - frac_y) + (h01 * (1 - frac_x) + h11 * frac_x) * frac_y
+    h00, h10 = float(HEIGHTS[row0, col0]), float(HEIGHTS[row0, col0 + 1])
+    h01, h11 = float(HEIGHTS[row0 + 1, col0]), float(HEIGHTS[row0 + 1, col0 + 1])
+    if (row0 + col0) % 2 == 0:          # диагональ 00-11
+        if frac_x >= frac_y:
+            return h00 + frac_x * (h10 - h00) + frac_y * (h11 - h10)
+        return h00 + frac_y * (h01 - h00) + frac_x * (h11 - h01)
+    if frac_x + frac_y <= 1:            # диагональ 10-01
+        return h00 + frac_x * (h10 - h00) + frac_y * (h01 - h00)
+    return h11 + (1 - frac_x) * (h01 - h11) + (1 - frac_y) * (h10 - h11)
+
+
+def ground_min(x0, y0, x1, y1, step=8):
+    """самая низкая точка рельефа под прямоугольником: на неё ставят то, что стоит на земле,
+    иначе на склоне нижний край висит над землёй и тень начинается не от него."""
+    xs = np.linspace(x0, x1, max(2, int(math.ceil(abs(x1 - x0) / step)) + 1))
+    ys = np.linspace(y0, y1, max(2, int(math.ceil(abs(y1 - y0) / step)) + 1))
+    return min(ground(x, y) for x in xs for y in ys)
 
 
 COLORMAP_SIZE = 2048
@@ -1087,7 +1102,9 @@ def beacon(letter, x, y, base_z):
     pad = polygon_regular(x, y, 96, 12)
     add_prism(pad, base_z - 30, base_z + 4, f'beacon_{letter}', 'hazard', CAULK, True, None, shift)
     post_x, post_y = x + 70, y + 70
-    add_box(post_x - 6, post_y - 6, base_z + 4, post_x + 6, post_y + 6, base_z + 96, 'metal_panel')
+    # столбик стоит рядом с площадкой, на земле: низ — под самой низкой точкой рельефа
+    post_bottom = min(base_z + 4, ground_min(post_x - 6, post_y - 6, post_x + 6, post_y + 6)) - 8
+    add_box(post_x - 6, post_y - 6, post_bottom, post_x + 6, post_y + 6, base_z + 96, 'metal_panel')
     add_box(post_x - 12, post_y - 12, base_z + 96, post_x + 12, post_y + 12, base_z + 116, 'beacon_light')
     add_box(post_x - 14, post_y - 14, base_z + 116, post_x + 14, post_y + 14, base_z + 120, 'metal_panel')
 
@@ -1135,8 +1152,13 @@ def broken_wall(x0, y0, x1, y1, z_base, height, thickness=16, seed=0, side='conc
 CONTAINERS = [0]
 
 
-def container(x, y, z, along_x=True, color='container_red', stack=1):
+def container(x, y, z=None, along_x=True, color='container_red', stack=1):
+    """z не задан — контейнер стоит на земле: по самой низкой точке рельефа под ним (на склоне
+    верхний край днища уходит в землю, нижний её касается)."""
     length, width, height = 72, 30, 30
+    if z is None:
+        half_x, half_y = (length / 2, width / 2) if along_x else (width / 2, length / 2)
+        z = ground_min(x - half_x, y - half_y, x + half_x, y + half_y) - 0.5
     for level in range(stack):
         z0 = z + level * height
         CONTAINERS[0] += 1
@@ -1289,7 +1311,7 @@ def launch_tower():
 def rock_stack(x, y, height, radius, seed):
     """скальный выход: валуны (make_props.rock_cluster) и невидимый браш коллизии главного валуна."""
     base = ground(x, y)
-    props.add_prop(f'rocks_{seed}', props.rock_cluster((x, y, base), height * 1.05, radius * 1.05, seed))
+    props.add_prop(f'rocks_{seed}', props.rock_cluster((x, y, base), height * 1.05, radius * 1.05, seed, ground_min))
 
     add_frustum(x, y, radius * 0.6, radius * 0.3, -40, base + height * 0.7, 'clip_solid', 'clip_solid', 7)
 
@@ -1324,8 +1346,8 @@ def ruins_west():
     broken_wall(-1250, 420, -1250, 560, level, 120, seed=12)
     broken_wall(-1010, 420, -1010, 520, level, 100, seed=13)
     broken_wall(-1250, 560, -1080, 560, level, 90, seed=14)
-    container(-900, 120, ground(-900, 120), True, 'container_blue', 2)
-    container(-930, 60, ground(-930, 60), False, 'container_orange')
+    container(-900, 120, None, True, 'container_blue', 2)
+    container(-930, 60, None, False, 'container_orange')
     helipad(-760, 660, 30, '-y')
 
 
@@ -1335,9 +1357,9 @@ def ruins_east():
     broken_wall(1010, -440, 1250, -440, level, 130, seed=21)
     broken_wall(1250, -560, 1250, -440, level, 110, seed=22)
     broken_wall(1010, -560, 1010, -470, level, 100, seed=23)
-    container(900, -80, ground(900, -80), True, 'container_red', 2)
-    container(950, -20, ground(950, -20), False, 'container_blue')
-    container(1180, -60, ground(1180, -60), True, 'container_orange')
+    container(900, -80, None, True, 'container_red', 2)
+    container(950, -20, None, False, 'container_blue')
+    container(1180, -60, None, True, 'container_orange')
     helipad(760, -680, 30, '+y')
 
 
@@ -1346,7 +1368,7 @@ def ruins_south():
     platform(-760, -520, -440, -330, 40, [('+x', -425, 50, 200), ('-y', -600, 50, 180)])
     broken_wall(-740, -360, -560, -360, 40, 70, seed=31)
     broken_wall(-470, -500, -470, -380, 40, 60, seed=32)
-    container(-160, -880, ground(-160, -880), True, 'container_orange', 1)
+    container(-160, -880, None, True, 'container_orange', 1)
 
 
 def ruins_middle():
