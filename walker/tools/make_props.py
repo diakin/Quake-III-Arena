@@ -346,6 +346,103 @@ def stones(points, seed, material='rock'):
     return mesh
 
 
+# ================================================================ скруглённые формы
+
+def _signed_distance(inside, step):
+    """расстояние до границы в единицах: снаружи положительное, внутри отрицательное."""
+    from scipy.ndimage import distance_transform_edt
+    return (distance_transform_edt(~inside) - distance_transform_edt(inside)) * step
+
+
+def _split_long_edges(positions, normals, faces, max_edge):
+    """делит рёбра длиннее max_edge пополам (в обоих треугольниках ребра, без Т-стыков):
+    освещение моделей считается по вершинам, длинным треугольникам нужны промежуточные."""
+    positions = [np.asarray(point, dtype=float) for point in positions]
+    normals = [np.asarray(normal, dtype=float) for normal in normals]
+    faces = [list(face) for face in faces]
+    while True:
+        edges = {}
+        for index, face in enumerate(faces):
+            for corner in range(3):
+                key = tuple(sorted((face[corner], face[(corner + 1) % 3])))
+                edges.setdefault(key, []).append(index)
+        longest = {}
+        for (first, second), owners in edges.items():
+            length = np.linalg.norm(positions[first] - positions[second])
+            if length > max_edge:
+                for owner in owners:
+                    if owner not in longest or length > longest[owner][0]:
+                        longest[owner] = (length, (first, second))
+        if not longest:
+            break
+        # каждое выбранное ребро делится один раз; треугольник — по своему самому длинному
+        chosen = {edge for _, edge in longest.values()}
+        midpoints = {}
+        for first, second in chosen:
+            midpoints[(first, second)] = len(positions)
+            positions.append((positions[first] + positions[second]) / 2)
+            normal = normals[first] + normals[second]
+            normals.append(normal / (np.linalg.norm(normal) + 1e-9))
+        result = []
+        for face in faces:
+            for corner in range(3):
+                key = tuple(sorted((face[corner], face[(corner + 1) % 3])))
+                if key in midpoints:
+                    a, b, c = face[corner], face[(corner + 1) % 3], face[(corner + 2) % 3]
+                    middle = midpoints[key]
+                    result += [[a, middle, c], [middle, b, c]]
+                    break
+            else:
+                result.append(face)
+        faces = result
+    return np.array(positions), np.array(normals), np.array(faces)
+
+
+def rounded_surface(inside, step, radius_convex, radius_concave, error=0.15, max_edge=24):
+    """поверхность тела, заданного вокселями inside (шаг step), со скруглёнными рёбрами и углами:
+    выпуклые — радиус radius_convex (морфологическое открытие поля расстояний), вогнутые
+    (углы проёмов, надломы) — radius_concave (закрытие). Marching cubes, затем упрощение
+    плоских участков (meshoptimizer, допуск error) и деление длинных рёбер.
+    Возвращает вершины (в единицах от угла сетки), нормали, треугольники против часовой
+    стрелки снаружи."""
+    from scipy.ndimage import gaussian_filter
+    from skimage.measure import marching_cubes
+    import meshoptimizer
+    distance = _signed_distance(inside, step)
+    distance = _signed_distance(distance <= -radius_convex, step) - radius_convex
+    if radius_concave > 0:
+        distance = _signed_distance(distance <= radius_concave, step) + radius_concave
+    # мелкие оторванные куски (тонкая перемычка над проёмом после скругления) — убрать
+    from scipy.ndimage import label
+    pieces, count = label(distance < 0)
+    if count > 1:
+        sizes = np.bincount(pieces.ravel())
+        small = np.nonzero(sizes < max(400, sizes[1:].max() * 0.02))[0]
+        small = small[small > 0]
+        distance[np.isin(pieces, small)] = step
+    distance = gaussian_filter(distance, 0.7)
+    positions, faces, _, _ = marching_cubes(distance, 0.0, spacing=(step, step, step))
+    destination = np.zeros(faces.size, dtype=np.uint32)
+    count = meshoptimizer.simplify(destination, np.ascontiguousarray(faces.reshape(-1), dtype=np.uint32),
+                                   np.ascontiguousarray(positions, dtype=np.float32), target_index_count=0,
+                                   target_error=error, options=meshoptimizer.SIMPLIFY_ERROR_ABSOLUTE)
+    faces = destination[:count].reshape(-1, 3).astype(np.int64)
+    used = np.unique(faces)
+    remap = np.full(len(positions), -1)
+    remap[used] = np.arange(len(used))
+    positions, faces = positions[used], remap[faces]
+    # нормали — по градиенту поля (гладкие на скруглениях)
+    gradient = np.stack(np.gradient(distance), axis=-1)
+    cell = np.clip(np.round(positions / step).astype(int), 0, np.array(distance.shape) - 1)
+    normals = gradient[cell[:, 0], cell[:, 1], cell[:, 2]]
+    normals /= np.linalg.norm(normals, axis=1, keepdims=True) + 1e-9
+    # обход: нормаль треугольника наружу, как градиент
+    face_normals = np.cross(positions[faces[:, 1]] - positions[faces[:, 0]], positions[faces[:, 2]] - positions[faces[:, 0]])
+    if np.sum(face_normals * normals[faces].mean(axis=1)) < 0:
+        faces = faces[:, ::-1]
+    return _split_long_edges(positions, normals, faces, max_edge)
+
+
 # ================================================================ разрушенная стена
 
 def chunk(mesh, material, center, size, seed):
@@ -357,6 +454,10 @@ def chunk(mesh, material, center, size, seed):
     axis_y = np.cross(axis_z, axis_x)
     half = size * local.uniform(0.5, 1.0, 3) * np.array([1, 0.8, 0.5])
     oriented_box(mesh, material, center, axis_x, axis_y, axis_z, half, False, 64)
+
+
+WALL_EDGE_RADIUS = 3.0       # скругление рёбер стен (несколько полос вместо острого ребра)
+WALL_CORNER_RADIUS = 2.0     # скругление внутренних углов (проёмы, надломы)
 
 
 def ruined_wall(start, end, base_z, height, thickness, seed, windows=True, material='concrete'):
@@ -411,16 +512,33 @@ def ruined_wall(start, end, base_z, height, thickness, seed, windows=True, mater
                 + [corner(u0, side, t0) for side in (-1, 1)] + [corner(u1, side, t1) for side in (-1, 1)]
             caster(corners, CASTER_FULL)
             runs.setdefault((column // 4, piece_bottom > bottom, piece_top is None), []).extend(corners)
-            # грани: лицо, тыл, верх (наклонный), торцы колонны (видны в проёмах и на краях)
-            quad(mesh, material, corner(u0, -1, piece_bottom), corner(u1, -1, piece_bottom), corner(u1, -1, t1), corner(u0, -1, t0))
-            quad(mesh, material, corner(u1, 1, piece_bottom), corner(u0, 1, piece_bottom), corner(u0, 1, t0), corner(u1, 1, t1))
-            quad(mesh, 'concrete_dark', corner(u0, -1, t0), corner(u1, -1, t1), corner(u1, 1, t1), corner(u0, 1, t0))
-            if piece_bottom > bottom:
-                quad(mesh, 'concrete_dark', corner(u0, 1, piece_bottom), corner(u1, 1, piece_bottom), corner(u1, -1, piece_bottom), corner(u0, -1, piece_bottom))
-            quad(mesh, material, corner(u0, 1, piece_bottom), corner(u0, -1, piece_bottom), corner(u0, -1, t0), corner(u0, 1, t0))
-            quad(mesh, material, corner(u1, -1, piece_bottom), corner(u1, 1, piece_bottom), corner(u1, 1, t1), corner(u1, -1, t1))
     for corners in runs.values():
         caster(corners, CASTER_SIMPLE)
+    # поверхность: тело стены (рваный верх, проёмы) в вокселях со скруглёнными рёбрами
+    step, pad = 1.0, 6.0
+    us = np.arange(-pad, length + pad + step, step)
+    vs = np.arange(-half - pad, half + pad + step, step)
+    zs = np.arange(bottom - pad, tops.max() + pad + step, step)
+    grid_u, grid_v, grid_z = np.meshgrid(us, vs, zs, indexing='ij')
+    top_at = np.interp(grid_u, np.linspace(0, length, columns + 1), tops)
+    inside = (grid_u >= 0) & (grid_u <= length) & (np.abs(grid_v) <= half) & (grid_z >= bottom) & (grid_z <= top_at)
+    for first, last, sill, lintel in openings:
+        u0, u1 = first * length / columns, last * length / columns
+        inside &= ~((grid_u >= u0) & (grid_u <= u1) & (grid_z >= sill) & (grid_z <= lintel))
+    local_points, local_normals, faces = rounded_surface(inside, step, WALL_EDGE_RADIUS, WALL_CORNER_RADIUS)
+    local_points += np.array([us[0], vs[0], zs[0]])
+    points = start + np.outer(local_points[:, 0], along) + np.outer(local_points[:, 1], across) + np.outer(local_points[:, 2], [0, 0, 1])
+    normals = np.outer(local_normals[:, 0], along) + np.outer(local_normals[:, 1], across) + np.outer(local_normals[:, 2], [0, 0, 1])
+    # изломы и подоконники (смотрят вверх) — тёмный бетон скола
+    face_normals = normals[faces].mean(axis=1)
+    broken = face_normals[:, 2] > 0.6
+    for part_material, selected in ((material, ~broken), ('concrete_dark', broken)):
+        if np.any(selected):
+            chosen = faces[selected]
+            used = np.unique(chosen)
+            remap = np.full(len(points), -1)
+            remap[used] = np.arange(len(used))
+            mesh.add(part_material, points[used], normals[used], remap[chosen])
     # коллизия: отрезки по 48 единиц высотой до нижней точки излома на отрезке
     clips = []
     segments = max(1, int(round(length / 48)))

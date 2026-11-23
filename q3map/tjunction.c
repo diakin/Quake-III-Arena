@@ -59,6 +59,7 @@ int				c_addedVerts;
 int				c_totalVerts;
 
 int				c_natural, c_rotate, c_cant;
+int				c_wrongEdgeLines;	// WALKER: see FixSurfaceJunctions
 
 // these should be whatever epsilon we actually expect,
 // plus SNAP_INT_TO_FLOAT 
@@ -186,7 +187,25 @@ int AddEdge( vec3_t v1, vec3_t v2, qboolean createNonAxial ) {
 	VectorCopy( v1, e->origin );
 	VectorCopy( dir, e->dir );
 
-	MakeNormalVectors( e->dir, e->normal1, e->normal2 );
+	// WALKER: MakeNormalVectors degenerates for directions like (1, 1, -1)/sqrt(3) (the
+	// corners of 45-degree bevels): zero normals, and then every edge and every point
+	// "lies" on this line. Perpendiculars from the axis least along the direction.
+	{
+		vec3_t	axis = { 0, 0, 0 };
+		int		least = 0;
+
+		if ( fabs( e->dir[1] ) < fabs( e->dir[least] ) ) {
+			least = 1;
+		}
+		if ( fabs( e->dir[2] ) < fabs( e->dir[least] ) ) {
+			least = 2;
+		}
+		axis[least] = 1;
+		CrossProduct( e->dir, axis, e->normal1 );
+		VectorNormalize( e->normal1, e->normal1 );
+		CrossProduct( e->dir, e->normal1, e->normal2 );
+		VectorNormalize( e->normal2, e->normal2 );
+	}
 	e->dist1 = DotProduct( e->origin, e->normal1 );
 	e->dist2 = DotProduct( e->origin, e->normal2 );
 
@@ -339,6 +358,17 @@ void FixSurfaceJunctions( mapDrawSurface_t *ds ) {
 			continue;		// degenerate edge
 		}
 		e = &edgeLines[ j ];
+
+		// WALKER: the edge must lie on this line; otherwise points from somewhere else on
+		// the map would be inserted (seen with many bevelled brushes: two terrain faces
+		// got a vertex from the other end of the map, a hole and long slivers)
+		if ( fabs( DotProduct( v1->xyz, e->normal1 ) - e->dist1 ) > 1.0
+			|| fabs( DotProduct( v1->xyz, e->normal2 ) - e->dist2 ) > 1.0
+			|| fabs( DotProduct( v2->xyz, e->normal1 ) - e->dist1 ) > 1.0
+			|| fabs( DotProduct( v2->xyz, e->normal2 ) - e->dist2 ) > 1.0 ) {
+			c_wrongEdgeLines++;
+			continue;
+		}
 		
 		VectorSubtract( v1->xyz, e->origin, delta );
 		start = DotProduct( delta, e->dir );
@@ -546,6 +576,7 @@ void FixTJunctions( entity_t *ent ) {
 	qprintf( "%6i verts added for tjunctions\n", c_addedVerts );
 	qprintf( "%6i total verts\n", c_totalVerts );
 	qprintf( "%6i naturally ordered\n", c_natural );
+	qprintf( "%6i edges skipped: not on their edge line\n", c_wrongEdgeLines );
 	qprintf( "%6i rotated orders\n", c_rotate );
 	qprintf( "%6i can't order\n", c_cant );
 }

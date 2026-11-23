@@ -233,30 +233,52 @@ def tex_mix(first, second, seed):
     return to_image(a * (1 - mask) + b * mask)
 
 
-def tex_concrete(seed, tone=1.0, panels=128, moss=0.35, tiles=False, size=TEX):
-    panels *= size // 256
+def tex_concrete(seed, tone=1.0, panels=None, moss=0.25, tiles=False, size=TEX):
+    """бетон: мелкое зерно, поры разного размера, неравномерные пятна, потёки сверху вниз;
+    panels — шаг швов (None — монолит без швов), tiles — плитка площадки."""
+    from scipy.ndimage import convolve
+    local = np.random.default_rng(seed + 11)
     stains = normalize(fft_noise(size, 1.6, seed))
-    grain = fft_noise(size, 0.5, seed + 1) * 0.08
-    base = 150 * tone
+    mottle = normalize(fft_noise(size, 1.1, seed + 5))
+    grain = fft_noise(size, 0.3, seed + 1) * 0.06 + fft_noise(size, 0.8, seed + 9) * 0.04
+    base = 148 * tone
     color = np.zeros((size, size, 3))
     color[:] = base
-    color *= (0.85 + 0.25 * stains + grain)[..., None]
-    color[..., 2] *= 0.97
+    color *= (0.86 + 0.16 * stains + 0.08 * mottle + grain)[..., None]
+    color[..., 2] *= 0.975
+    # поры: точки-уколы трёх размеров, свёртка с мягким кругом (с переносом — текстура бесшовная)
+    pits = np.zeros((size, size))
+    scale = size / 512
+    for radius, density, depth in ((0.8, 0.006, 0.22), (1.5, 0.0012, 0.3), (2.6, 0.00015, 0.38)):
+        radius *= scale
+        impulses = np.zeros((size, size))
+        count = int(size * size * density / (scale * scale))
+        impulses[local.integers(0, size, count), local.integers(0, size, count)] = local.uniform(0.6, 1.0, count)
+        reach = int(math.ceil(radius + 1.5))
+        offset_y, offset_x = np.mgrid[-reach:reach + 1, -reach:reach + 1]
+        kernel = np.clip(radius + 0.7 - np.hypot(offset_x, offset_y), 0, 1)
+        pits = np.maximum(pits, convolve(impulses, kernel, mode='wrap') * depth)
+    color *= (1 - np.clip(pits, 0, 0.5))[..., None]
+    # зерно заполнителя: светлые и тёмные крупинки
+    speckle = fft_noise(size, 0.0, seed + 13)
+    color *= (1 + 0.07 * np.clip(speckle * 2.5, -1, 1))[..., None]
     y, x = np.mgrid[0:size, 0:size]
-    seams = (x % panels < 2) | (y % panels < 2)
-    if tiles:
-        seams |= (x % (size // 4) < 2) | (y % (size // 4) < 2)
-    color[seams] *= 0.62
-    # тёмные потёки вниз от горизонтальных швов
-    below = (y % panels).astype(float)
-    drip = normalize(ndimage_blur(fft_noise(size, 0.4, seed + 7), 1.2, size * 0.06) + 0.3 * fft_noise(size, 1.5, seed + 8))
-    color *= (1 - 0.22 * soft(0.55, 0.9, drip) * np.exp(-below / (panels * 0.45)))[..., None]
+    if panels:
+        panels = int(panels * size // 256)
+        seams = (x % panels < 2) | (y % panels < 2)
+        if tiles:
+            seams |= (x % (size // 4) < 2) | (y % (size // 4) < 2)
+        color[seams] *= 0.66
+        # тёмные потёки вниз от горизонтальных швов
+        below = (y % panels).astype(float)
+        drip = normalize(ndimage_blur(fft_noise(size, 0.4, seed + 7), 1.2, size * 0.06) + 0.3 * fft_noise(size, 1.5, seed + 8))
+        color *= (1 - 0.2 * soft(0.55, 0.9, drip) * np.exp(-below / (panels * 0.45)))[..., None]
     # потёки сверху вниз
     streak = normalize(fft_noise(size, 1.0, seed + 2, (size, size)) + np.linspace(-0.4, 0.4, size)[:, None])
-    color *= (0.9 + 0.12 * streak)[..., None]
+    color *= (0.92 + 0.1 * streak)[..., None]
     if moss > 0:
         moss_field = normalize(fft_noise(size, 1.7, seed + 3))
-        amount = np.clip((moss_field - (1 - moss)) * 2.5, 0, 0.85)[..., None]
+        amount = np.clip((moss_field - (1 - moss)) * 2.5, 0, 0.8)[..., None]
         color = color * (1 - amount) + np.array([62, 84, 38]) * amount
     return Image.fromarray(np.clip(color, 0, 255).astype(np.uint8))
 
@@ -411,8 +433,8 @@ def make_textures():
     TEXTURES['shore'] = tex_shore(31)
     TEXTURES['seabed'] = tex_seabed(41)
     TEXTURES['concrete'] = tex_concrete(51)
-    TEXTURES['concrete_dark'] = tex_concrete(52, 0.7, 64, 0.45)
-    TEXTURES['concrete_tiles'] = tex_concrete(53, 0.95, 128, 0.25, tiles=True)
+    TEXTURES['concrete_dark'] = tex_concrete(52, 0.72, None, 0.35)
+    TEXTURES['concrete_tiles'] = tex_concrete(53, 0.95, 128, 0.2, tiles=True)
     TEXTURES['metal_panel'] = tex_metal(61, (112, 122, 128), 64, 0.15)
     TEXTURES['metal_rust'] = tex_metal(62, (100, 92, 84), 32, 0.55)
     TEXTURES['metal_grate'] = tex_grate(63)
@@ -564,6 +586,44 @@ def is_caster(*shaders):
     return any(shader in SHADOW_CASTER_SHADERS or shader.startswith('beacon_') for shader in shaders if shader)
 
 
+# бетонные браши: рёбра скруглены — к каждому ребру (верх — бок, бок — бок) добавляются три
+# плоскости фаски, касательные к дуге радиуса BEVEL_RADIUS (вместе с гранями — ломаная из 4
+# отрезков по дуге; браш остаётся выпуклым)
+BEVEL_SHADERS = {'concrete', 'concrete_dark', 'concrete_tiles'}
+BEVEL_RADIUS = 3.0
+BEVEL_STEPS = (0.25, 0.5, 0.75)
+
+
+def plane_points(normal, distance, anchor, along):
+    """три точки плоскости n·x = d рядом с брашем: у anchor (точка на ребре), вдоль ребра
+    along и поперёк. Точки вдали от браша (например, n·d) q3map заносит в рёбра соседних
+    граней — получались дыры и иглы через всю карту. Порядок задаёт oriented."""
+    normal = np.asarray(normal, dtype=float)
+    anchor = np.asarray(anchor, dtype=float)
+    origin = anchor + normal * (distance - float(np.dot(normal, anchor)))
+    first = np.asarray(along, dtype=float) - normal * float(np.dot(normal, along))
+    first /= np.linalg.norm(first)
+    second = np.cross(normal, first)
+    return [tuple(origin), tuple(origin + first * 16), tuple(origin + second * 16)]
+
+
+def bevel_planes(first_normal, second_normal, edge_point, radius):
+    """плоскости фаски ребра между гранями с нормалями first/second, проходящего через edge_point:
+    касательные к цилиндру радиуса radius, вписанному в двугранный угол."""
+    first_normal = np.asarray(first_normal, dtype=float); second_normal = np.asarray(second_normal, dtype=float)
+    cosine = float(np.dot(first_normal, second_normal))
+    if cosine > 0.94:                   # почти плоско (меньше 20°): фаска не нужна
+        return []
+    centre = np.asarray(edge_point, dtype=float) - radius / (1 + cosine) * (first_normal + second_normal)
+    along = np.cross(first_normal, second_normal)
+    planes = []
+    for fraction in BEVEL_STEPS:
+        normal = first_normal * (1 - fraction) + second_normal * fraction
+        normal /= np.linalg.norm(normal)
+        planes.append(plane_points(normal, float(np.dot(normal, centre)) + radius, centre, along))
+    return planes
+
+
 def add_prism(polygon, z_bottom, z_top, top, side, bottom=CAULK, detail=True, top_points=None, top_shift=(0, 0), top_scale=None):
     """выпуклая призма: polygon — вершины против часовой стрелки (вид сверху).
     top_points — три точки наклонной верхней плоскости (иначе плоская на z_top)."""
@@ -580,6 +640,31 @@ def add_prism(polygon, z_bottom, z_top, top, side, bottom=CAULK, detail=True, to
         brush.face([(ax, ay, z_bottom), (bx, by, z_bottom), (bx, by, z_bottom + 64)], tex(side))
     center_x = sum(point[0] for point in polygon) / count
     center_y = sum(point[1] for point in polygon) / count
+    if side in BEVEL_SHADERS or top in BEVEL_SHADERS:
+        first, second, third = (np.array(point, dtype=float) for point in top_points)
+        top_normal = np.cross(second - first, third - first)
+        top_normal /= np.linalg.norm(top_normal)
+        if top_normal[2] < 0:
+            top_normal = -top_normal
+        top_z = lambda x, y: first[2] - (top_normal[0] * (x - first[0]) + top_normal[1] * (y - first[1])) / top_normal[2]
+        side_normals = []
+        for index in range(count):
+            ax, ay = polygon[index]
+            bx, by = polygon[(index + 1) % count]
+            normal = np.array([by - ay, -(bx - ax), 0.0])
+            side_normals.append(normal / np.linalg.norm(normal))
+        # радиус не больше трети самого тонкого размера
+        heights = [top_z(x, y) - z_bottom for x, y in polygon]
+        edges = [math.hypot(polygon[(index + 1) % count][0] - polygon[index][0], polygon[(index + 1) % count][1] - polygon[index][1])
+                 for index in range(count)]
+        radius = min(BEVEL_RADIUS, min(heights) / 3, min(edges) / 3)
+        for index in range(count):
+            ax, ay = polygon[index]
+            # верхнее ребро грани index, вертикальное ребро между гранями index - 1 и index
+            for points in bevel_planes(top_normal, side_normals[index], (ax, ay, top_z(ax, ay)), radius):
+                brush.face(points, tex(side))
+            for points in bevel_planes(side_normals[index - 1], side_normals[index], (ax, ay, z_bottom), radius):
+                brush.face(points, tex(side))
     lowest_top = min(point[2] for point in top_points)
     if z_top is not None:
         lowest_top = min(lowest_top, z_top)
