@@ -1311,12 +1311,38 @@ def launch_tower():
     beacon('d', 120, 700, ground(120, 700))
 
 
+def add_hull_brush(points, shader, directions=48):
+    """выпуклый браш вокруг точек: опорные точки по directions направлениям, их оболочка,
+    плоскости граней (совпадающие сливаются)."""
+    from scipy.spatial import ConvexHull
+    points = np.asarray(points, dtype=float)
+    index = np.arange(directions) + 0.5
+    polar = np.arccos(1 - 2 * index / directions)
+    azimuth = index * math.pi * (3 - math.sqrt(5))
+    sphere = np.stack([np.sin(polar) * np.cos(azimuth), np.sin(polar) * np.sin(azimuth), np.cos(polar)], axis=1)
+    support = points[np.unique(np.argmax(points @ sphere.T, axis=0))]
+    hull = ConvexHull(support)
+    brush = Brush(True)
+    seen = []
+    for simplex, equation in zip(hull.simplices, hull.equations):
+        if any(np.dot(equation[:3], other[:3]) > 0.9999 and abs(equation[3] - other[3]) < 0.05 for other in seen):
+            continue
+        seen.append(equation)
+        brush.face([tuple(support[vertex]) for vertex in simplex], tex(shader))
+    centre = support.mean(axis=0)
+    BRUSHES.append((brush, tuple(centre)))
+
+
 def rock_stack(x, y, height, radius, seed):
     """скальный выход: валуны (make_props.rock_cluster) и невидимый браш коллизии главного валуна."""
     base = ground(x, y)
-    props.add_prop(f'rocks_{seed}', props.rock_cluster((x, y, base), height * 1.05, radius * 1.05, seed, ground_min))
-
-    add_frustum(x, y, radius * 0.6, radius * 0.3, -40, base + height * 0.7, 'clip_solid', 'clip_solid', 7)
+    mesh = props.rock_cluster((x, y, base), height * 1.05, radius * 1.05, seed, ground_min)
+    # коллизия — выпуклая оболочка каждого валуна (раньше — усечённый конус внутри главного:
+    # пули останавливались до 40 ед. за видимой поверхностью, и следы на камне не появлялись,
+    # а малые валуны пули и роботы проходили насквозь)
+    for points in mesh.hulls:
+        add_hull_brush(points, 'clip_solid')
+    props.add_prop(f'rocks_{seed}', mesh)
 
 
 def scatter_stones():

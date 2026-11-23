@@ -176,7 +176,8 @@ void R_BoxSurfaces_r(mnode_t *node, vec3_t mins, vec3_t maxs, surfaceType_t **li
 		// WALKER: joined world faces (R_MergeWorldFaces) take marks per triangle
 		else if (*(surf->data) == SF_TRIANGLES) {
 			srfTriangles_t	*tri = ( srfTriangles_t * ) surf->data;
-			if ( !tri->mergedFaces || tri->bounds[0][0] > maxs[0] || tri->bounds[1][0] < mins[0]
+			// models in two detail levels: marks only on the detailed one (else twice)
+			if ( ( !tri->mergedFaces && surf->lodFar ) || tri->bounds[0][0] > maxs[0] || tri->bounds[1][0] < mins[0]
 				|| tri->bounds[0][1] > maxs[1] || tri->bounds[1][1] < mins[1]
 				|| tri->bounds[0][2] > maxs[2] || tri->bounds[1][2] < mins[2] ) {
 				surf->viewCount = tr.viewCount;
@@ -259,6 +260,10 @@ R_MarkFragments
 
 =================
 */
+// WALKER: how far in front of the hit point a mark still lands (Q3: 20): the collision of
+// models of the map (rocks, walls) is a simpler shape a little inside the visible surface
+#define	MARK_FRONT_DEPTH	32
+
 int R_MarkFragments( int numPoints, const vec3_t *points, const vec3_t projection,
 				   int maxPoints, vec3_t pointBuffer, int maxFragments, markFragment_t *fragmentBuffer ) {
 	int				numsurfaces, numPlanes;
@@ -294,7 +299,7 @@ int R_MarkFragments( int numPoints, const vec3_t *points, const vec3_t projectio
 		VectorAdd( points[i], projection, temp );
 		AddPointToBounds( temp, mins, maxs );
 		// make sure we get all the leafs (also the one(s) in front of the hit surface)
-		VectorMA( points[i], -20, projectionDir, temp );
+		VectorMA( points[i], -MARK_FRONT_DEPTH, projectionDir, temp );
 		AddPointToBounds( temp, mins, maxs );
 	}
 
@@ -313,11 +318,29 @@ int R_MarkFragments( int numPoints, const vec3_t *points, const vec3_t projectio
 	dists[numPoints] = DotProduct(normals[numPoints], points[0]) - 32;
 	VectorCopy(projectionDir, normals[numPoints+1]);
 	VectorInverse(normals[numPoints+1]);
-	dists[numPoints+1] = DotProduct(normals[numPoints+1], points[0]) - 20;
+	dists[numPoints+1] = DotProduct(normals[numPoints+1], points[0]) - MARK_FRONT_DEPTH;
 	numPlanes = numPoints + 2;
 
 	numsurfaces = 0;
 	R_BoxSurfaces_r(tr.world->nodes, mins, maxs, surfaces, 64, &numsurfaces, projectionDir);
+
+	// WALKER: faces of the world first, models of the map (misc_model: walls, rocks) after:
+	// a ruined wall has thousands of small triangles, and a shadow spot beside it used to
+	// spend all fragments on its top before it reached the ground
+	{
+		surfaceType_t	*ordered[64];
+		int				count = 0, pass;
+
+		for ( pass = 0 ; pass < 2 ; pass++ ) {
+			for ( i = 0 ; i < numsurfaces ; i++ ) {
+				qboolean	model = *surfaces[i] == SF_TRIANGLES && !( (srfTriangles_t *)surfaces[i] )->mergedFaces;
+				if ( model == ( pass == 1 ) ) {
+					ordered[count++] = surfaces[i];
+				}
+			}
+		}
+		Com_Memcpy( surfaces, ordered, numsurfaces * sizeof( surfaces[0] ) );
+	}
 	//assert(numsurfaces <= 64);
 	//assert(numsurfaces != 64);
 
@@ -409,12 +432,6 @@ int R_MarkFragments( int numPoints, const vec3_t *points, const vec3_t projectio
 		else if (*surfaces[i] == SF_TRIANGLES) {
 			// WALKER: joined world faces; every triangle is checked like a face
 			srfTriangles_t	*tri = ( srfTriangles_t * ) surfaces[i];
-
-			// only joined faces: models of the map (misc_model) take no marks, as in Q3;
-			// otherwise a shadow spot near a ruined wall spends all fragments on its top
-			if ( !tri->mergedFaces ) {
-				continue;
-			}
 
 			for ( k = 0 ; k < tri->numIndexes ; k += 3 ) {
 				drawVert_t	*corner[3];

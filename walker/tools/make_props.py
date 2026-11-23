@@ -335,8 +335,16 @@ def rock_cluster(center, height, radius, seed, ground_min=None):
         low = ground_min(spot[0] - size * 0.7, spot[1] - size * 0.7, spot[0] + size * 0.7, spot[1] + size * 0.7)
         return np.array([spot[0], spot[1], min(spot[2], low)])
 
+    mesh.hulls = []          # вершины каждого валуна: по ним строятся браши коллизии
+
+    def add_boulder(*arguments):
+        single = Mesh()
+        boulder(single, *arguments)
+        mesh.hulls.append(np.concatenate([np.concatenate(part[0]) for part in single.parts.values() if part[0]]))
+        mesh.extend(single)
+
     main_x, main_y = radius * local.uniform(0.9, 1.1), radius * local.uniform(0.75, 0.95)
-    boulder(mesh, seat(np.asarray(center, dtype=float), max(main_x, main_y)), main_x, main_y, height, seed, 18)
+    add_boulder(seat(np.asarray(center, dtype=float), max(main_x, main_y)), main_x, main_y, height, seed, 18)
     for index in range(local.integers(2, 5)):
         angle = local.uniform(0, 2 * math.pi)
         distance = radius * local.uniform(0.8, 1.3)
@@ -344,7 +352,7 @@ def rock_cluster(center, height, radius, seed, ground_min=None):
         spot = np.asarray(center, dtype=float) + [math.cos(angle) * distance, math.sin(angle) * distance, 0]
         if ground_min is not None:
             spot[2] = ground_min(spot[0], spot[1], spot[0], spot[1])     # своя высота земли
-        boulder(mesh, seat(spot, size), size, size * local.uniform(0.7, 1.0), size * local.uniform(0.9, 1.6), seed * 7 + index, size * 0.3, 2)
+        add_boulder(seat(spot, size), size, size * local.uniform(0.7, 1.0), size * local.uniform(0.9, 1.6), seed * 7 + index, size * 0.3, 2)
     return mesh
 
 
