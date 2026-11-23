@@ -1173,6 +1173,7 @@ def container(x, y, z=None, along_x=True, color='container_red', stack=1):
 def platform(x0, y0, x1, y1, z_top, ramps):
     """плита на опорах над водой с пандусами."""
     add_box(x0, y0, z_top - 12, x1, y1, z_top, 'concrete_dark', 'concrete_tiles', 'concrete_dark')
+    ao_decal(f'platform_{abs(int(x0))}_{abs(int(y0))}', [(x0, y0), (x1, y0), (x1, y1), (x0, y1)], z_top)
     step_x = (x1 - x0) / 3
     step_y = (y1 - y0) / 2
     for column in range(4):
@@ -1216,6 +1217,7 @@ def platform(x0, y0, x1, y1, z_top, ramps):
 def central_tower():
     plaza_top = 24
     add_prism(polygon_regular(0, 0, 330, 8), -30, plaza_top, 'concrete_tiles', 'concrete_dark')
+    ao_decal('tower', polygon_regular(0, 0, 330, 8), plaza_top)
     for side, (x0, y0, x1, y1, rise) in {
         'n': (-70, 300, 70, 520, '-y'), 's': (-70, -520, 70, -300, '+y'),
         'e': (300, -70, 520, 70, '-x'), 'w': (-520, -70, -300, 70, '+x')}.items():
@@ -1276,6 +1278,7 @@ def central_tower():
 def launch_tower():
     base_x, base_y = 330, 880
     add_box(base_x - 150, base_y - 150, -20, base_x + 150, base_y + 150, 22, 'concrete_dark', 'concrete_tiles')
+    ao_decal('launch', [(base_x - 150, base_y - 150), (base_x + 150, base_y - 150), (base_x + 150, base_y + 150), (base_x - 150, base_y + 150)], 22)
     add_ramp(base_x - 60, base_y - 300, base_x + 60, base_y - 150, 4, 22, '+y')
     top = 22
     half = 56
@@ -1383,6 +1386,129 @@ def ruins_middle():
         rock_stack(x, y, height, radius, 500 + index)
 
 
+# ================================================================ затенение под постройками
+
+# Под крышей и у основания постройки света меньше: небо закрыто. Запечённое освещение этого почти
+# не видит (солнце в нём постройки не загораживают, а тень от солнца игра делает одним множителем).
+# Поверх ровных полов кладётся тонкий прозрачный слой, который умножает цвет на долю открытого
+# неба: доля считается лучами по выпуклым формам теней (make_props.CASTERS) в радиусе AO_RADIUS.
+AO_DECALS = []                 # (имя, многоугольник, высота пола)
+AO_SIZE = 64                   # отсчётов на сторону; текстура 128 (сглаженная)
+AO_RAYS = 64
+AO_RADIUS = 700                # дальше этого препятствия не учитываются
+AO_STRENGTH = 0.75             # 1 — множитель равен доле неба
+AO_MIN = 0.35
+
+
+def ao_decal(name, polygon, floor_z):
+    AO_DECALS.append((name, [(float(x), float(y)) for x, y in polygon], float(floor_z)))
+
+
+AO_EDGE = 48
+
+
+def _inside_distance(polygon, xs, ys):
+    """расстояние от точек до края выпуклого многоугольника (против часовой); снаружи 0."""
+    distance = np.full(len(xs), np.inf)
+    count = len(polygon)
+    for index in range(count):
+        ax, ay = polygon[index]
+        bx, by = polygon[(index + 1) % count]
+        length = math.hypot(bx - ax, by - ay)
+        # внутренняя нормаль для обхода против часовой стрелки: (-(by - ay), bx - ax)
+        inside = (-(by - ay) * (xs - ax) + (bx - ax) * (ys - ay)) / length
+        distance = np.minimum(distance, inside)
+    return np.maximum(distance, 0)
+
+
+def _sky_directions(count):
+    """направления верхней полусферы по закону косинуса (спираль Фибоначчи)."""
+    index = np.arange(count) + 0.5
+    radius = np.sqrt(index / count)
+    angle = index * math.pi * (3 - math.sqrt(5))
+    return np.stack([radius * np.cos(angle), radius * np.sin(angle), np.sqrt(1 - radius ** 2)], axis=1)
+
+
+def _ao_hulls():
+    from scipy.spatial import ConvexHull
+    hulls = []
+    for _, points in props.CASTERS:
+        try:
+            hull = ConvexHull(points)
+        except Exception:
+            continue
+        hulls.append((points.min(axis=0), points.max(axis=0), hull.equations))
+    return hulls
+
+
+def make_ao_decals():
+    """текстуры и тонкие браши затенения (после всех построек: нужны формы теней)."""
+    if not AO_DECALS:
+        return ''
+    hulls = _ao_hulls()
+    directions = _sky_directions(AO_RAYS)
+    shaders = []
+    for name, polygon, floor_z in AO_DECALS:
+        xs = [point[0] for point in polygon]; ys = [point[1] for point in polygon]
+        x0, y0 = min(xs) - 24, min(ys) - 24
+        size = max(max(xs) - min(xs), max(ys) - min(ys)) + 48
+        cell = size / AO_SIZE
+        # отсчёт (строка, столбец): строка 0 — верх текстуры (наибольший y)
+        grid_x = x0 + (np.arange(AO_SIZE) + 0.5) * cell
+        grid_y = y0 + size - (np.arange(AO_SIZE) + 0.5) * cell
+        sample_x, sample_y = np.meshgrid(grid_x, grid_y)
+        origins = np.stack([sample_x.ravel(), sample_y.ravel(), np.full(sample_x.size, floor_z + 2.0)], axis=1)
+        blocked = np.zeros((len(origins), len(directions)), dtype=bool)
+        region_min = np.array([x0 - AO_RADIUS, y0 - AO_RADIUS, floor_z + 1])
+        region_max = np.array([x0 + size + AO_RADIUS, y0 + size + AO_RADIUS, floor_z + AO_RADIUS])
+        for mins, maxs, planes in hulls:
+            if np.any(maxs < region_min) or np.any(mins > region_max):
+                continue
+            normals, offsets = planes[:, :3], planes[:, 3]
+            facing = directions @ normals.T                              # (D, P)
+            start = -(origins @ normals.T + offsets)                     # (S, P): n·(o + t d) + off <= 0
+            with np.errstate(divide='ignore', invalid='ignore'):
+                limit = start[:, None, :] / facing[None, :, :]           # (S, D, P)
+            entering = facing < -1e-9
+            leaving = facing > 1e-9
+            t_enter = np.where(entering[None], limit, -np.inf).max(axis=2)
+            t_exit = np.where(leaving[None], limit, np.inf).min(axis=2)
+            parallel_out = ((~entering & ~leaving)[None] & (start[:, None, :] < 0)).any(axis=2)
+            hit = (t_enter < t_exit) & (t_exit > 0.5) & (t_enter < AO_RADIUS) & ~parallel_out
+            blocked |= hit
+        visible = 1 - blocked.mean(axis=1)
+        # доля неба относительно самого открытого места пола; к краю пола затенение сходит
+        # на нет (AO_EDGE), чтобы на границе с пандусами и рельефом не было ступеньки
+        darkness = AO_STRENGTH * (1 - visible / max(visible.max(), 1e-6))
+        darkness *= np.clip(_inside_distance(polygon, origins[:, 0], origins[:, 1]) / AO_EDGE, 0, 1)
+        factor = np.clip(1 - darkness, AO_MIN, 1).reshape(AO_SIZE, AO_SIZE)
+        image = Image.fromarray(np.round(factor * 255).astype(np.uint8)).resize((128, 128), Image.BICUBIC)
+        image = image.filter(ImageFilter.GaussianBlur(1.5))
+        save_texture(f'textures/walker/ao_{name}', image)
+        print(f'shade under structures {name}: open sky {visible.min():.2f}..{visible.max():.2f}')
+        # браш: верх на 1 ед. над полом, текстура ровно на квадрат x0..x0+size
+        scale = size / 128
+        # бока и низ невидимые и несплошные: иначе браш стал бы сплошным для коллизии
+        add_prism(polygon, floor_z, floor_z + 1, f'ao_{name}', 'ao_side', 'ao_side',
+                  True, None, (-x0 / scale, (y0 + size) / scale), scale)
+        shaders.append(f"""textures/walker/ao_{name}
+{{
+	qer_editorimage textures/walker/ao_{name}.tga
+	surfaceparm nolightmap
+	surfaceparm nonsolid
+	surfaceparm trans
+	surfaceparm nomarks
+	polygonOffset
+	{{
+		clampmap textures/walker/ao_{name}.jpg
+		blendFunc GL_DST_COLOR GL_ZERO
+		rgbGen identity
+	}}
+}}
+""")
+    return '\n'.join(shaders)
+
+
 def add_hull():
     """оболочка неба и невидимые стены по краю игровой зоны."""
     margin = 16
@@ -1475,6 +1601,14 @@ textures/walker/clip_solid
 	qer_trans 0.4
 	surfaceparm nodraw
 	surfaceparm nolightmap
+	surfaceparm nomarks
+}}
+textures/walker/ao_side
+{{
+	surfaceparm nodraw
+	surfaceparm nolightmap
+	surfaceparm nonsolid
+	surfaceparm trans
 	surfaceparm nomarks
 }}
 textures/common/clip
@@ -1812,6 +1946,7 @@ def main():
     ruins_south()
     ruins_middle()
     make_mix_textures()
+    SHADERS += make_ao_decals()
     SHADERS += lightmapped_shaders() + vertex_lit_shaders()
     SHADERS = mark_no_sun_shadow(SHADERS)
     counts = props.write_casters(os.path.join(DATA, 'maps', 'wk_islands.casters'))

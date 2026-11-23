@@ -2053,6 +2053,63 @@ Returns the Z component of the surface being shadowed
 ===============
 */
 #define	SHADOW_DISTANCE		128
+/*
+===============
+CG_RobotShade
+
+WALKER: 1 when the robot stands in the shade of a building (the way to the sun is blocked),
+0 in the sun; changes smoothly
+===============
+*/
+#define	SHADE_SPOT_ALPHA	0.75f
+#define	SHADE_FADE_TIME		250
+
+static float	robotShade[MAX_GENTITIES];
+static int		robotShadeTime[MAX_GENTITIES];
+
+static float CG_RobotShade( centity_t *cent ) {
+	vec3_t		sun, start, end;
+	trace_t		trace;
+	float		target, step;
+	int			number = cent->currentState.number;
+	int			elapsed;
+
+	char		*text;
+	int			axis;
+
+	if ( !r_sunDirection.string[0] ) {
+		return 0;
+	}
+	text = r_sunDirection.string;
+	for ( axis = 0 ; axis < 3 ; axis++ ) {
+		sun[axis] = atof( COM_Parse( &text ) );
+	}
+	if ( VectorNormalize( sun ) < 0.5f ) {
+		return 0;
+	}
+	// from the middle of the robot body toward the sun; the sky stops the trace too, but
+	// marks it with SURF_SKY
+	VectorCopy( cent->lerpOrigin, start );
+	start[2] += 16;
+	VectorMA( start, 4000, sun, end );
+	CG_Trace( &trace, start, NULL, NULL, end, number, MASK_SOLID );
+	target = ( trace.fraction < 1.0f && !( trace.surfaceFlags & SURF_SKY ) ) ? 1.0f : 0.0f;
+
+	elapsed = cg.time - robotShadeTime[number];
+	robotShadeTime[number] = cg.time;
+	if ( elapsed < 0 || elapsed > 1000 ) {
+		robotShade[number] = target;		// first frame or a long pause
+	} else {
+		step = (float)elapsed / SHADE_FADE_TIME;
+		if ( robotShade[number] < target ) {
+			robotShade[number] = robotShade[number] + step > target ? target : robotShade[number] + step;
+		} else {
+			robotShade[number] = robotShade[number] - step < target ? target : robotShade[number] - step;
+		}
+	}
+	return robotShade[number];
+}
+
 static qboolean CG_PlayerShadow( centity_t *cent, float *shadowPlane ) {
 	vec3_t		end, mins = {-15, -15, 0}, maxs = {15, 15, 2};
 	trace_t		trace;
@@ -2092,12 +2149,21 @@ static qboolean CG_PlayerShadow( centity_t *cent, float *shadowPlane ) {
 
 	*shadowPlane = trace.endpos[2] + 1;
 
-	if ( shadowMode != 1 ) {	// no mark for stencil or projection shadows
-		return qtrue;
-	}
-
 	// fade the shadow out with height (WALKER: slower, the robot stands 24 units up)
 	alpha = 1.0 - trace.fraction * 0.6;
+
+	if ( shadowMode != 1 ) {	// no mark for stencil or projection shadows
+		// WALKER: in the shade of a building the sharp shadow merges with the building's;
+		// the soft spot under the robot is drawn instead (the ground under it gets less of
+		// the light from the sky too). Faded in and out over a quarter of a second.
+		float	shade = CG_RobotShade( cent );
+		if ( shade > 0.01f ) {
+			alpha *= shade * SHADE_SPOT_ALPHA;
+			CG_ImpactMark( cgs.media.shadowMarkShader, trace.endpos, trace.plane.normal,
+				cent->pe.legs.yawAngle, alpha, alpha, alpha, 1, qfalse, 60, qtrue );
+		}
+		return qtrue;
+	}
 
 	// bk0101022 - hack / FPE - bogus planes?
 	//assert( DotProduct( trace.plane.normal, trace.plane.normal ) != 0.0f ) 

@@ -1015,6 +1015,7 @@ void R_Register( void )
 	// WALKER: models built in two detail levels (the ruined walls) use the far one
 	// beyond this distance from their bounds, and always in the water reflection
 	r_lodDistance = ri.Cvar_Get ("r_lodDistance", "900", CVAR_ARCHIVE);
+	ri.Cvar_Get( "r_sunDirection", "", CVAR_ROM );	// WALKER: set at map load (tr_bsp.c)
 	r_shadows = ri.Cvar_Get( "cg_shadows", "1", 0 );
 
 	r_maxpolys = ri.Cvar_Get( "r_maxpolys", va("%d", MAX_POLYS), 0);

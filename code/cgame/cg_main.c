@@ -98,6 +98,7 @@ vmCvar_t	cg_bobpitch;
 vmCvar_t	cg_bobroll;
 vmCvar_t	cg_swingSpeed;
 vmCvar_t	cg_shadows;
+vmCvar_t	r_sunDirection;		// WALKER: set by the renderer at map load
 vmCvar_t	cg_gibs;
 vmCvar_t	cg_drawTimer;
 vmCvar_t	cg_drawFPS;
@@ -213,6 +214,7 @@ static cvarTable_t cvarTable[] = { // bk001129
 	{ &cg_viewsize, "cg_viewsize", "100", CVAR_ARCHIVE },
 	{ &cg_stereoSeparation, "cg_stereoSeparation", "0.4", CVAR_ARCHIVE  },
 	{ &cg_shadows, "cg_shadows", "1", CVAR_ARCHIVE  },
+	{ &r_sunDirection, "r_sunDirection", "", CVAR_ROM },
 	{ &cg_gibs, "cg_gibs", "1", CVAR_ARCHIVE  },
 	{ &cg_draw2D, "cg_draw2D", "1", CVAR_ARCHIVE  },
 	{ &cg_drawStatus, "cg_drawStatus", "1", CVAR_ARCHIVE  },

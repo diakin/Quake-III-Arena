@@ -1623,6 +1623,7 @@ static void R_EmitMergedSurface( mergeCandidate_t *list, int count, int numVerts
 	leader = s_worldData.surfaces + list[0].surfaceNum;
 	tri = ri.Hunk_Alloc( sizeof( *tri ) + numVerts * sizeof( drawVert_t ) + numIndexes * sizeof( int ), h_low );
 	tri->surfaceType = SF_TRIANGLES;
+	tri->mergedFaces = qtrue;
 	tri->verts = (drawVert_t *)( tri + 1 );
 	tri->indexes = (int *)( tri->verts + numVerts );
 	tri->numVerts = numVerts;
@@ -2117,5 +2118,13 @@ void RE_LoadWorldMap( const char *name ) {
 
 	// WALKER: shapes for the sun shadows of the buildings
 	R_LoadSunCasters( name );
+
+	// WALKER: the game needs the sun direction to know whether a robot stands in the shade
+	// (cg_players.c, CG_PlayerShadow); empty on a map without sun
+	if ( VectorLength( tr.sunLight ) > 0 ) {
+		ri.Cvar_Set( "r_sunDirection", va( "%.4f %.4f %.4f", tr.sunDirection[0], tr.sunDirection[1], tr.sunDirection[2] ) );
+	} else {
+		ri.Cvar_Set( "r_sunDirection", "" );
+	}
 }
 

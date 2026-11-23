@@ -176,7 +176,7 @@ void R_BoxSurfaces_r(mnode_t *node, vec3_t mins, vec3_t maxs, surfaceType_t **li
 		// WALKER: joined world faces (R_MergeWorldFaces) take marks per triangle
 		else if (*(surf->data) == SF_TRIANGLES) {
 			srfTriangles_t	*tri = ( srfTriangles_t * ) surf->data;
-			if ( tri->bounds[0][0] > maxs[0] || tri->bounds[1][0] < mins[0]
+			if ( !tri->mergedFaces || tri->bounds[0][0] > maxs[0] || tri->bounds[1][0] < mins[0]
 				|| tri->bounds[0][1] > maxs[1] || tri->bounds[1][1] < mins[1]
 				|| tri->bounds[0][2] > maxs[2] || tri->bounds[1][2] < mins[2] ) {
 				surf->viewCount = tr.viewCount;
@@ -409,6 +409,12 @@ int R_MarkFragments( int numPoints, const vec3_t *points, const vec3_t projectio
 		else if (*surfaces[i] == SF_TRIANGLES) {
 			// WALKER: joined world faces; every triangle is checked like a face
 			srfTriangles_t	*tri = ( srfTriangles_t * ) surfaces[i];
+
+			// only joined faces: models of the map (misc_model) take no marks, as in Q3;
+			// otherwise a shadow spot near a ruined wall spends all fragments on its top
+			if ( !tri->mergedFaces ) {
+				continue;
+			}
 
 			for ( k = 0 ; k < tri->numIndexes ; k += 3 ) {
 				drawVert_t	*corner[3];

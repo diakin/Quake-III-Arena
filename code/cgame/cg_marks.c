@@ -124,8 +124,8 @@ temporary marks will not be stored or randomly oriented, but immediately
 passed to the renderer.
 =================
 */
-#define	MAX_MARK_FRAGMENTS	128
-#define	MAX_MARK_POINTS		384
+#define	MAX_MARK_FRAGMENTS	256
+#define	MAX_MARK_POINTS		1024
 
 void CG_ImpactMark( qhandle_t markShader, const vec3_t origin, const vec3_t dir, 
 				   float orientation, float red, float green, float blue, float alpha,
@@ -136,8 +136,9 @@ void CG_ImpactMark( qhandle_t markShader, const vec3_t origin, const vec3_t dir,
 	byte			colors[4];
 	int				i, j;
 	int				numFragments;
-	markFragment_t	markFragments[MAX_MARK_FRAGMENTS], *mf;
-	vec3_t			markPoints[MAX_MARK_POINTS];
+	static markFragment_t	markFragments[MAX_MARK_FRAGMENTS];	// static: too large for the QVM stack
+	static vec3_t			markPoints[MAX_MARK_POINTS];
+	markFragment_t	*mf;
 	vec3_t			projection;
 
 	if ( !cg_addMarks.integer ) {

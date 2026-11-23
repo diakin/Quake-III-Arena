@@ -644,6 +644,8 @@ typedef struct {
 	int				numVerts;
 	drawVert_t		*verts;
 
+	qboolean		mergedFaces;	// WALKER: made of joined world faces (R_MergeWorldFaces)
+
 	// WALKER: triangles facing away from the sun (tr_sunshadow.c), kept until the sun moves
 	int				*awayIndexes;
 	int				numAwayIndexes;
