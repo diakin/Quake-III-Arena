@@ -1291,6 +1291,126 @@ void R_WorldSurfaceBounds( surfaceType_t *data, vec3_t mins, vec3_t maxs ) {
 	}
 }
 
+/*
+=================
+R_SmoothLodColors
+
+WALKER: q3map lights models per vertex; the simple level has ten times fewer vertices, so
+the same shading spread over its large triangles took other shapes, and at the change of
+level dark patches ran over the wall. Each vertex of the simple level takes instead the
+colour of the detailed level around it (weighted by distance within LOD_COLOR_RADIUS): the
+simple wall is lit like a smoothed copy of the detailed one.
+=================
+*/
+#define	LOD_COLOR_RADIUS	6.0f
+#define	LOD_COLOR_HASH		4096
+
+static int R_LodColorCell( const float *point ) {
+	int		x = (int)floor( point[0] / LOD_COLOR_RADIUS );
+	int		y = (int)floor( point[1] / LOD_COLOR_RADIUS );
+	int		z = (int)floor( point[2] / LOD_COLOR_RADIUS );
+	return ( ( x * 73856093 ) ^ ( y * 19349663 ) ^ ( z * 83492791 ) ) & ( LOD_COLOR_HASH - 1 );
+}
+
+static void R_SmoothLodColors( void ) {
+	int				group, index, vertex, count, total, changed = 0;
+	int				*cellHead, *next;
+	drawVert_t		**nearVerts;
+	msurface_t		*surf;
+	srfTriangles_t	*tri;
+
+	for ( group = 0 ; group < s_worldData.numLodGroups ; group++ ) {
+		// the detailed vertices of this group
+		total = 0;
+		for ( index = 0, surf = s_worldData.surfaces ; index < s_worldData.numsurfaces ; index++, surf++ ) {
+			if ( surf->lodGroup == group && !surf->lodFar && *surf->data == SF_TRIANGLES ) {
+				total += ( (srfTriangles_t *)surf->data )->numVerts;
+			}
+		}
+		if ( !total ) {
+			continue;
+		}
+		cellHead = ri.Hunk_AllocateTempMemory( LOD_COLOR_HASH * sizeof( int ) );
+		next = ri.Hunk_AllocateTempMemory( total * sizeof( int ) );
+		nearVerts = ri.Hunk_AllocateTempMemory( total * sizeof( drawVert_t * ) );
+		for ( index = 0 ; index < LOD_COLOR_HASH ; index++ ) {
+			cellHead[index] = -1;
+		}
+		count = 0;
+		for ( index = 0, surf = s_worldData.surfaces ; index < s_worldData.numsurfaces ; index++, surf++ ) {
+			if ( surf->lodGroup != group || surf->lodFar || *surf->data != SF_TRIANGLES ) {
+				continue;
+			}
+			tri = (srfTriangles_t *)surf->data;
+			for ( vertex = 0 ; vertex < tri->numVerts ; vertex++ ) {
+				int		cell = R_LodColorCell( tri->verts[vertex].xyz );
+				nearVerts[count] = &tri->verts[vertex];
+				next[count] = cellHead[cell];
+				cellHead[cell] = count;
+				count++;
+			}
+		}
+		// the simple vertices take the weighted colour of the detailed ones around them
+		for ( index = 0, surf = s_worldData.surfaces ; index < s_worldData.numsurfaces ; index++, surf++ ) {
+			if ( surf->lodGroup != group || !surf->lodFar || *surf->data != SF_TRIANGLES ) {
+				continue;
+			}
+			tri = (srfTriangles_t *)surf->data;
+			for ( vertex = 0 ; vertex < tri->numVerts ; vertex++ ) {
+				drawVert_t	*target = &tri->verts[vertex];
+				float		sum[4] = { 0, 0, 0, 0 }, weightSum = 0, nearest = 1e9f;
+				drawVert_t	*closest = NULL;
+				int			dx, dy, dz, channel;
+
+				for ( dx = -1 ; dx <= 1 ; dx++ ) {
+					for ( dy = -1 ; dy <= 1 ; dy++ ) {
+						for ( dz = -1 ; dz <= 1 ; dz++ ) {
+							vec3_t	probe;
+							int		item;
+
+							probe[0] = target->xyz[0] + dx * LOD_COLOR_RADIUS;
+							probe[1] = target->xyz[1] + dy * LOD_COLOR_RADIUS;
+							probe[2] = target->xyz[2] + dz * LOD_COLOR_RADIUS;
+							for ( item = cellHead[R_LodColorCell( probe )] ; item >= 0 ; item = next[item] ) {
+								float	distance = Distance( nearVerts[item]->xyz, target->xyz );
+								float	weight;
+
+								if ( distance < nearest ) {
+									nearest = distance;
+									closest = nearVerts[item];
+								}
+								if ( distance >= LOD_COLOR_RADIUS ) {
+									continue;
+								}
+								weight = 1 - distance / LOD_COLOR_RADIUS;
+								for ( channel = 0 ; channel < 4 ; channel++ ) {
+									sum[channel] += weight * nearVerts[item]->color[channel];
+								}
+								weightSum += weight;
+							}
+						}
+					}
+				}
+				if ( weightSum > 0 ) {
+					for ( channel = 0 ; channel < 4 ; channel++ ) {
+						target->color[channel] = (byte)( sum[channel] / weightSum + 0.5f );
+					}
+					changed++;
+				} else if ( closest ) {
+					*(int *)target->color = *(int *)closest->color;
+					changed++;
+				}
+			}
+		}
+		ri.Hunk_FreeTempMemory( nearVerts );
+		ri.Hunk_FreeTempMemory( next );
+		ri.Hunk_FreeTempMemory( cellHead );
+	}
+	if ( changed ) {
+		ri.Printf( PRINT_ALL, "%i vertices of simple models lit from the detailed ones\n", changed );
+	}
+}
+
 static	void R_LoadSurfaces( lump_t *surfs, lump_t *verts, lump_t *indexLump ) {
 	dsurface_t	*in;
 	msurface_t	*out;
@@ -2102,6 +2222,7 @@ void RE_LoadWorldMap( const char *name ) {
 	R_LoadSurfaces( &header->lumps[LUMP_SURFACES], &header->lumps[LUMP_DRAWVERTS], &header->lumps[LUMP_DRAWINDEXES] );
 	R_LoadMarksurfaces (&header->lumps[LUMP_LEAFSURFACES]);
 	R_FindLodGroups();
+	R_SmoothLodColors();
 	R_MergeWorldFaces();
 	R_LoadNodesAndLeafs (&header->lumps[LUMP_NODES], &header->lumps[LUMP_LEAFS]);
 	R_LoadSubmodels (&header->lumps[LUMP_MODELS]);

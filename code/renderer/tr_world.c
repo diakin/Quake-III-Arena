@@ -326,7 +326,6 @@ static qboolean R_SurfaceBeyond( surfaceType_t *data, float distance ) {
 // WALKER: which detail levels of each model group this view draws (both in the band)
 static byte	lodGroupDraw[MAX_LOD_GROUPS][2];
 
-#define	LOD_BAND	400		// must match the band of deformVertexes lodshift (make_map_islands.py)
 
 static void R_AddWorldSurface( msurface_t *surf, int dlightBits ) {
 	if ( surf->viewCount == tr.viewCount ) {
@@ -743,8 +742,10 @@ void R_AddWorldSurfaces (void) {
 		float	nearest, farthest, low, high, nearEdge, farEdge;
 		float	*bounds0, *bounds1, *eye = tr.viewParms.or.origin;
 
-		nearEdge = r_lodDistance->value - LOD_BAND * 0.5f;
-		farEdge = r_lodDistance->value + LOD_BAND * 0.5f;
+		float	band = r_lodBand->value < 1 ? 1 : r_lodBand->value;
+
+		nearEdge = r_lodDistance->value - band * 0.5f;
+		farEdge = r_lodDistance->value + band * 0.5f;
 		for ( group = 0 ; group < tr.world->numLodGroups ; group++ ) {
 			bounds0 = tr.world->lodBounds[group][0];
 			bounds1 = tr.world->lodBounds[group][1];

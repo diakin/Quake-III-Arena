@@ -1842,7 +1842,7 @@ PROP_MATERIALS = ['rock', 'rockmoss', 'concrete', 'concrete_dark', 'concrete_bro
                   'container_red', 'container_blue', 'container_orange']
 
 
-LOD_BAND = 400        # ширина полосы смешивания уровней (как LOD_BAND в renderer/tr_world.c)
+LOD_BAND = 700        # ширина полосы смешивания; движок берёт её из r_lodBand, число в шейдере — справка
 LOD_SHIFT = 10        # на сколько единиц отодвигается уровень, который уходит
 
 

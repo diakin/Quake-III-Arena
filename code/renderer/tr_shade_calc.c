@@ -548,18 +548,16 @@ between the details come out of the simple shape gradually, without a jump.
 */
 void R_LodShiftPoint( const deformStage_t *ds, const vec3_t eye, const float *in, float *out ) {
 	float	distance, fraction, shift;
+	float	band = r_lodBand->value < 1 ? 1 : r_lodBand->value;	// the same band as tr_world.c
 	vec3_t	delta;
 
 	VectorCopy( in, out );
-	if ( ds->bulgeWidth <= 0 ) {
-		return;
-	}
 	VectorSubtract( in, eye, delta );
 	distance = VectorLength( delta );
 	if ( distance < 1 ) {
 		return;
 	}
-	fraction = ( distance - ( r_lodDistance->value - ds->bulgeWidth * 0.5f ) ) / ds->bulgeWidth;
+	fraction = ( distance - ( r_lodDistance->value - band * 0.5f ) ) / band;
 	fraction = fraction < 0 ? 0 : ( fraction > 1 ? 1 : fraction );
 	shift = ds->bulgeHeight * ( ds->moveVector[0] ? 1 - fraction : fraction );
 	VectorMA( in, shift / distance, delta, out );
