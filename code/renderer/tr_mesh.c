@@ -217,6 +217,11 @@ int R_ComputeLOD( trRefEntity_t *ent ) {
 	}
 
 	lod += r_lodbias->integer;
+
+	// WALKER: in the water reflection one detail level down (the ripples blur it anyway)
+	if ( tr.viewParms.isPortal ) {
+		lod++;
+	}
 	
 	if ( lod >= tr.currentModel->numLods )
 		lod = tr.currentModel->numLods - 1;
@@ -265,6 +270,38 @@ int R_ComputeFogNum( md3Header_t *header, trRefEntity_t *ent ) {
 
 /*
 =================
+R_MD3SurfaceShader
+=================
+*/
+static shader_t *R_MD3SurfaceShader( trRefEntity_t *ent, md3Surface_t *surface ) {
+	shader_t	*shader;
+	md3Shader_t	*md3Shader;
+	skin_t		*skin;
+	int			j;
+
+	if ( ent->e.customShader ) {
+		return R_GetShaderByHandle( ent->e.customShader );
+	}
+	if ( ent->e.customSkin > 0 && ent->e.customSkin < tr.numSkins ) {
+		skin = R_GetSkinByHandle( ent->e.customSkin );
+		shader = tr.defaultShader;
+		for ( j = 0 ; j < skin->numSurfaces ; j++ ) {
+			if ( !strcmp( skin->surfaces[j]->name, surface->name ) ) {
+				return skin->surfaces[j]->shader;
+			}
+		}
+		return shader;
+	}
+	if ( surface->numShaders <= 0 ) {
+		return tr.defaultShader;
+	}
+	md3Shader = (md3Shader_t *)( (byte *)surface + surface->ofsShaders );
+	md3Shader += ent->e.skinNum % surface->numShaders;
+	return tr.shaders[ md3Shader->shaderIndex ];
+}
+
+/*
+=================
 R_AddMD3Surfaces
 
 =================
@@ -276,9 +313,10 @@ void R_AddMD3Surfaces( trRefEntity_t *ent ) {
 	md3Shader_t		*md3Shader = 0;
 	shader_t		*shader = 0;
 	int				cull;
-	int				lod;
+	int				lod, shadowLod;
 	int				fogNum;
-	qboolean		personalModel;
+	qboolean		personalModel, addShadows;
+	md3Header_t		*shadowHeader;
 
 	// don't add third_person objects if not in a portal
 	personalModel = (ent->e.renderfx & RF_THIRD_PERSON) && !tr.viewParms.isPortal;
@@ -333,6 +371,38 @@ void R_AddMD3Surfaces( trRefEntity_t *ent ) {
 	//
 	fogNum = R_ComputeFogNum( header, ent );
 
+	// stencil shadow volumes (the shadows of the robots)
+	// stencil shadows can't do personal models unless I polyhedron clip
+	// WALKER: the map-wide haze (fog volume without a visible surface) no longer
+	// switches the shadows of the models inside it off
+	// WALKER: no shadow volumes in the water reflection (drawn twice otherwise)
+	addShadows = !personalModel
+		&& !tr.viewParms.isPortal
+		&& r_shadows->integer == 2
+		&& ( fogNum == 0 || !tr.world || !tr.world->fogs[fogNum].hasSurface )
+		&& !( ent->e.renderfx & ( RF_NOSHADOW | RF_DEPTHHACK ) );
+
+	// WALKER: the shadow volume is built from a model two detail levels down (about a
+	// quarter of the triangles): every frame the CPU animates the vertexes again and
+	// finds the silhouette, and the full model gives no better shadow
+	shadowLod = lod + 2;
+	if ( shadowLod > tr.currentModel->numLods - 1 ) {
+		shadowLod = tr.currentModel->numLods - 1;
+	}
+	shadowHeader = tr.currentModel->md3[shadowLod];
+	if ( !shadowHeader || shadowHeader->numFrames != tr.currentModel->md3[0]->numFrames ) {
+		shadowHeader = header;
+	}
+	if ( addShadows ) {
+		surface = (md3Surface_t *)( (byte *)shadowHeader + shadowHeader->ofsSurfaces );
+		for ( i = 0 ; i < shadowHeader->numSurfaces ; i++ ) {
+			if ( R_MD3SurfaceShader( ent, surface )->sort == SS_OPAQUE ) {
+				R_AddDrawSurf( (void *)surface, tr.shadowShader, 0, qfalse );
+			}
+			surface = (md3Surface_t *)( (byte *)surface + surface->ofsEnd );
+		}
+	}
+
 	//
 	// draw all surfaces
 	//
@@ -370,21 +440,6 @@ void R_AddMD3Surfaces( trRefEntity_t *ent ) {
 			shader = tr.shaders[ md3Shader->shaderIndex ];
 		}
 
-
-		// we will add shadows even if the main object isn't visible in the view
-
-		// stencil shadows can't do personal models unless I polyhedron clip
-		// WALKER: the map-wide haze (fog volume without a visible surface) no longer
-		// switches the shadows of the models inside it off
-		// WALKER: no shadow volumes in the water reflection (drawn twice otherwise)
-		if ( !personalModel
-			&& !tr.viewParms.isPortal
-			&& r_shadows->integer == 2 
-			&& ( fogNum == 0 || !tr.world || !tr.world->fogs[fogNum].hasSurface )
-			&& !(ent->e.renderfx & ( RF_NOSHADOW | RF_DEPTHHACK ) ) 
-			&& shader->sort == SS_OPAQUE ) {
-			R_AddDrawSurf( (void *)surface, tr.shadowShader, 0, qfalse );
-		}
 
 		// projection shadows work fine with personal models
 		if ( r_shadows->integer == 3
