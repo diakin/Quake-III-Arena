@@ -174,7 +174,8 @@ typedef enum {
 	DEFORM_TEXT4,
 	DEFORM_TEXT5,
 	DEFORM_TEXT6,
-	DEFORM_TEXT7
+	DEFORM_TEXT7,
+	DEFORM_LODSHIFT		// WALKER: models in two detail levels, see RB_CalcLodShift
 } deform_t;
 
 typedef enum {
@@ -1412,6 +1413,7 @@ void R_LoadSunCasters( const char *bspName );
 qboolean R_SunShadowsActive( void );
 qboolean RB_SunShadowVolumes( drawSurf_t *drawSurfs, int numDrawSurfs );
 void R_WorldSurfaceBounds( surfaceType_t *data, vec3_t mins, vec3_t maxs );
+void R_LodShiftPoint( const deformStage_t *ds, const vec3_t eye, const float *in, float *out );
 void RB_ProjectionShadowDeform( void );
 
 /*

@@ -1135,6 +1135,18 @@ static void ParseDeform( char **text ) {
 		return;
 	}
 
+	// WALKER: deformVertexes lodshift <band> <depth> near|far
+	if ( !Q_stricmp( token, "lodshift" ) ) {
+		token = COM_ParseExt( text, qfalse );
+		ds->bulgeWidth = atof( token );			// width of the transition band
+		token = COM_ParseExt( text, qfalse );
+		ds->bulgeHeight = atof( token );		// how far a level is pushed back
+		token = COM_ParseExt( text, qfalse );
+		ds->moveVector[0] = !Q_stricmp( token, "far" ) ? 1 : 0;
+		ds->deformation = DEFORM_LODSHIFT;
+		return;
+	}
+
 	if ( !Q_stricmp( token, "bulge" ) )	{
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )

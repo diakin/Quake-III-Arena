@@ -323,7 +323,10 @@ static qboolean R_SurfaceBeyond( surfaceType_t *data, float distance ) {
 	}
 }
 
-static byte	lodGroupFar[MAX_LOD_GROUPS];		// WALKER: this view uses the far level
+// WALKER: which detail levels of each model group this view draws (both in the band)
+static byte	lodGroupDraw[MAX_LOD_GROUPS][2];
+
+#define	LOD_BAND	400		// must match the band of deformVertexes lodshift (make_map_islands.py)
 
 static void R_AddWorldSurface( msurface_t *surf, int dlightBits ) {
 	if ( surf->viewCount == tr.viewCount ) {
@@ -333,7 +336,7 @@ static void R_AddWorldSurface( msurface_t *surf, int dlightBits ) {
 	surf->viewCount = tr.viewCount;
 
 	// WALKER: models in two detail levels: only the level chosen for this view
-	if ( surf->lodGroup >= 0 && surf->lodFar != lodGroupFar[surf->lodGroup] ) {
+	if ( surf->lodGroup >= 0 && !lodGroupDraw[surf->lodGroup][surf->lodFar] ) {
 		return;
 	}
 
@@ -730,25 +733,36 @@ void R_AddWorldSurfaces (void) {
 	tr.currentEntityNum = ENTITYNUM_WORLD;
 	tr.shiftedEntityNum = tr.currentEntityNum << QSORT_ENTITYNUM_SHIFT;
 
-	// WALKER: detail level of each model group for this view: far beyond r_lodDistance
-	// from the group bounds, and always in the water reflection
+	// WALKER: detail levels of each model group for this view. The detailed level is drawn
+	// while the nearest point of the group is closer than the far edge of the band around
+	// r_lodDistance, the simple one while the farthest point is beyond its near edge; in the
+	// band the vertices are pushed back (deformVertexes lodshift) so that the levels blend.
+	// The water reflection uses the simple level only.
 	{
 		int		group, axis;
-		float	distance, delta;
+		float	nearest, farthest, low, high, nearEdge, farEdge;
+		float	*bounds0, *bounds1, *eye = tr.viewParms.or.origin;
 
+		nearEdge = r_lodDistance->value - LOD_BAND * 0.5f;
+		farEdge = r_lodDistance->value + LOD_BAND * 0.5f;
 		for ( group = 0 ; group < tr.world->numLodGroups ; group++ ) {
-			distance = 0;
+			bounds0 = tr.world->lodBounds[group][0];
+			bounds1 = tr.world->lodBounds[group][1];
+			nearest = farthest = 0;
 			for ( axis = 0 ; axis < 3 ; axis++ ) {
-				delta = 0;
-				if ( tr.viewParms.or.origin[axis] < tr.world->lodBounds[group][0][axis] ) {
-					delta = tr.world->lodBounds[group][0][axis] - tr.viewParms.or.origin[axis];
-				} else if ( tr.viewParms.or.origin[axis] > tr.world->lodBounds[group][1][axis] ) {
-					delta = tr.viewParms.or.origin[axis] - tr.world->lodBounds[group][1][axis];
+				low = bounds0[axis] - eye[axis];
+				high = eye[axis] - bounds1[axis];
+				if ( low > 0 ) {
+					nearest += low * low;
+				} else if ( high > 0 ) {
+					nearest += high * high;
 				}
-				distance += delta * delta;
+				low = fabs( eye[axis] - bounds0[axis] );
+				high = fabs( eye[axis] - bounds1[axis] );
+				farthest += low > high ? low * low : high * high;
 			}
-			lodGroupFar[group] = tr.viewParms.isPortal
-				|| distance > r_lodDistance->value * r_lodDistance->value;
+			lodGroupDraw[group][0] = !tr.viewParms.isPortal && nearest < farEdge * farEdge;
+			lodGroupDraw[group][1] = tr.viewParms.isPortal || farthest > nearEdge * nearEdge;
 		}
 	}
 

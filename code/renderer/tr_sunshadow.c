@@ -436,6 +436,16 @@ static int RB_CollectAwayTriangles( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 			if ( numVerts + triangles->numAwayIndexes > maxAwayVerts ) {
 				continue;
 			}
+			// models in two detail levels are drawn moved (deformVertexes lodshift): the
+			// same move here, or the depth test of this pass misses them
+			if ( shader->numDeforms && shader->deforms[0].deformation == DEFORM_LODSHIFT ) {
+				for ( tri = 0 ; tri < triangles->numAwayIndexes ; tri++ ) {
+					R_LodShiftPoint( &shader->deforms[0], backEnd.viewParms.or.origin,
+						triangles->verts[triangles->awayIndexes[tri]].xyz, awayVerts[numVerts] );
+					numVerts++;
+				}
+				continue;
+			}
 			for ( tri = 0 ; tri < triangles->numAwayIndexes ; tri++ ) {
 				VectorCopy( triangles->verts[triangles->awayIndexes[tri]].xyz, awayVerts[numVerts] );
 				numVerts++;

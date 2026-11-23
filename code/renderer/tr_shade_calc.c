@@ -535,6 +535,49 @@ RB_DeformTessGeometry
 
 =====================
 */
+/*
+========================
+RB_CalcLodShift
+
+WALKER: a model built in two detail levels; in the band around r_lodDistance both are
+drawn, and each vertex is pushed away from the camera: the detailed level by
+depth * fraction, the simple one by depth * (1 - fraction), where fraction goes from 0 to 1
+across the band. Closer the detailed surface is in front, farther the simple one, and in
+between the details come out of the simple shape gradually, without a jump.
+========================
+*/
+void R_LodShiftPoint( const deformStage_t *ds, const vec3_t eye, const float *in, float *out ) {
+	float	distance, fraction, shift;
+	vec3_t	delta;
+
+	VectorCopy( in, out );
+	if ( ds->bulgeWidth <= 0 ) {
+		return;
+	}
+	VectorSubtract( in, eye, delta );
+	distance = VectorLength( delta );
+	if ( distance < 1 ) {
+		return;
+	}
+	fraction = ( distance - ( r_lodDistance->value - ds->bulgeWidth * 0.5f ) ) / ds->bulgeWidth;
+	fraction = fraction < 0 ? 0 : ( fraction > 1 ? 1 : fraction );
+	shift = ds->bulgeHeight * ( ds->moveVector[0] ? 1 - fraction : fraction );
+	VectorMA( in, shift / distance, delta, out );
+}
+
+static void RB_CalcLodShift( deformStage_t *ds ) {
+	int		index;
+	float	*xyz = ( float * ) tess.xyz;
+	vec3_t	moved;
+
+	// the eye of the view, as in RB_CollectAwayTriangles (the same numbers there give
+	// the same depth for the sun shadow pass)
+	for ( index = 0 ; index < tess.numVertexes ; index++, xyz += 4 ) {
+		R_LodShiftPoint( ds, backEnd.viewParms.or.origin, xyz, moved );
+		VectorCopy( moved, xyz );
+	}
+}
+
 void RB_DeformTessGeometry( void ) {
 	int		i;
 	deformStage_t	*ds;
@@ -553,6 +596,9 @@ void RB_DeformTessGeometry( void ) {
 			break;
 		case DEFORM_BULGE:
 			RB_CalcBulgeVertexes( ds );
+			break;
+		case DEFORM_LODSHIFT:
+			RB_CalcLodShift( ds );
 			break;
 		case DEFORM_MOVE:
 			RB_CalcMoveVertexes( ds );

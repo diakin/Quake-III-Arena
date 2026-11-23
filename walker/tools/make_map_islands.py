@@ -1842,6 +1842,10 @@ PROP_MATERIALS = ['rock', 'rockmoss', 'concrete', 'concrete_dark', 'concrete_bro
                   'container_red', 'container_blue', 'container_orange']
 
 
+LOD_BAND = 400        # ширина полосы смешивания уровней (как LOD_BAND в renderer/tr_world.c)
+LOD_SHIFT = 10        # на сколько единиц отодвигается уровень, который уходит
+
+
 def vertex_lit_shaders():
     """шейдеры моделей (misc_model): освещение по вершинам от q3map и общий крупный рисунок.
     Материалы двух детализаций (<материал>_lodNNn/f) — та же текстура; дальняя не отбрасывает
@@ -1853,7 +1857,15 @@ def vertex_lit_shaders():
     names = list(PROP_MATERIALS) + sorted(name for name in used if name not in PROP_MATERIALS)
     for name in names:
         texture = props.base_material(name)
-        extra = '\tsurfaceparm trans\n' if name.endswith('f') and texture != name else ''
+        extra = ''
+        if texture != name:
+            # два уровня детализации: в полосе LOD_BAND вокруг r_lodDistance рисуются оба, и
+            # вершины отодвигаются от камеры (deformVertexes lodshift, tr_shade_calc.c):
+            # ближе вперёд выходит подробный, дальше — простой; дальний не отбрасывает тень в q3map
+            far = name.endswith('f')
+            extra = f'\tdeformVertexes lodshift {LOD_BAND} {LOD_SHIFT} {"far" if far else "near"}\n'
+            if far:
+                extra += '\tsurfaceparm trans\n'
         blocks.append(f"""textures/walker/v_{name}
 {{
 	qer_editorimage textures/walker/{texture}.tga
