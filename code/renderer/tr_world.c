@@ -323,12 +323,29 @@ static qboolean R_SurfaceBeyond( surfaceType_t *data, float distance ) {
 	}
 }
 
+static byte	lodGroupFar[MAX_LOD_GROUPS];		// WALKER: this view uses the far level
+
 static void R_AddWorldSurface( msurface_t *surf, int dlightBits ) {
 	if ( surf->viewCount == tr.viewCount ) {
 		return;		// already in this view
 	}
 
 	surf->viewCount = tr.viewCount;
+
+	// WALKER: models in two detail levels: only the level chosen for this view
+	if ( surf->lodGroup >= 0 && surf->lodFar != lodGroupFar[surf->lodGroup] ) {
+		return;
+	}
+
+	// WALKER: the water reflection: surfaces wholly below the water are not seen
+	if ( tr.viewParms.isPortal && !surf->shader->isSky ) {
+		vec3_t	mins, maxs;
+
+		R_WorldSurfaceBounds( surf->data, mins, maxs );
+		if ( mins[0] <= maxs[0] && BoxOnPlaneSide( mins, maxs, &tr.viewParms.portalPlane ) == 2 ) {
+			return;
+		}
+	}
 
 	// WALKER: the water reflection keeps only the near part of the world (and the sky)
 	if ( tr.viewParms.isPortal && r_mirrorDistance->value > 0 && !surf->shader->isSky
@@ -454,6 +471,17 @@ static void R_RecursiveWorldNode( mnode_t *node, int planeBits, int dlightBits )
 				}
 				if ( r == 1 ) {
 					planeBits &= ~8;			// all descendants will also be in front
+				}
+			}
+
+			// WALKER: in the water reflection nothing below the water surface is seen
+			if ( planeBits & 16 ) {
+				r = BoxOnPlaneSide(node->mins, node->maxs, &tr.viewParms.portalPlane);
+				if (r == 2) {
+					return;						// culled
+				}
+				if ( r == 1 ) {
+					planeBits &= ~16;
 				}
 			}
 
@@ -702,6 +730,28 @@ void R_AddWorldSurfaces (void) {
 	tr.currentEntityNum = ENTITYNUM_WORLD;
 	tr.shiftedEntityNum = tr.currentEntityNum << QSORT_ENTITYNUM_SHIFT;
 
+	// WALKER: detail level of each model group for this view: far beyond r_lodDistance
+	// from the group bounds, and always in the water reflection
+	{
+		int		group, axis;
+		float	distance, delta;
+
+		for ( group = 0 ; group < tr.world->numLodGroups ; group++ ) {
+			distance = 0;
+			for ( axis = 0 ; axis < 3 ; axis++ ) {
+				delta = 0;
+				if ( tr.viewParms.or.origin[axis] < tr.world->lodBounds[group][0][axis] ) {
+					delta = tr.world->lodBounds[group][0][axis] - tr.viewParms.or.origin[axis];
+				} else if ( tr.viewParms.or.origin[axis] > tr.world->lodBounds[group][1][axis] ) {
+					delta = tr.viewParms.or.origin[axis] - tr.world->lodBounds[group][1][axis];
+				}
+				distance += delta * delta;
+			}
+			lodGroupFar[group] = tr.viewParms.isPortal
+				|| distance > r_lodDistance->value * r_lodDistance->value;
+		}
+	}
+
 	// determine which leaves are in the PVS / areamask
 	R_MarkLeaves ();
 
@@ -712,5 +762,5 @@ void R_AddWorldSurfaces (void) {
 	if ( tr.refdef.num_dlights > 32 ) {
 		tr.refdef.num_dlights = 32 ;
 	}
-	R_RecursiveWorldNode( tr.world->nodes, 15, ( 1 << tr.refdef.num_dlights ) - 1 );
+	R_RecursiveWorldNode( tr.world->nodes, tr.viewParms.isPortal ? 31 : 15, ( 1 << tr.refdef.num_dlights ) - 1 );
 }

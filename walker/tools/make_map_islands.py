@@ -1121,7 +1121,7 @@ def broken_wall(x0, y0, x1, y1, z_base, height, thickness=16, seed=0, side='conc
     и невидимые блоки коллизии под изломом."""
     thickness = max(thickness, 20) if height > 70 else thickness
     mesh, clips = props.ruined_wall((x0, y0), (x1, y1), z_base, height, thickness, seed, height > 70, side)
-    props.add_prop(f'wall_{seed}', mesh)
+    props.add_lod_prop(f'wall_{seed}', mesh, mesh.far)
     # блоки коллизии на 3 единицы тоньше и на 6 ниже модели: вершины модели не лежат на них
     # (иначе q3map считает их в тени)
     inner = thickness / 2 - 3
@@ -1687,14 +1687,22 @@ PROP_MATERIALS = ['rock', 'rockmoss', 'concrete', 'concrete_dark', 'concrete_bro
 
 
 def vertex_lit_shaders():
-    """шейдеры моделей (misc_model): освещение по вершинам от q3map и общий крупный рисунок."""
+    """шейдеры моделей (misc_model): освещение по вершинам от q3map и общий крупный рисунок.
+    Материалы двух детализаций (<материал>_lodNNn/f) — та же текстура; дальняя не отбрасывает
+    тень в q3map (surfaceparm trans)."""
     blocks = []
-    for name in PROP_MATERIALS:
+    used = set()
+    for _, _, mesh in props.PROPS:
+        used.update(mesh.parts)
+    names = list(PROP_MATERIALS) + sorted(name for name in used if name not in PROP_MATERIALS)
+    for name in names:
+        texture = props.base_material(name)
+        extra = '\tsurfaceparm trans\n' if name.endswith('f') and texture != name else ''
         blocks.append(f"""textures/walker/v_{name}
 {{
-	qer_editorimage textures/walker/{name}.tga
-	{{
-		map textures/walker/{name}.jpg
+	qer_editorimage textures/walker/{texture}.tga
+{extra}	{{
+		map textures/walker/{texture}.jpg
 		rgbGen exactVertex
 	}}
 	{{

@@ -14,6 +14,7 @@
   shipping_container контейнер с гофрой, дверями с запорами, рамой и угловыми фитингами
   beam, ladder, railing, pipe, lattice_mast, x_braces — детали ферм, башен и платформ
 """
+import re
 import math, os, struct
 import numpy as np
 
@@ -602,6 +603,24 @@ def ruined_wall(start, end, base_z, height, thickness, seed, windows=True, mater
             remap = np.full(len(points), -1)
             remap[used] = np.arange(len(used))
             mesh.add(part_material, points[used], normals[used], remap[chosen])
+    # дальняя детализация: то же тело (с вырезами и сколами) на сетке вдвое крупнее, без
+    # неровностей излома и арматуры, упрощение грубее
+    far_mesh = Mesh()
+    far_points, far_normals, far_faces = rounded_surface(inside[::2, ::2, ::2], step * 2, 2.0, 2.0, error=0.8, max_edge=48)
+    far_points += np.array([us[0], vs[0], zs[0]])
+    far_cell = np.clip(np.round((far_points[far_faces].mean(axis=1) - np.array([us[0], vs[0], zs[0]])) / step).astype(int),
+                       0, np.array(inside.shape) - 1)
+    far_broken = broken_weight[far_cell[:, 0], far_cell[:, 1], far_cell[:, 2]] > 0.35
+    world = start + np.outer(far_points[:, 0], along) + np.outer(far_points[:, 1], across) + np.outer(far_points[:, 2], [0, 0, 1])
+    world_normals = np.outer(far_normals[:, 0], along) + np.outer(far_normals[:, 1], across) + np.outer(far_normals[:, 2], [0, 0, 1])
+    for part_material, selected in ((material, ~far_broken), ('concrete_broken', far_broken)):
+        if np.any(selected):
+            chosen = far_faces[selected]
+            used = np.unique(chosen)
+            remap = np.full(len(world), -1)
+            remap[used] = np.arange(len(used))
+            far_mesh.add(part_material, world[used], world_normals[used], remap[chosen])
+    mesh.far = far_mesh
     # арматура: вертикальные стержни у обеих граней внутри стены, видны только концы,
     # выходящие из излома на несколько единиц (часть загнута)
     for bar_u in np.arange(7, length - 4, 14):
@@ -826,7 +845,7 @@ def write_md3(path, mesh, origin, shader_prefix):
         if not mesh.parts[material][0]:
             continue
         positions, normals, faces = mesh.arrays(material)
-        tile = TILE.get(material, 128)
+        tile = TILE.get(base_material(material), 128)
         for chunk_positions, chunk_normals, chunk_faces in split_surfaces(positions, normals, faces):
             uv = project_uv(chunk_positions, chunk_normals, tile, origin)
             surfaces.append((material, chunk_positions, chunk_normals, uv, chunk_faces))
@@ -894,6 +913,30 @@ def write_casters(path):
     with open(path, 'w', encoding='ascii', newline='\n') as file:
         file.write('\n'.join(lines) + '\n')
     return counts
+
+
+# Две детализации модели: ближняя (подробная) и дальняя (простая). Материалы получают
+# суффикс группы: <материал>_lodNNn / _lodNNf; движок (tr_world.c) рисует ближние вблизи,
+# дальние — дальше r_lodDistance от границ всей группы (без щелей между частями) и всегда
+# в отражении воды. Дальняя в q3map тень не отбрасывает (surfaceparm trans).
+LOD_GROUPS = []
+
+
+def lod_material(material, group, far):
+    return f'{material}_lod{group:02d}{"f" if far else "n"}'
+
+
+def base_material(material):
+    return re.sub(r'_lod\d+[nf]$', '', material)
+
+
+def add_lod_prop(name, near, far):
+    group = len(LOD_GROUPS)
+    LOD_GROUPS.append(name)
+    for mesh, is_far in ((near, False), (far, True)):
+        mesh.parts = {lod_material(material, group, is_far): part for material, part in mesh.parts.items()}
+    add_prop(name, near)
+    add_prop(name + '_far', far)
 
 
 def add_prop(name, mesh):

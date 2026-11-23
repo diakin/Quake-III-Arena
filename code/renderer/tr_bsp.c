@@ -1224,6 +1224,73 @@ void R_MovePatchSurfacesToHunk(void) {
 R_LoadSurfaces
 ===============
 */
+/*
+=================
+R_FindLodGroups
+
+WALKER: models built in two detail levels have shaders named ..._lodNNn (near) and
+..._lodNNf (far). A whole group switches at once, by the distance to the bounds of all
+its surfaces, so the parts of one wall never show a gap or both levels.
+=================
+*/
+static void R_FindLodGroups( void ) {
+	int			index, length, group;
+	msurface_t	*surf;
+	const char	*name;
+	vec3_t		mins, maxs;
+
+	s_worldData.numLodGroups = 0;
+	for ( index = 0 ; index < MAX_LOD_GROUPS ; index++ ) {
+		ClearBounds( s_worldData.lodBounds[index][0], s_worldData.lodBounds[index][1] );
+	}
+	for ( index = 0, surf = s_worldData.surfaces ; index < s_worldData.numsurfaces ; index++, surf++ ) {
+		surf->lodGroup = -1;
+		surf->lodFar = 0;
+		name = surf->shader->name;
+		length = strlen( name );
+		if ( length < 8 || Q_strncmp( name + length - 7, "_lod", 4 )
+			|| name[length - 3] < '0' || name[length - 3] > '9' || name[length - 2] < '0' || name[length - 2] > '9'
+			|| ( name[length - 1] != 'n' && name[length - 1] != 'f' ) ) {
+			continue;
+		}
+		group = ( name[length - 3] - '0' ) * 10 + ( name[length - 2] - '0' );
+		surf->lodGroup = group;
+		surf->lodFar = ( name[length - 1] == 'f' );
+		R_WorldSurfaceBounds( surf->data, mins, maxs );
+		AddPointToBounds( mins, s_worldData.lodBounds[group][0], s_worldData.lodBounds[group][1] );
+		AddPointToBounds( maxs, s_worldData.lodBounds[group][0], s_worldData.lodBounds[group][1] );
+		if ( group + 1 > s_worldData.numLodGroups ) {
+			s_worldData.numLodGroups = group + 1;
+		}
+	}
+	if ( s_worldData.numLodGroups ) {
+		ri.Printf( PRINT_ALL, "%i model groups with two detail levels\n", s_worldData.numLodGroups );
+	}
+}
+
+/*
+=================
+R_WorldSurfaceBounds
+=================
+*/
+void R_WorldSurfaceBounds( surfaceType_t *data, vec3_t mins, vec3_t maxs ) {
+	int		index;
+
+	ClearBounds( mins, maxs );
+	if ( *data == SF_TRIANGLES ) {
+		VectorCopy( ( (srfTriangles_t *)data )->bounds[0], mins );
+		VectorCopy( ( (srfTriangles_t *)data )->bounds[1], maxs );
+	} else if ( *data == SF_FACE ) {
+		srfSurfaceFace_t	*face = (srfSurfaceFace_t *)data;
+		for ( index = 0 ; index < face->numPoints ; index++ ) {
+			AddPointToBounds( face->points[index], mins, maxs );
+		}
+	} else if ( *data == SF_GRID ) {
+		VectorCopy( ( (srfGridMesh_t *)data )->meshBounds[0], mins );
+		VectorCopy( ( (srfGridMesh_t *)data )->meshBounds[1], maxs );
+	}
+}
+
 static	void R_LoadSurfaces( lump_t *surfs, lump_t *verts, lump_t *indexLump ) {
 	dsurface_t	*in;
 	msurface_t	*out;
@@ -2033,6 +2100,7 @@ void RE_LoadWorldMap( const char *name ) {
 	R_LoadFogs( &header->lumps[LUMP_FOGS], &header->lumps[LUMP_BRUSHES], &header->lumps[LUMP_BRUSHSIDES] );
 	R_LoadSurfaces( &header->lumps[LUMP_SURFACES], &header->lumps[LUMP_DRAWVERTS], &header->lumps[LUMP_DRAWINDEXES] );
 	R_LoadMarksurfaces (&header->lumps[LUMP_LEAFSURFACES]);
+	R_FindLodGroups();
 	R_MergeWorldFaces();
 	R_LoadNodesAndLeafs (&header->lumps[LUMP_NODES], &header->lumps[LUMP_LEAFS]);
 	R_LoadSubmodels (&header->lumps[LUMP_MODELS]);

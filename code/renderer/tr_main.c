@@ -529,6 +529,38 @@ void R_SetupFrustum (void) {
 	VectorScale( tr.viewParms.or.axis[0], xs, tr.viewParms.frustum[3].normal );
 	VectorMA( tr.viewParms.frustum[3].normal, -xc, tr.viewParms.or.axis[2], tr.viewParms.frustum[3].normal );
 
+	// WALKER: the water reflection: the frustum covers only the screen rectangle with water
+	if ( tr.viewParms.portalRectValid ) {
+		float	tanX = tan( tr.viewParms.fovX / 180 * M_PI * 0.5f );
+		float	tanY = tan( tr.viewParms.fovY / 180 * M_PI * 0.5f );
+		float	*rect = tr.viewParms.portalRect;
+		float	edges[4][4];	// two screen points (x, y) on each edge
+		vec3_t	first, second, centre;
+		int		edge;
+
+		// screen direction (x right, y up): forward - x * tanX * left + y * tanY * up
+#define	SCREEN_DIR( out, sx, sy ) \
+		VectorScale( tr.viewParms.or.axis[0], 1, out ); \
+		VectorMA( out, -(sx) * tanX, tr.viewParms.or.axis[1], out ); \
+		VectorMA( out, (sy) * tanY, tr.viewParms.or.axis[2], out );
+
+		edges[0][0] = rect[0]; edges[0][1] = rect[1]; edges[0][2] = rect[0]; edges[0][3] = rect[3];
+		edges[1][0] = rect[2]; edges[1][1] = rect[1]; edges[1][2] = rect[2]; edges[1][3] = rect[3];
+		edges[2][0] = rect[0]; edges[2][1] = rect[1]; edges[2][2] = rect[2]; edges[2][3] = rect[1];
+		edges[3][0] = rect[0]; edges[3][1] = rect[3]; edges[3][2] = rect[2]; edges[3][3] = rect[3];
+		SCREEN_DIR( centre, ( rect[0] + rect[2] ) * 0.5f, ( rect[1] + rect[3] ) * 0.5f );
+		for ( edge = 0 ; edge < 4 ; edge++ ) {
+			SCREEN_DIR( first, edges[edge][0], edges[edge][1] );
+			SCREEN_DIR( second, edges[edge][2], edges[edge][3] );
+			CrossProduct( first, second, tr.viewParms.frustum[edge].normal );
+			VectorNormalize( tr.viewParms.frustum[edge].normal );
+			if ( DotProduct( tr.viewParms.frustum[edge].normal, centre ) < 0 ) {
+				VectorSubtract( vec3_origin, tr.viewParms.frustum[edge].normal, tr.viewParms.frustum[edge].normal );
+			}
+		}
+#undef SCREEN_DIR
+	}
+
 	for (i=0 ; i<4 ; i++) {
 		tr.viewParms.frustum[i].type = PLANE_NON_AXIAL;
 		tr.viewParms.frustum[i].dist = DotProduct (tr.viewParms.or.origin, tr.viewParms.frustum[i].normal);
@@ -912,6 +944,85 @@ R_MirrorViewBySurface
 Returns qtrue if another view has been rendered
 ========================
 */
+static qboolean	portalRectValid;		// WALKER: see R_SortDrawSurfs
+static float	portalRect[4];
+
+/*
+=================
+R_AddTriangleScreenRect
+
+WALKER: extends the normalized screen rectangle by a world triangle, clipped by the
+near plane (clip w >= 1)
+=================
+*/
+static void R_AddTriangleScreenRect( const float *pointA, const float *pointB, const float *pointC, float rect[4] ) {
+	vec4_t		input[3], output[6], eye;
+	const float	*points[3];
+	int			count, index, next, axis;
+	float		fraction;
+
+	points[0] = pointA; points[1] = pointB; points[2] = pointC;
+	for ( index = 0 ; index < 3 ; index++ ) {
+		R_TransformModelToClip( points[index], tr.viewParms.world.modelMatrix, tr.viewParms.projectionMatrix, eye, input[index] );
+	}
+	count = 0;
+	for ( index = 0 ; index < 3 ; index++ ) {
+		next = ( index + 1 ) % 3;
+		if ( input[index][3] >= 1 ) {
+			Vector4Copy( input[index], output[count] );
+			count++;
+		}
+		if ( ( input[index][3] >= 1 ) != ( input[next][3] >= 1 ) ) {
+			fraction = ( 1 - input[index][3] ) / ( input[next][3] - input[index][3] );
+			for ( axis = 0 ; axis < 4 ; axis++ ) {
+				output[count][axis] = input[index][axis] + fraction * ( input[next][axis] - input[index][axis] );
+			}
+			count++;
+		}
+	}
+	for ( index = 0 ; index < count ; index++ ) {
+		float	screenX = output[index][0] / output[index][3];
+		float	screenY = output[index][1] / output[index][3];
+
+		if ( screenX < rect[0] ) rect[0] = screenX;
+		if ( screenY < rect[1] ) rect[1] = screenY;
+		if ( screenX > rect[2] ) rect[2] = screenX;
+		if ( screenY > rect[3] ) rect[3] = screenY;
+	}
+}
+
+/*
+=================
+R_AddSurfaceScreenRect
+
+WALKER: qfalse for a surface type that is not handled (the whole screen is then used)
+=================
+*/
+static qboolean R_AddSurfaceScreenRect( surfaceType_t *data, float rect[4] ) {
+	int		index;
+
+	if ( *data == SF_FACE ) {
+		srfSurfaceFace_t	*face = (srfSurfaceFace_t *)data;
+		int					*indices = (int *)( (byte *)face + face->ofsIndices );
+
+		for ( index = 0 ; index + 2 < face->numIndices ; index += 3 ) {
+			R_AddTriangleScreenRect( face->points[indices[index]], face->points[indices[index + 1]],
+				face->points[indices[index + 2]], rect );
+		}
+		return qtrue;
+	}
+	if ( *data == SF_TRIANGLES ) {
+		srfTriangles_t	*tris = (srfTriangles_t *)data;
+
+		for ( index = 0 ; index + 2 < tris->numIndexes ; index += 3 ) {
+			R_AddTriangleScreenRect( tris->verts[tris->indexes[index]].xyz, tris->verts[tris->indexes[index + 1]].xyz,
+				tris->verts[tris->indexes[index + 2]].xyz, rect );
+		}
+		return qtrue;
+	}
+	return qfalse;
+}
+
 qboolean R_MirrorViewBySurface (drawSurf_t *drawSurf, int entityNum) {
 	vec4_t			clipDest[128];
 	viewParms_t		newParms;
@@ -947,6 +1058,8 @@ qboolean R_MirrorViewBySurface (drawSurf_t *drawSurf, int entityNum) {
 
 	VectorSubtract( vec3_origin, camera.axis[0], newParms.portalPlane.normal );
 	newParms.portalPlane.dist = DotProduct( camera.origin, newParms.portalPlane.normal );
+	newParms.portalPlane.type = PLANE_NON_AXIAL;		// WALKER: used for culling (tr_world.c)
+	SetPlaneSignbits( &newParms.portalPlane );
 	
 	R_MirrorVector (oldParms.or.axis[0], &surface, &camera, newParms.or.axis[0]);
 	R_MirrorVector (oldParms.or.axis[1], &surface, &camera, newParms.or.axis[1]);
@@ -963,6 +1076,11 @@ qboolean R_MirrorViewBySurface (drawSurf_t *drawSurf, int entityNum) {
 		newParms.fullViewportHeight = oldParms.viewportHeight;
 		newParms.viewportWidth = oldParms.viewportWidth * scale;
 		newParms.viewportHeight = oldParms.viewportHeight * scale;
+	}
+
+	newParms.portalRectValid = portalRectValid;
+	if ( portalRectValid ) {
+		Com_Memcpy( newParms.portalRect, portalRect, sizeof( portalRect ) );
 	}
 
 	// render the mirror view
@@ -1270,6 +1388,35 @@ void R_SortDrawSurfs( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 
 	// sort the drawsurfs by sort type, then orientation, then shader
 	qsortFast (drawSurfs, numDrawSurfs, sizeof(drawSurf_t) );
+
+	// WALKER: the screen rectangle of all visible water (portal) surfaces: one reflection
+	// view serves them all, and it is needed only inside this rectangle
+	portalRectValid = qfalse;
+	if ( !tr.viewParms.isPortal ) {
+		float		rect[4] = { 2, 2, -2, -2 };
+		qboolean	whole = qfalse;
+
+		for ( i = 0 ; i < numDrawSurfs && !whole ; i++ ) {
+			R_DecomposeSort( (drawSurfs+i)->sort, &entityNum, &shader, &fogNum, &dlighted );
+			if ( shader->sort > SS_PORTAL ) {
+				break;
+			}
+			if ( entityNum != ENTITYNUM_WORLD || !R_AddSurfaceScreenRect( drawSurfs[i].surface, rect ) ) {
+				whole = qtrue;
+			}
+		}
+		if ( !whole && rect[0] < rect[2] && rect[1] < rect[3] ) {
+			portalRect[0] = rect[0] - 0.01f < -1 ? -1 : rect[0] - 0.01f;
+			portalRect[1] = rect[1] - 0.01f < -1 ? -1 : rect[1] - 0.01f;
+			portalRect[2] = rect[2] + 0.01f > 1 ? 1 : rect[2] + 0.01f;
+			portalRect[3] = rect[3] + 0.01f > 1 ? 1 : rect[3] + 0.01f;
+			portalRectValid = portalRect[0] < portalRect[2] && portalRect[1] < portalRect[3];
+		}
+		if ( r_speeds->integer == 1 ) {
+			ri.Printf( PRINT_ALL, "reflection rect %s %.2f %.2f %.2f %.2f\n", portalRectValid ? "on" : "off",
+				portalRect[0], portalRect[1], portalRect[2], portalRect[3] );
+		}
+	}
 
 	// check for any pass through drawing, which
 	// may cause another view to be rendered first

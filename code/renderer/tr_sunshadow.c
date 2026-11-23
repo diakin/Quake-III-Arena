@@ -410,24 +410,35 @@ static int RB_CollectAwayTriangles( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 			}
 		} else if ( *surface == SF_TRIANGLES ) {
 			triangles = (srfTriangles_t *)surface;
-			if ( numVerts + triangles->numIndexes > maxAwayVerts ) {
+			// the away-facing triangles are found once and kept until the sun moves
+			if ( !triangles->awayIndexes || !VectorCompare( triangles->awaySunDirection, tr.sunDirection ) ) {
+				if ( !triangles->awayIndexes ) {
+					triangles->awayIndexes = ri.Hunk_Alloc( triangles->numIndexes * sizeof( int ), h_low );
+				}
+				triangles->numAwayIndexes = 0;
+				for ( tri = 0 ; tri < triangles->numIndexes ; tri += 3 ) {
+					a = triangles->verts[triangles->indexes[tri]].xyz;
+					b = triangles->verts[triangles->indexes[tri + 1]].xyz;
+					c = triangles->verts[triangles->indexes[tri + 2]].xyz;
+					VectorSubtract( b, a, edge1 );
+					VectorSubtract( c, a, edge2 );
+					CrossProduct( edge1, edge2, normal );
+					// Quake winding is clockwise: this normal points into the model
+					if ( DotProduct( normal, tr.sunDirection ) < 0 ) {
+						continue;
+					}
+					triangles->awayIndexes[triangles->numAwayIndexes++] = triangles->indexes[tri];
+					triangles->awayIndexes[triangles->numAwayIndexes++] = triangles->indexes[tri + 1];
+					triangles->awayIndexes[triangles->numAwayIndexes++] = triangles->indexes[tri + 2];
+				}
+				VectorCopy( tr.sunDirection, triangles->awaySunDirection );
+			}
+			if ( numVerts + triangles->numAwayIndexes > maxAwayVerts ) {
 				continue;
 			}
-			for ( tri = 0 ; tri < triangles->numIndexes ; tri += 3 ) {
-				a = triangles->verts[triangles->indexes[tri]].xyz;
-				b = triangles->verts[triangles->indexes[tri + 1]].xyz;
-				c = triangles->verts[triangles->indexes[tri + 2]].xyz;
-				VectorSubtract( b, a, edge1 );
-				VectorSubtract( c, a, edge2 );
-				CrossProduct( edge1, edge2, normal );
-				// Quake winding is clockwise: this normal points into the model
-				if ( DotProduct( normal, tr.sunDirection ) < 0 ) {
-					continue;
-				}
-				VectorCopy( a, awayVerts[numVerts] );
-				VectorCopy( b, awayVerts[numVerts + 1] );
-				VectorCopy( c, awayVerts[numVerts + 2] );
-				numVerts += 3;
+			for ( tri = 0 ; tri < triangles->numAwayIndexes ; tri++ ) {
+				VectorCopy( triangles->verts[triangles->awayIndexes[tri]].xyz, awayVerts[numVerts] );
+				numVerts++;
 			}
 		}
 	}

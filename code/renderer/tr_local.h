@@ -513,6 +513,11 @@ typedef struct {
 	// WALKER: a water reflection drawn at reduced size is stretched over this rectangle
 	qboolean	portalScaled;
 	int			fullViewportX, fullViewportY, fullViewportWidth, fullViewportHeight;
+	// WALKER: the water reflection is needed only where water is on the screen: frustum
+	// and scissor of the reflection view cover this rectangle (normalized -1..1, x right,
+	// y up) of the main view
+	qboolean	portalRectValid;
+	float		portalRect[4];		// x0, y0, x1, y1
 } viewParms_t;
 
 
@@ -638,6 +643,11 @@ typedef struct {
 
 	int				numVerts;
 	drawVert_t		*verts;
+
+	// WALKER: triangles facing away from the sun (tr_sunshadow.c), kept until the sun moves
+	int				*awayIndexes;
+	int				numAwayIndexes;
+	vec3_t			awaySunDirection;
 } srfTriangles_t;
 
 
@@ -666,7 +676,14 @@ typedef struct msurface_s {
 	int					fogIndex;
 
 	surfaceType_t		*data;			// any of srf*_t
+
+	// WALKER: models in two detail levels (shader name ends in _lodNNn / _lodNNf):
+	// group NN, near or far; -1 for other surfaces (tr_world.c, R_AddWorldSurface)
+	short				lodGroup;
+	short				lodFar;
 } msurface_t;
+
+#define	MAX_LOD_GROUPS	256
 
 
 
@@ -716,6 +733,9 @@ typedef struct {
 
 	int			numsurfaces;
 	msurface_t	*surfaces;
+
+	int			numLodGroups;			// WALKER: see msurface_t lodGroup
+	vec3_t		lodBounds[MAX_LOD_GROUPS][2];
 
 	int			nummarksurfaces;
 	msurface_t	**marksurfaces;
@@ -1086,6 +1106,7 @@ extern	cvar_t	*r_mirrorScale;
 extern	cvar_t	*r_mirrorDistance;
 extern	cvar_t	*r_mirrorEntities;
 extern	cvar_t	*r_sunShadows;		// WALKER: 0 off, 1 simple, 2 full
+extern	cvar_t	*r_lodDistance;		// WALKER: models switch to the far detail level beyond this
 extern	cvar_t	*r_portalOnly;
 
 extern	cvar_t	*r_subdivisions;
@@ -1388,6 +1409,7 @@ void RB_ShadowFinish( qboolean sunShadows );
 void R_LoadSunCasters( const char *bspName );
 qboolean R_SunShadowsActive( void );
 qboolean RB_SunShadowVolumes( drawSurf_t *drawSurfs, int numDrawSurfs );
+void R_WorldSurfaceBounds( surfaceType_t *data, vec3_t mins, vec3_t maxs );
 void RB_ProjectionShadowDeform( void );
 
 /*

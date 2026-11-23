@@ -125,6 +125,7 @@ cvar_t	*r_mirrorScale;
 cvar_t	*r_mirrorDistance;
 cvar_t	*r_mirrorEntities;
 cvar_t	*r_sunShadows;
+cvar_t	*r_lodDistance;
 cvar_t	*r_portalOnly;
 
 cvar_t	*r_subdivisions;
@@ -1011,6 +1012,9 @@ void R_Register( void )
 	// WALKER: sun shadows of the buildings, stencil shadow volumes (tr_sunshadow.c):
 	// 0 off, 1 simple (coarse shapes, for slow cards), 2 full
 	r_sunShadows = ri.Cvar_Get ("r_sunShadows", "2", CVAR_ARCHIVE);
+	// WALKER: models built in two detail levels (the ruined walls) use the far one
+	// beyond this distance from their bounds, and always in the water reflection
+	r_lodDistance = ri.Cvar_Get ("r_lodDistance", "900", CVAR_ARCHIVE);
 	r_shadows = ri.Cvar_Get( "cg_shadows", "1", 0 );
 
 	r_maxpolys = ri.Cvar_Get( "r_maxpolys", va("%d", MAX_POLYS), 0);

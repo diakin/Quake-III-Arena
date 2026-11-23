@@ -417,6 +417,16 @@ static void SetViewportAndScissor( void ) {
 	// set the window clipping
 	qglViewport( backEnd.viewParms.viewportX, backEnd.viewParms.viewportY, 
 		backEnd.viewParms.viewportWidth, backEnd.viewParms.viewportHeight );
+	// WALKER: the water reflection only where water is on the screen
+	if ( backEnd.viewParms.portalRectValid ) {
+		float	*rect = backEnd.viewParms.portalRect;
+		int		x0 = backEnd.viewParms.viewportX + (int)floor( ( rect[0] + 1 ) * 0.5f * backEnd.viewParms.viewportWidth ) - 2;
+		int		y0 = backEnd.viewParms.viewportY + (int)floor( ( rect[1] + 1 ) * 0.5f * backEnd.viewParms.viewportHeight ) - 2;
+		int		x1 = backEnd.viewParms.viewportX + (int)ceil( ( rect[2] + 1 ) * 0.5f * backEnd.viewParms.viewportWidth ) + 2;
+		int		y1 = backEnd.viewParms.viewportY + (int)ceil( ( rect[3] + 1 ) * 0.5f * backEnd.viewParms.viewportHeight ) + 2;
+		qglScissor( x0, y0, x1 - x0, y1 - y0 );
+		return;
+	}
 	qglScissor( backEnd.viewParms.viewportX, backEnd.viewParms.viewportY, 
 		backEnd.viewParms.viewportWidth, backEnd.viewParms.viewportHeight );
 }
