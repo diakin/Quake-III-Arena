@@ -21,7 +21,7 @@ import numpy as np
 MAX_EDGE = 28.0                 # грани крупнее разбиваются: освещение считается по вершинам
 SURFACE_VERTS = 900             # не больше вершин в одной поверхности (буфер движка 1000)
 PROPS = []                      # (имя, начало координат, Mesh)
-TILE = {'rock': 256, 'rockmoss': 256, 'container_red': 128, 'container_blue': 128,
+TILE = {'rock': 256, 'rockmoss': 256, 'container_red': 128, 'container_blue': 128, 'lamp_glass': 12,
         'container_orange': 128}  # единиц на повтор текстуры; остальные 128
 
 
@@ -769,6 +769,102 @@ def ladder(mesh, base, top_z, facing, width=10, material='metal_rust'):
         beam(mesh, material, np.array([base[0], base[1], z]) + out - side * width / 2,
              np.array([base[0], base[1], z]) + out + side * width / 2, 0.9)
         z += 10
+
+
+def lathe(mesh, material, center, profile, sides=12, cap_top=False, cap_bottom=False, cast=True):
+    """тело вращения вокруг вертикали через center: profile — (радиус, высота над center)
+    сверху вниз; нормали по касательной профиля (гладкие)."""
+    center = np.asarray(center, dtype=float)
+    profile = [(float(radius), float(height)) for radius, height in profile]
+    angles = np.linspace(0, 2 * math.pi, sides + 1)
+    positions, normals, faces = [], [], []
+    for index, (radius, height) in enumerate(profile):
+        before = profile[max(index - 1, 0)]
+        after = profile[min(index + 1, len(profile) - 1)]
+        # касательная (dr, dz) вниз по профилю; нормаль наружу: (dz', -dr') при обходе сверху вниз
+        tangent_r, tangent_z = after[0] - before[0], after[1] - before[1]
+        outward_r, outward_z = -tangent_z, tangent_r
+        length = math.hypot(outward_r, outward_z) or 1.0
+        outward_r, outward_z = outward_r / length, outward_z / length
+        for angle in angles:
+            direction = np.array([math.cos(angle), math.sin(angle), 0.0])
+            positions.append(center + direction * radius + np.array([0, 0, height]))
+            normal = direction * outward_r + np.array([0, 0, outward_z])
+            normals.append(normal / (np.linalg.norm(normal) + 1e-9))
+    columns = sides + 1
+    for row in range(len(profile) - 1):
+        for column in range(sides):
+            a = row * columns + column
+            b = a + 1
+            c = a + columns + 1
+            d = a + columns
+            faces += [(a, c, b), (a, d, c)]
+    mesh.add(material, positions, normals, faces)
+    if cast:
+        caster(positions, thin_level(2 * max(radius for radius, _ in profile)))
+    for enabled, (radius, height), sign in ((cap_top, profile[0], 1), (cap_bottom, profile[-1], -1)):
+        if enabled and radius > 0.01:
+            ring = [center + np.array([math.cos(angle) * radius, math.sin(angle) * radius, height]) for angle in angles[:-1]]
+            cap_faces = [(0, index + 1, index) if sign > 0 else (0, index, index + 1) for index in range(1, sides - 1)]
+            mesh.add(material, ring, [(0, 0, sign)] * len(ring), cap_faces)
+
+
+def caged_lamp(mesh, top):
+    """взрывозащищённый светильник (литой корпус сверху, стеклянный колпак в проволочной
+    решётке), подвешенный за точку top. Возвращает центр колпака — место источника света."""
+    top = np.asarray(top, dtype=float)
+    # корпус: кабельный ввод, литой купол с рёбрами, фланец
+    lathe(mesh, 'metal_panel', top, [(1.6, 0), (1.6, -2.2), (2.6, -2.6), (4.2, -4.4), (6.0, -7.0), (7.2, -9.2),
+                                     (8.4, -9.8), (8.4, -11.2), (7.4, -11.4)], 12, cap_top=True)
+    for index in range(8):
+        angle = 2 * math.pi * index / 8
+        direction = np.array([math.cos(angle), math.sin(angle), 0.0])
+        _caster_pause[0] += 1
+        beam(mesh, 'metal_panel', top + direction * 3.0 + [0, 0, -3.0], top + direction * 7.0 + [0, 0, -9.2], 0.9, 0.9)
+        _caster_pause[0] -= 1
+    # колпак (светится)
+    glass = [(7.0, -11.4), (7.5, -14.0), (7.6, -17.0), (7.1, -20.0), (5.8, -22.8), (3.6, -24.8), (0.01, -25.6)]
+    lathe(mesh, 'lamp_glass', top, glass, 12, cast=False)
+    # решётка: меридианы по колпаку с зазором и два кольца, сверху вниз
+    _caster_pause[0] += 1
+    cage = [(radius + 0.9, height) for radius, height in glass[:-1]] + [(1.6, -26.4)]
+    for index in range(8):
+        angle = 2 * math.pi * (index + 0.5) / 8
+        direction = np.array([math.cos(angle), math.sin(angle), 0.0])
+        points = [top + direction * radius + [0, 0, height] for radius, height in cage]
+        for first, second in zip(points, points[1:]):
+            beam(mesh, 'metal_panel', first, second, 0.6, 0.6)
+    for radius, height in ((8.5, -14.0), (8.0, -20.0)):
+        ring = [top + np.array([math.cos(2 * math.pi * k / 12) * radius, math.sin(2 * math.pi * k / 12) * radius, height]) for k in range(13)]
+        for first, second in zip(ring, ring[1:]):
+            beam(mesh, 'metal_panel', first, second, 0.6, 0.6)
+    _caster_pause[0] -= 1
+    return top + np.array([0, 0, -18.0])
+
+
+def lamp_post(base, top_z, arm_direction):
+    """мачта освещения: труба, траверса с двумя светильниками в решётке, красный
+    заградительный огонь сверху. Возвращает сетку и точки источников света."""
+    base = np.asarray(base, dtype=float)
+    arm = np.array([arm_direction[0], arm_direction[1], 0.0]); arm /= np.linalg.norm(arm)
+    mesh = Mesh()
+    box(mesh, 'metal_panel', base[0] - 7, base[1] - 7, base[2], base[0] + 7, base[1] + 7, base[2] + 3)
+    cylinder(mesh, 'metal_panel', base + [0, 0, 3], (base[0], base[1], top_z), 3.2, 10)
+    cylinder(mesh, 'metal_panel', base + [0, 0, 3], base + [0, 0, 12], 4.4, 10, radius_end=3.4)
+    arm_z = top_z - 8
+    lights = []
+    for side in (-1, 1):
+        end = np.array([base[0], base[1], arm_z]) + arm * side * 22
+        beam(mesh, 'metal_panel', (base[0], base[1], arm_z), end, 2.6, 2.6)
+        # подкос
+        beam(mesh, 'metal_panel', np.array([base[0], base[1], arm_z - 12]), end - arm * side * 6, 1.4, 1.4)
+        cylinder(mesh, 'metal_panel', end, end - [0, 0, 4], 1.2, 6, caps=False)
+        lights.append(caged_lamp(mesh, end - [0, 0, 4]))
+    # заградительный огонь
+    cap = np.array([base[0], base[1], top_z])
+    cylinder(mesh, 'metal_panel', cap, cap + [0, 0, 3], 3.8, 10)
+    lathe(mesh, 'beacon_red', cap + [0, 0, 3], [(0.01, 8.4), (1.6, 7.8), (2.7, 6.2), (3.1, 3.4), (3.0, 0)], 10, cast=False)
+    return mesh, lights
 
 
 def railing(mesh, points, base_z, height=22, post_step=24, material='metal_rust', closed=False):

@@ -78,6 +78,16 @@ Walker.exe +set bot_minplayers 6 +map wk_islands
   солнце (тени построек рисует игра), свет неба загораживает.
   После изменения `q3map/shaders.h` пересобирайте все объектные файлы q3map: структура
   шейдера используется почти во всех модулях.
+  q3map собирается только 32-битным (`-m32`): в коде есть приведения указателей к `int`, и
+  64-битная сборка падает при расчёте освещения. Под Linux:
+  ```
+  cd q3map
+  for f in *.c; do [ $f = gldraw.c ] || gcc -m32 -c -O2 -fcommon -I../common -w -DCLK_TCK=CLOCKS_PER_SEC $f -o /tmp/q3mapbuild/${f%.c}.o; done
+  for f in aselib bspfile cmdlib imagelib mathlib md4 mutex polylib scriplib threads trilib; do gcc -m32 -c -O2 -fcommon -I../common -w ../common/$f.c -o /tmp/q3mapbuild/c_$f.o; done
+  gcc -m32 -o /tmp/q3mapbuild/q3map /tmp/q3mapbuild/*.o -lm -lpthread
+  ```
+  Лимиты карты q3map берёт из `code/qcommon/qfiles.h` (через `common/bspfile.h`):
+  MAX_MAP_DRAW_VERTS и MAX_MAP_DRAW_INDEXES подняты до 0x400000; движок их не использует.
 
 ### Ограничения под Windows
 
