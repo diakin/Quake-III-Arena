@@ -168,6 +168,11 @@ typedef struct {
 	int				legsClock;
 	int				legsClockReal;
 	float			legsClockFraction;
+
+	// WALKER: shots of the weapons in the robot slots (EV_ROBOT_FIRE)
+	int				slotFlashTime[ROBOT_MAX_SLOTS];
+	vec3_t			lastFireOrigin;		// muzzle of the last shot: tracers start there
+	int				lastFireTime;
 } playerEntity_t;
 
 //=================================================
@@ -384,6 +389,8 @@ typedef struct {
 	animation_t		animations[MAX_TOTALANIMATIONS];
 
 	sfxHandle_t		sounds[MAX_CUSTOM_SOUNDS];
+
+	int				slotWeapons[ROBOT_MAX_SLOTS];	// WALKER: robotWeapon_t by slot, -1 empty ("rw")
 } clientInfo_t;
 
 
@@ -750,6 +757,10 @@ typedef struct {
 	qhandle_t	shotgunSmokePuffShader;
 	qhandle_t	plasmaBallShader;
 	qhandle_t	shellShader;		// WALKER: cannon shell of a robot
+	qhandle_t	robotWeaponModels[RWEAPON_COUNT];	// WALKER: weapons in the robot slots
+	sfxHandle_t	robotWeaponSounds[RWEAPON_COUNT];
+	qhandle_t	rocketGlowShader;	// WALKER: light rocket (SHMEL)
+	qhandle_t	plasmaBoltShader;	// WALKER: plasma ball (ISKRA)
 	qhandle_t	waterBubbleShader;
 	qhandle_t	bloodTrailShader;
 #ifdef MISSIONPACK
@@ -1381,6 +1392,8 @@ void CG_RailTrail( clientInfo_t *ci, vec3_t start, vec3_t end );
 void CG_GrappleTrail( centity_t *ent, const weaponInfo_t *wi );
 void CG_AddViewWeapon (playerState_t *ps);
 void CG_AddPlayerWeapon( refEntity_t *parent, playerState_t *ps, centity_t *cent, int team );
+void CG_AddRobotWeapons( refEntity_t *parent, centity_t *cent );
+void CG_RobotFire( entityState_t *es );
 void CG_DrawWeaponSelect( void );
 
 void CG_OutOfAmmoChange( void );	// should this be in pmove?

@@ -137,6 +137,62 @@ def explosion(seconds=1.8, low=40):
     return reverb(mix(rumble * 1.3, crack * 0.6, thump * 1.2, debris), 0.6, 0.35)
 
 
+# ---------------------------------------------------------------- оружие роботов (слоты)
+def light_gun_shot(variant):
+    """OSA: короткий сухой выстрел лёгкого пулемёта."""
+    seconds = 0.25
+    crack = band(noise(seconds), 2500, 10000) * envelope(seconds, 0.0005, 0.012)
+    body = band(noise(seconds), 300, 2500) * envelope(seconds, 0.001, 0.05)
+    clack = resonator(seconds, [2100 + variant * 60, 3400], 0.012) * envelope(seconds, 0.0, 0.02)
+    return reverb(mix(crack * 0.8, body * 0.7, clack * 0.2), 0.12, 0.2)
+
+
+def plasma_shot():
+    """ISKRA: электрический хлопок с падающим тоном."""
+    seconds = 0.45
+    t = time(seconds)
+    tone = np.sin(2 * np.pi * np.cumsum(1800 * np.exp(-t * 9) + 220) / RATE) * envelope(seconds, 0.002, 0.18)
+    buzz = np.sign(np.sin(2 * np.pi * 95 * t)) * envelope(seconds, 0.002, 0.08) * 0.25
+    fizz = band(noise(seconds), 3000, 9000) * envelope(seconds, 0.001, 0.06) * 0.5
+    return reverb(mix(tone, buzz, fizz), 0.2, 0.25)
+
+
+def plasma_hit():
+    seconds = 0.6
+    t = time(seconds)
+    pop = band(noise(seconds), 400, 6000) * envelope(seconds, 0.001, 0.08)
+    ring = np.sin(2 * np.pi * (600 + 900 * np.exp(-t * 20)) * t) * envelope(seconds, 0.002, 0.2) * 0.6
+    return reverb(mix(pop, ring), 0.3, 0.3)
+
+
+def rail_shot():
+    """KOPYO: резкий треск разряда и звенящий хвост."""
+    seconds = 1.2
+    t = time(seconds)
+    crack = band(noise(seconds), 1500, 11000) * envelope(seconds, 0.0005, 0.04)
+    whine = np.sin(2 * np.pi * np.cumsum(3200 - 2600 * np.minimum(t / 0.6, 1)) / RATE) * envelope(seconds, 0.003, 0.5) * 0.35
+    thump = np.sin(2 * np.pi * (60 + 80 * np.exp(-t * 25)) * t) * envelope(seconds, 0.002, 0.2)
+    return reverb(mix(crack, whine, thump * 0.9), 0.45, 0.35)
+
+
+def heavy_cannon_shot():
+    """TARAN: тяжёлый орудийный выстрел."""
+    seconds = 1.6
+    t = time(seconds)
+    blast = band(noise(seconds), 50, 1500, 3) * envelope(seconds, 0.002, 0.35)
+    crack = band(noise(seconds), 1500, 9000) * envelope(seconds, 0.0008, 0.04)
+    boom = np.sin(2 * np.pi * (45 + 50 * np.exp(-t * 18)) * t) * envelope(seconds, 0.002, 0.4)
+    return reverb(mix(blast * 1.1, crack * 0.6, boom * 1.4), 0.6, 0.35)
+
+
+def rocket_pod_shot():
+    """SHMEL: короткий пуск лёгкой ракеты."""
+    seconds = 0.6
+    blast = band(noise(seconds), 150, 3000) * envelope(seconds, 0.003, 0.12)
+    hiss = band(noise(seconds), 2000, 9000) * envelope(seconds, 0.02, 0.3) * 0.45
+    return reverb(mix(blast, hiss), 0.2, 0.25)
+
+
 # ---------------------------------------------------------------- робот
 def stomp(variant, metallic=1.0):
     seconds = 0.9
@@ -241,6 +297,13 @@ def main():
         save(f'weapons/machinegun/ric{index}.wav', ricochet(index))
     save('weapons/machinegun/buletby1.wav', bullet_by(), 0.6)
     save('weapons/rocket/rocklf1a.wav', rocket_launch())
+    save('weapons/robot/osa.wav', light_gun_shot(1), 0.6)
+    save('weapons/robot/shmel.wav', rocket_pod_shot(), 0.8)
+    save('weapons/robot/topor.wav', cannon_shot(2), 0.8)
+    save('weapons/robot/iskra.wav', plasma_shot(), 0.7)
+    save('weapons/robot/taran.wav', heavy_cannon_shot(), 0.95)
+    save('weapons/robot/kopyo.wav', rail_shot(), 0.9)
+    save('weapons/plasma/plasmx1a.wav', plasma_hit(), 0.8)
     save('weapons/rocket/rockfly.wav', rocket_fly(), 0.6)
     save('weapons/rocket/rocklx1a.wav', explosion(1.6))
     save('weapons/change.wav', mix(metal_hit(0.5)[: int(0.3 * RATE)], servo(0.35, 300, 600)), 0.7)

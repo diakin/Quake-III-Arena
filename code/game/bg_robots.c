@@ -10,20 +10,33 @@ This file is part of WALKER, based on the Quake III Arena source code
 #include "bg_public.h"
 #include "bg_robots.h"
 
+const char *bg_weaponClassNames[WCLASS_COUNT] = { "LIGHT", "MEDIUM", "HEAVY" };
+
+// slot mounts (tag_weapon1.. of the models): forward, left, up from the eye (the view
+// height 26 above the origin); the shot starts at the mount + the weapon length forward
 const robotInfo_t bg_robots[ROBOT_COUNT] = {
-	{ "k7", "K7", "Medium walker, autocannon", "walker",
-		62000, 15, 8000, 38, RWEAPON_AUTOCANNON, 3000 },
+	{ "k7", "K7", "Medium walker, two light mounts", "walker",
+		62000, 15, 8000, 38, 3000,
+		2, { WCLASS_LIGHT, WCLASS_LIGHT, 0 }, { RWEAPON_OSA, RWEAPON_OSA, -1 },
+		{ { -6, -19.5f, -10.5f }, { -6, 19.5f, -10.5f }, { 0, 0, 0 } } },
 	{ "strizh", "STRIZH", "Light scout, strong shield", "strizh",
-		42000, 5, 18000, 56, RWEAPON_RAPIDGUNS, 6000 },
+		42000, 5, 18000, 56, 6000,
+		2, { WCLASS_MEDIUM, WCLASS_LIGHT, 0 }, { RWEAPON_TOPOR, RWEAPON_OSA, -1 },
+		{ { 1.5f, -13, -11.5f }, { 1.5f, 12.2f, -11.5f }, { 0, 0, 0 } } },
 	{ "molot", "MOLOT", "Heavy assault, thick armor", "molot",
-		98000, 30, 0, 28, RWEAPON_CANNON, 9000 },
+		98000, 30, 0, 28, 9000,
+		1, { WCLASS_HEAVY, 0, 0 }, { RWEAPON_TARAN, -1, -1 },
+		{ { 0, -16, -3.5f }, { 0, 0, 0 }, { 0, 0, 0 } } },
 };
 
 // damage and structure are real values: the game divides them by ROBOT_HEALTH_SCALE
 const robotWeaponInfo_t bg_robotWeapons[RWEAPON_COUNT] = {
-	{ "autocannon", "Autocannon",	300,	100,	1600,	0,		0 },
-	{ "rapidguns",	"Rapid guns",	140,	60,		1300,	0,		0 },
-	{ "cannon",		"Cannon",		3800,	1000,	2000,	90,		2400 },
+	{ "osa",	"OSA",		"Light machine gun",	WCLASS_LIGHT,	WFIRE_BULLET,	120,	70,		1300,	0,	0,		300,	1200,	16 },
+	{ "shmel",	"SHMEL",	"Light rocket pod",		WCLASS_LIGHT,	WFIRE_SHELL,	700,	500,	1200,	60,	1400,	0,		1800,	10 },
+	{ "topor",	"TOPOR",	"Medium autocannon",	WCLASS_MEDIUM,	WFIRE_BULLET,	300,	100,	1600,	0,	0,		150,	2500,	22 },
+	{ "iskra",	"ISKRA",	"Medium plasma gun",	WCLASS_MEDIUM,	WFIRE_PLASMA,	650,	250,	1400,	40,	1800,	0,		3000,	20 },
+	{ "taran",	"TARAN",	"Heavy cannon",			WCLASS_HEAVY,	WFIRE_SHELL,	3800,	1000,	2000,	90,	2400,	0,		4500,	33 },
+	{ "kopyo",	"KOPYO",	"Heavy railgun",		WCLASS_HEAVY,	WFIRE_RAIL,		9000,	2200,	2400,	0,	0,		0,		6000,	33 },
 };
 
 // seconds and development points from level to level + 1 (from 10 minutes to 24 hours)
@@ -33,6 +46,8 @@ static const int upgradeTime[ROBOT_LEVELS - 1] = {
 static const int upgradeCost[ROBOT_LEVELS - 1] = {
 	60, 180, 350, 550, 790, 1050, 1350, 1670, 2010, 2380, 2770
 };
+// share of the robot upgrade cost for a weapon of each class, percent
+static const int weaponCostShare[WCLASS_COUNT] = { 50, 67, 85 };
 
 static int ClampLevel( int level, int maximum ) {
 	return level < 1 ? 1 : ( level > maximum ? maximum : level );
@@ -43,6 +58,17 @@ int BG_RobotByName( const char *id ) {
 
 	for ( index = 0; index < ROBOT_COUNT; index++ ) {
 		if ( !Q_stricmp( id, bg_robots[index].id ) ) {
+			return index;
+		}
+	}
+	return -1;
+}
+
+int BG_WeaponByName( const char *id ) {
+	int		index;
+
+	for ( index = 0; index < RWEAPON_COUNT; index++ ) {
+		if ( !Q_stricmp( id, bg_robotWeapons[index].id ) ) {
 			return index;
 		}
 	}
@@ -91,12 +117,25 @@ int BG_WeaponInterval( int weapon, int level ) {
 	return bg_robotWeapons[weapon].interval * 100 / ( 100 + 3 * ( ClampLevel( level, WEAPON_LEVELS ) - 1 ) );
 }
 
-int BG_UpgradeCost( qboolean weapon, int level ) {
-	int		cost = upgradeCost[ClampLevel( level, ROBOT_LEVELS - 1 ) - 1];
-	return weapon ? cost * 2 / 3 : cost;
+qboolean BG_WeaponFits( int robot, int slot, int weapon ) {
+	if ( robot < 0 || robot >= ROBOT_COUNT || weapon < 0 || weapon >= RWEAPON_COUNT ) {
+		return qfalse;
+	}
+	if ( slot < 0 || slot >= bg_robots[robot].numSlots ) {
+		return qfalse;
+	}
+	return bg_robots[robot].slotClass[slot] == bg_robotWeapons[weapon].weaponClass;
 }
 
-int BG_UpgradeTime( qboolean weapon, int level ) {
+int BG_RobotUpgradeCost( int level ) {
+	return upgradeCost[ClampLevel( level, ROBOT_LEVELS - 1 ) - 1];
+}
+
+int BG_WeaponUpgradeCost( int weapon, int level ) {
+	return upgradeCost[ClampLevel( level, WEAPON_LEVELS - 1 ) - 1] * weaponCostShare[bg_robotWeapons[weapon].weaponClass] / 100;
+}
+
+int BG_UpgradeTime( int level ) {
 	return upgradeTime[ClampLevel( level, ROBOT_LEVELS - 1 ) - 1];
 }
 

@@ -999,6 +999,11 @@ void ClientThink_real( gentity_t *ent ) {
 	client->buttons = ucmd->buttons;
 	client->latched_buttons |= client->buttons & ~client->oldbuttons;
 
+	// WALKER: the weapons of the robot slots (after the move: they fire from the new place)
+	if ( client->sess.sessionTeam != TEAM_SPECTATOR ) {
+		G_RobotFire( ent, msec );
+	}
+
 	// check for respawning
 	if ( client->ps.stats[STAT_HEALTH] <= 0 ) {
 		// WALKER: beacon capture: the next robot comes by itself; with the hangar empty

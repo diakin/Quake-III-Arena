@@ -923,6 +923,24 @@ void UI_DrawPlayer( float x, float y, float w, float h, playerInfo_t *pi, int ti
 		trap_R_AddRefEntityToScene( &gun );
 	}
 
+	// WALKER: the weapons in the slots of the robot
+	{
+		int		slot;
+
+		for ( slot = 0; slot < ROBOT_MAX_SLOTS; slot++ ) {
+			if ( !pi->slotModels[slot] ) {
+				continue;
+			}
+			memset( &gun, 0, sizeof( gun ) );
+			gun.hModel = pi->slotModels[slot];
+			VectorCopy( origin, gun.lightingOrigin );
+			UI_PositionEntityOnTag( &gun, &torso, pi->torsoModel, va( "tag_weapon%i", slot + 1 ) );
+			gun.renderfx = renderfx;
+			trap_R_AddRefEntityToScene( &gun );
+		}
+		memset( &gun, 0, sizeof( gun ) );
+	}
+
 	//
 	// add the spinning barrel
 	//

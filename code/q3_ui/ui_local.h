@@ -523,6 +523,8 @@ typedef struct {
 	int				barrelTime;
 
 	int				realWeapon;
+
+	qhandle_t		slotModels[ROBOT_MAX_SLOTS];	// WALKER: weapons in the robot slots (tag_weapon1..3)
 } playerInfo_t;
 
 void UI_DrawPlayer( float x, float y, float w, float h, playerInfo_t *pi, int time );
@@ -715,22 +717,27 @@ void UI_SelectBotsMenu( void );
 
 //
 // ui_account.c (WALKER): pilot accounts
-#define	UPGRADE_NONE		0
-#define	UPGRADE_ROBOT		1
-#define	UPGRADE_WEAPON		2
 // WALKER: 6x12 characters for dense panels (UI_DrawString)
 #define UI_TINYFONT		0x00000080
 #define TINYFONT_WIDTH	6
 #define TINYFONT_HEIGHT	12
 
 #define	MAX_ACCOUNTS		12
+#define	MAX_ACCOUNT_WEAPONS	24		// weapons of a pilot, mounted or in the store
+
+typedef struct {
+	int			type;			// robotWeapon_t
+	int			level;
+	qboolean	upgrading;
+	int			upgradeEnd;		// real time (seconds since 1970) when the upgrade is done
+} accountWeapon_t;
 
 typedef struct {
 	int			type;			// robotType_t
 	int			level;
-	int			weaponLevel;
-	int			upgrade;		// UPGRADE_*
-	int			upgradeEnd;		// real time (seconds since 1970) when the upgrade is done
+	qboolean	upgrading;
+	int			upgradeEnd;
+	int			slots[ROBOT_MAX_SLOTS];	// index into weapons[], -1 empty
 } accountRobot_t;
 
 typedef struct {
@@ -742,6 +749,8 @@ typedef struct {
 	int				points;			// development points
 	int				numRobots;
 	accountRobot_t	robots[ROBOT_HANGAR_SIZE];
+	int				numWeapons;
+	accountWeapon_t	weapons[MAX_ACCOUNT_WEAPONS];
 	char			lastReward[32];	// id of the last battle whose reward was taken
 	char			lastBattle[128];// what the last battle gave, for the main menu
 } account_t;
@@ -754,6 +763,10 @@ void		UI_AccountSave( void );
 void		UI_AccountUpdate( void );
 int			UI_AccountTime( void );
 int			UI_AccountAvailableRobots( void );
+qboolean	UI_AccountRobotReady( const accountRobot_t *robot );
+int			UI_AccountAddWeapon( int type, int level );		// index or -1 (store full)
+qboolean	UI_AccountAddRobot( int type );					// with its default weapons
+int			UI_AccountWeaponRobot( int weapon, int *slot );	// robot carrying the weapon, -1 in the store
 void		UI_AccountEnsure( void );
 
 // ui_hangar.c (WALKER)

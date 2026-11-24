@@ -905,6 +905,11 @@ def effects():
     save('gfx/marks/shadow.tga', mark(radial(64, 0.3, 1.0, (40, 40, 40), 0.9)))
     save('gfx/misc/spark.tga', premultiply(radial(32, 0.0, 1.0, (255, 200, 120), 2.5)))
     save('gfx/misc/flare.tga', premultiply(radial(64, 0.0, 1.0, (255, 230, 190), 2.0)))
+    # луч рельсотрона: яркая середина поперёк (v), вдоль (u) — слабые сгустки
+    across = np.exp(-((np.arange(16) - 7.5) / 3.2) ** 2)
+    along = 0.75 + 0.25 * np.sin(np.arange(64) / 64 * 2 * np.pi * 4)
+    core = np.clip(across[:, None] * along[None, :] * 255, 0, 255).astype(np.uint8)
+    save('gfx/misc/railcore.tga', Image.fromarray(np.dstack([core, core, core, np.full_like(core, 255)]), 'RGBA'))
     save('gfx/misc/wake.tga', premultiply(wake_ring()))
     save('gfx/misc/bubble.tga', premultiply(radial(16, 0.5, 1.0, (220, 235, 255), 1.0)))
     save('gfx/misc/beacon_beam.tga', beacon_beam())
@@ -1144,6 +1149,69 @@ shellGlow
 		clampmap gfx/misc/flare.tga
 		blendfunc GL_ONE GL_ONE
 		rgbGen const ( 1.0 0.75 0.4 )
+	}
+}
+rocketGlow
+{
+	cull disable
+	{
+		clampmap gfx/misc/flare.tga
+		blendfunc GL_ONE GL_ONE
+		rgbGen const ( 1.0 0.55 0.2 )
+	}
+}
+plasmaBolt
+{
+	cull disable
+	{
+		clampmap gfx/misc/flare.tga
+		blendfunc GL_ONE GL_ONE
+		rgbGen const ( 0.45 0.85 1.0 )
+	}
+	{
+		clampmap gfx/misc/flare.tga
+		blendfunc GL_ONE GL_ONE
+		rgbGen const ( 0.6 0.9 1.0 )
+		tcMod rotate 360
+	}
+}
+plasmaExplosion
+{
+	cull disable
+	{
+		clampmap gfx/misc/flare.tga
+		blendfunc GL_ONE GL_ONE
+		rgbGen const ( 0.5 0.85 1.0 )
+	}
+}
+railExplosion
+{
+	cull disable
+	{
+		clampmap gfx/misc/flare.tga
+		blendfunc GL_ONE GL_ONE
+		rgbGen const ( 0.7 0.9 1.0 )
+	}
+}
+railCore
+{
+	sort nearest
+	cull disable
+	{
+		map gfx/misc/railcore.tga
+		blendfunc GL_ONE GL_ONE
+		rgbGen vertex
+		tcMod scroll -1 0
+	}
+}
+railDisc
+{
+	sort nearest
+	cull disable
+	{
+		clampmap gfx/misc/flare.tga
+		blendfunc GL_ONE GL_ONE
+		rgbGen vertex
 	}
 }
 """)

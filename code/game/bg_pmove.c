@@ -1637,6 +1637,12 @@ static void PM_Weapon( void ) {
 
 	pm->ps->weaponstate = WEAPON_FIRING;
 
+	// WALKER: a robot fires the weapons of its slots on the server (g_robots.c, G_RobotFire)
+	if ( pm->ps->stats[STAT_FIRE_INTERVAL] < 0 ) {
+		pm->ps->weaponTime += 100;
+		return;
+	}
+
 	// check for out of ammo
 	if ( ! pm->ps->ammo[ pm->ps->weapon ] ) {
 		PM_AddEvent( EV_NOAMMO );

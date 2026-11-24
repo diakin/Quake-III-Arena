@@ -1,6 +1,10 @@
-"""Запекание текстур робота walker: уникальная развёртка и «боевой» вид.
+"""Запекание текстур робота: уникальная развёртка и «боевой» вид.
 
 python3 walker/tools/bake_walker.py <папка модели в данных игры>
+
+Папка — models/players/<робот> (walker — K7, а также strizh и molot из make_robots.py);
+единицы модели как у K7: 1 единица = 14 единиц Quake (asset.extras.q3_scale 14).
+Окраски — те, для которых есть lower_<окраска>.skin.
 
 В папке должны лежать lower.glb, upper.glb, head.glb, исходные текстуры материалов и
 файлы .skin всех окрасок (их пишут make_botfiles.py и копия assets/baseq3/models/players/walker).
@@ -14,7 +18,8 @@ python3 walker/tools/bake_walker.py <папка модели в данных и�
        - мелкие царапины, пыль сверху, потёки на вертикальных стенках, грязь снизу;
   4. атлас пишется в <часть>_<окраска>.jpg, в GLB подменяются UV (вершины на швах развёртки
      дублируются), .skin всех окрасок указывают на шейдеры с атласом,
-     scripts/walker_player.shader описывает материалы (краска, металл, свечение, стекло).
+     scripts/<робот>_player.shader (у K7 — walker_player.shader) описывает материалы
+     (краска, металл, свечение, стекло).
 
 Нужны: numpy, scipy, Pillow, xatlas, embreex (pip install xatlas embreex).
 """
@@ -29,9 +34,12 @@ from embreex.mesh_construction import TriangleMesh
 
 MODEL_DIR = sys.argv[1]
 DATA_ROOT = os.path.normpath(os.path.join(MODEL_DIR, '..', '..', '..'))
-SHADER_PREFIX = 'models/players/walker'
+ROBOT = os.path.basename(os.path.normpath(MODEL_DIR))
+SHADER_PREFIX = 'models/players/' + ROBOT
+ENV_SHINE = 'models/players/walker/env_shine.jpg'
 PARTS = {'lower': 1024, 'upper': 1024, 'head': 512}
-SCHEMES = ['default', 'red', 'blue', 'desert', 'urban']
+SCHEMES = [scheme for scheme in ['default', 'red', 'blue', 'desert', 'urban']
+           if os.path.exists(os.path.join(MODEL_DIR, f'lower_{scheme}.skin'))]
 AO_RAYS = 40
 AO_DISTANCE = 0.55          # единицы модели (1 единица = 14 единиц Quake)
 SUPERSAMPLE = 2             # цвет считается в 2x2 точках на тексель
@@ -53,10 +61,11 @@ def team_paint(image, scheme):
     return Image.fromarray((hsv * 255).astype(np.uint8), 'HSV').convert('RGB')
 
 
-PAINTED = {'camo_green', 'camo_dark', 'panel_light', 'marking', 'trim_yellow', 'orange'}
-METAL = {'metal_gray', 'metal_dark', 'chrome', 'black'}
-GLOWING = {'engine_glow', 'light_cyan', 'sensor_purple'}
-GLASS = {'canopy_glass'}
+# материалы K7 и роботов make_robots.py
+PAINTED = {'camo_green', 'camo_dark', 'panel_light', 'marking', 'trim_yellow', 'orange', 'paint', 'accent'}
+METAL = {'metal_gray', 'metal_dark', 'chrome', 'black', 'metal', 'dark'}
+GLOWING = {'engine_glow', 'light_cyan', 'sensor_purple', 'glow'}
+GLASS = {'canopy_glass', 'glass'}
 
 # ================================================================ GLB
 
@@ -680,7 +689,7 @@ def write_shaders(parts):
 		rgbGen lightingDiffuse
 	}}
 	{{
-		map {SHADER_PREFIX}/env_shine.jpg
+		map {ENV_SHINE}
 		tcGen environment
 		blendFunc GL_SRC_ALPHA GL_ONE
 		rgbGen const ( 0.40 0.40 0.40 )
@@ -694,13 +703,13 @@ def write_shaders(parts):
 		rgbGen lightingDiffuse
 	}}
 	{{
-		map {SHADER_PREFIX}/env_shine.jpg
+		map {ENV_SHINE}
 		tcGen environment
 		blendFunc GL_DST_COLOR GL_ONE
 		rgbGen const ( 0.55 0.55 0.55 )
 	}}
 	{{
-		map {SHADER_PREFIX}/env_shine.jpg
+		map {ENV_SHINE}
 		tcGen environment
 		blendFunc GL_SRC_ALPHA GL_ONE
 		rgbGen const ( 0.55 0.55 0.55 )
@@ -714,7 +723,7 @@ def write_shaders(parts):
 		rgbGen lightingDiffuse
 	}}
 	{{
-		map {SHADER_PREFIX}/env_shine.jpg
+		map {ENV_SHINE}
 		tcGen environment
 		blendFunc GL_ONE GL_ONE
 		rgbGen const ( 0.35 0.35 0.35 )
@@ -727,7 +736,7 @@ def write_shaders(parts):
 		rgbGen wave sin 0.9 0.08 0 0.4
 	}}
 }}""")
-    path = os.path.join(DATA_ROOT, 'scripts', 'walker_player.shader')
+    path = os.path.join(DATA_ROOT, 'scripts', f'{ROBOT}_player.shader')
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w', encoding='ascii', newline='\n') as file:
         file.write('\n'.join(blocks) + '\n')

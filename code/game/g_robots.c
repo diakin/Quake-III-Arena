@@ -2,17 +2,20 @@
 ===========================================================================
 WALKER: robots in the battle.
 
-A player brings the robots of his account (userinfo walker_robots, "k7.3.2,
-strizh.1.1": type.level.weapon level, ui_account.c), a bot gets g_botRobots
-random robots of g_botLevel; the bots of the team against the human players are
-one level higher. Each new life takes the next robot.
+A player brings the robots of his account (userinfo walker_robots,
+"k7.3:osa.2:osa.1,molot.1:taran.1": type.level and weapon.level of every slot,
+"-" for an empty slot, ui_account.c), a bot gets g_botRobots random robots of
+g_botLevel with random weapons that fit their slots; the bots of the team
+against the human players are one level higher. Each new life takes the next
+robot.
 
 The characteristics come from bg_robots.c: the structure is the health (kept in
 tenths, ROBOT_HEALTH_SCALE), the armor takes its percent off every hit on the
 structure, the shield takes the damage first and recovers after SHIELD_DELAY
-without hits, the speed sets ps.speed (km/h * g_speed / 38). The weapon sets the
-damage, the interval between shots (STAT_FIRE_INTERVAL, bg_pmove.c) and the
-range.
+without hits, the speed sets ps.speed (km/h * g_speed / 38). All weapons of the robot fire
+while the attack button is held, each at its own rate (G_RobotFire, the shot
+itself in g_weapon.c); pmove does not fire (STAT_FIRE_INTERVAL -1). The weapons
+of the current robot go to the clients in the player configstring ("w").
 
 At the end of a battle every human player gets his reward: development points,
 currency and experience for the damage, destroyed robots, captured beacons and
@@ -29,18 +32,45 @@ This file is part of WALKER, based on the Quake III Arena source code
 
 /*
 =================
+G_RobotParseWeapon
+
+"osa.2" or "-"
+=================
+*/
+static void G_RobotParseWeapon( battleWeapon_t *weapon, const char *text ) {
+	char	name[32];
+	char	*dot;
+
+	weapon->type = -1;
+	weapon->level = 1;
+	Q_strncpyz( name, text, sizeof( name ) );
+	dot = strchr( name, '.' );
+	if ( dot ) {
+		*dot = 0;
+		weapon->level = atoi( dot + 1 );
+	}
+	weapon->type = BG_WeaponByName( name );
+	if ( weapon->level < 1 || weapon->level > WEAPON_LEVELS ) {
+		weapon->level = 1;
+	}
+}
+
+
+/*
+=================
 G_RobotParse
 
 robots of a player from his userinfo
 =================
 */
 void G_RobotParse( gclient_t *client, const char *list ) {
-	char	entry[64];
+	char	entry[128];
 	int		length, count = 0;
 
 	while ( *list && count < ROBOT_HANGAR_SIZE ) {
-		char	*dot;
-		int		type;
+		battleRobot_t	*robot = &client->pers.robots[count];
+		char			*part, *next, *dot;
+		int				type, slot;
 
 		for ( length = 0; list[length] && list[length] != ','; length++ ) {
 		}
@@ -48,6 +78,11 @@ void G_RobotParse( gclient_t *client, const char *list ) {
 		list += length;
 		if ( *list == ',' ) {
 			list++;
+		}
+		// "k7.3:osa.2:osa.1"
+		next = strchr( entry, ':' );
+		if ( next ) {
+			*next++ = 0;
 		}
 		dot = strchr( entry, '.' );
 		if ( !dot ) {
@@ -58,19 +93,50 @@ void G_RobotParse( gclient_t *client, const char *list ) {
 		if ( type < 0 ) {
 			continue;
 		}
-		client->pers.robots[count].type = type;
-		client->pers.robots[count].level = atoi( dot + 1 );
-		dot = strchr( dot + 1, '.' );
-		client->pers.robots[count].weaponLevel = dot ? atoi( dot + 1 ) : 1;
-		if ( client->pers.robots[count].level < 1 || client->pers.robots[count].level > ROBOT_LEVELS ) {
-			client->pers.robots[count].level = 1;
+		robot->type = type;
+		robot->level = atoi( dot + 1 );
+		if ( robot->level < 1 || robot->level > ROBOT_LEVELS ) {
+			robot->level = 1;
 		}
-		if ( client->pers.robots[count].weaponLevel < 1 || client->pers.robots[count].weaponLevel > WEAPON_LEVELS ) {
-			client->pers.robots[count].weaponLevel = 1;
+		for ( slot = 0; slot < ROBOT_MAX_SLOTS; slot++ ) {
+			robot->weapons[slot].type = -1;
+			robot->weapons[slot].level = 1;
+			if ( !next ) {
+				continue;
+			}
+			part = next;
+			next = strchr( part, ':' );
+			if ( next ) {
+				*next++ = 0;
+			}
+			G_RobotParseWeapon( &robot->weapons[slot], part );
+			if ( robot->weapons[slot].type >= 0 && !BG_WeaponFits( type, slot, robot->weapons[slot].type ) ) {
+				robot->weapons[slot].type = -1;		// a weapon of another class
+			}
 		}
 		count++;
 	}
 	client->pers.numRobots = count;
+}
+
+
+/*
+=================
+G_RobotRandomWeapon
+
+a weapon of the given class
+=================
+*/
+static int G_RobotRandomWeapon( int weaponClass ) {
+	int		choices[RWEAPON_COUNT];
+	int		count = 0, index;
+
+	for ( index = 0; index < RWEAPON_COUNT; index++ ) {
+		if ( bg_robotWeapons[index].weaponClass == weaponClass ) {
+			choices[count++] = index;
+		}
+	}
+	return count ? choices[rand() % count] : -1;
 }
 
 
@@ -83,7 +149,7 @@ random robots for a bot, about as strong as the human players
 */
 static void G_RobotGiveBot( gentity_t *ent ) {
 	gclient_t	*client = ent->client;
-	int			index, robotLevel, count, humanTeam = TEAM_FREE;
+	int			index, slot, robotLevel, count, humanTeam = TEAM_FREE;
 
 	for ( index = 0; index < level.maxclients; index++ ) {
 		gclient_t	*other = &level.clients[index];
@@ -109,9 +175,16 @@ static void G_RobotGiveBot( gentity_t *ent ) {
 		count = ROBOT_HANGAR_SIZE;
 	}
 	for ( index = 0; index < count; index++ ) {
-		client->pers.robots[index].type = rand() % ROBOT_COUNT;
-		client->pers.robots[index].level = robotLevel;
-		client->pers.robots[index].weaponLevel = robotLevel;
+		battleRobot_t		*robot = &client->pers.robots[index];
+		const robotInfo_t	*info;
+
+		robot->type = rand() % ROBOT_COUNT;
+		robot->level = robotLevel;
+		info = &bg_robots[robot->type];
+		for ( slot = 0; slot < ROBOT_MAX_SLOTS; slot++ ) {
+			robot->weapons[slot].type = slot < info->numSlots ? G_RobotRandomWeapon( info->slotClass[slot] ) : -1;
+			robot->weapons[slot].level = robotLevel;
+		}
 	}
 	client->pers.numRobots = count;
 }
@@ -125,7 +198,7 @@ the robot this player flies now (the next one of his hangar after each loss)
 =================
 */
 battleRobot_t *G_RobotCurrent( gclient_t *client ) {
-	static battleRobot_t	standard = { ROBOT_K7, 1, 1 };
+	static battleRobot_t	standard = { ROBOT_K7, 1, { { RWEAPON_OSA, 1 }, { RWEAPON_OSA, 1 }, { -1, 1 } } };
 	int						index;
 
 	if ( client->pers.numRobots <= 0 ) {
@@ -184,20 +257,17 @@ void G_RobotSpawn( gentity_t *ent ) {
 	ent->health = client->ps.stats[STAT_HEALTH] = client->pers.maxHealth;
 	client->ps.stats[STAT_MAX_SHIELD] = BG_RobotShield( robot->type, robot->level ) / ROBOT_HEALTH_SCALE;
 	client->ps.stats[STAT_SHIELD] = client->ps.stats[STAT_MAX_SHIELD];
-	client->ps.stats[STAT_FIRE_INTERVAL] = BG_WeaponInterval( info->weapon, robot->weaponLevel );
+	client->ps.stats[STAT_FIRE_INTERVAL] = -1;		// pmove does not fire: G_RobotFire
 	client->shieldHitTime = 0;
 	client->shieldResidual = 0;
+	memset( client->slotTime, 0, sizeof( client->slotTime ) );
 	ent->flags |= FL_NO_KNOCKBACK;		// bullets do not push a walking robot
 
-	if ( info->weapon == RWEAPON_CANNON ) {
-		client->ps.stats[STAT_WEAPONS] = ( 1 << WP_ROCKET_LAUNCHER );
-		client->ps.ammo[WP_ROCKET_LAUNCHER] = -1;
-		client->ps.weapon = WP_ROCKET_LAUNCHER;
-	} else {
-		client->ps.stats[STAT_WEAPONS] = ( 1 << WP_MACHINEGUN );
-		client->ps.ammo[WP_MACHINEGUN] = -1;
-		client->ps.weapon = WP_MACHINEGUN;
-	}
+	// the HUD and the bots see one Quake weapon; the real ones are in the slots
+	client->ps.stats[STAT_WEAPONS] = ( 1 << WP_MACHINEGUN );
+	client->ps.ammo[WP_MACHINEGUN] = -1;
+	client->ps.weapon = WP_MACHINEGUN;
+	(void)info;
 }
 
 
@@ -216,25 +286,66 @@ float G_RobotSpeed( gclient_t *client ) {
 
 /*
 =================
-G_RobotWeaponDamage
+G_RobotFire
 
-damage of one hit of the current robot weapon, in tenths
+every slot fires at its own rate while the attack button is held
 =================
 */
-int G_RobotWeaponDamage( gclient_t *client ) {
-	battleRobot_t	*robot = G_RobotCurrent( client );
-	int				damage = BG_WeaponDamage( bg_robots[robot->type].weapon, robot->weaponLevel ) / ROBOT_HEALTH_SCALE;
-	return damage > 0 ? damage : 1;
+void G_RobotFire( gentity_t *ent, int msec ) {
+	gclient_t		*client = ent->client;
+	battleRobot_t	*robot;
+	qboolean		attacking;
+	int				slot;
+
+	if ( ent->health <= 0 || client->sess.sessionTeam == TEAM_SPECTATOR || level.intermissiontime ) {
+		return;
+	}
+	robot = G_RobotCurrent( client );
+	attacking = ( client->buttons & BUTTON_ATTACK ) != 0;
+	for ( slot = 0; slot < bg_robots[robot->type].numSlots; slot++ ) {
+		battleWeapon_t	*weapon = &robot->weapons[slot];
+
+		if ( weapon->type < 0 ) {
+			continue;
+		}
+		if ( client->slotTime[slot] > 0 ) {
+			client->slotTime[slot] -= msec;
+		}
+		if ( !attacking ) {
+			if ( client->slotTime[slot] < 0 ) {
+				client->slotTime[slot] = 0;
+			}
+			continue;
+		}
+		while ( client->slotTime[slot] <= 0 ) {
+			G_RobotFireWeapon( ent, slot, weapon->type, weapon->level );
+			client->slotTime[slot] += BG_WeaponInterval( weapon->type, weapon->level );
+		}
+	}
+	if ( attacking ) {
+		client->ps.eFlags |= EF_FIRING;
+	}
 }
 
 
 /*
 =================
-G_RobotWeapon
+G_RobotWeaponList
+
+"osa,osa" - the weapons of the current robot by slot, for the player configstring
 =================
 */
-const robotWeaponInfo_t *G_RobotWeapon( gclient_t *client ) {
-	return &bg_robotWeapons[bg_robots[G_RobotCurrent( client )->type].weapon];
+const char *G_RobotWeaponList( gclient_t *client ) {
+	static char		list[64];
+	battleRobot_t	*robot = G_RobotCurrent( client );
+	int				slot;
+
+	list[0] = 0;
+	for ( slot = 0; slot < bg_robots[robot->type].numSlots; slot++ ) {
+		int		type = robot->weapons[slot].type;
+		Q_strcat( list, sizeof( list ), va( "%s%s", slot ? "," : "", type >= 0 ? bg_robotWeapons[type].id : "-" ) );
+	}
+	return list;
 }
 
 

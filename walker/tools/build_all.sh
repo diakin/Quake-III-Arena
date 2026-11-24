@@ -33,8 +33,13 @@ cp -r "$ROOT/assets/baseq3/models/players/walker" "$STAGE/base/models/players/"
 python3 "$TOOLS/bake_walker.py" "$STAGE/base/models/players/walker"
 # simplified robot models for long distances (lower_1..3.glb etc., needs meshoptimizer)
 python3 "$TOOLS/make_lods.py" "$STAGE/base/models/players/walker"
-# robots STRIZH and MOLOT: procedural models, skins and scripts/walker_robots.shader
+# robots STRIZH and MOLOT and the weapons of the robot slots: procedural models, skins,
+# scripts/walker_robots.shader; the robots are baked and simplified like K7
 python3 "$TOOLS/make_robots.py" "$STAGE/base"
+for robot in strizh molot; do
+  python3 "$TOOLS/bake_walker.py" "$STAGE/base/models/players/$robot"
+  python3 "$TOOLS/make_lods.py" "$STAGE/base/models/players/$robot"
+done
 
 echo "== QVM"
 cd "$ROOT"

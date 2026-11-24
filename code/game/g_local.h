@@ -238,9 +238,14 @@ typedef struct {
 
 // WALKER: a robot a player brings into the battle (g_robots.c)
 typedef struct {
+	int			type;			// robotWeapon_t, -1 empty slot
+	int			level;
+} battleWeapon_t;
+
+typedef struct {
 	int			type;			// robotType_t
 	int			level;
-	int			weaponLevel;
+	battleWeapon_t weapons[ROBOT_MAX_SLOTS];	// by slot
 } battleRobot_t;
 
 // client data that stays across multiple respawns, but is cleared
@@ -285,6 +290,7 @@ struct gclient_s {
 
 	int			shieldHitTime;		// WALKER: last hit, the shield recovers some time after it
 	int			shieldResidual;
+	int			slotTime[ROBOT_MAX_SLOTS];	// WALKER: msec until each slot may fire again
 
 	qboolean	noclip;
 
@@ -611,11 +617,14 @@ battleRobot_t	*G_RobotCurrent( gclient_t *client );
 void			G_RobotModel( gclient_t *client, char *model, int size );
 void			G_RobotSpawn( gentity_t *ent );
 float			G_RobotSpeed( gclient_t *client );
-int				G_RobotWeaponDamage( gclient_t *client );
-const robotWeaponInfo_t *G_RobotWeapon( gclient_t *client );
+void			G_RobotFire( gentity_t *ent, int msec );
+const char		*G_RobotWeaponList( gclient_t *client );
 int				G_RobotAbsorb( gentity_t *targ, int damage );
 void			G_RobotThink( gentity_t *ent, int msec );
 void			G_RobotRewards( void );
+
+// g_weapon.c (WALKER)
+void			G_RobotFireWeapon( gentity_t *ent, int slot, int weapon, int weaponLevel );
 
 // g_beacons.c (WALKER)
 //

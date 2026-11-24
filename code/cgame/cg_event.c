@@ -912,6 +912,11 @@ void CG_EntityEvent( centity_t *cent, vec3_t position ) {
 		}
 		break;
 
+	case EV_ROBOT_FIRE:
+		DEBUGNAME("EV_ROBOT_FIRE");
+		CG_RobotFire( es );
+		break;
+
 	case EV_BULLET_HIT_WALL:
 		DEBUGNAME("EV_BULLET_HIT_WALL");
 		ByteToDir( es->eventParm, dir );

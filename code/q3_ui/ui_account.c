@@ -3,11 +3,14 @@
 WALKER: pilot accounts.
 
 An account keeps the pilot: nick, level and experience, currency, development
-points and the robots of the hangar with their levels and upgrades. It is a text
-file accounts/<nick>.acc in the game folder of the player, saved after every
-change. The game is told what to take into a battle by userinfo cvars:
-walker_robots ("k7.3.2,strizh.1.1": type.level.weapon level of every robot that
-is not being upgraded) and walker_level. After a battle cgame puts the reward
+points, the robots of the hangar with their levels and upgrades, and the weapons
+(each with its own level, mounted in a slot of a robot or kept in the store). It
+is a text file accounts/<nick>.acc in the game folder of the player, saved after
+every change (version 2; version 1 files, one built-in weapon per robot, are
+converted on reading). The game is told what to take into a battle by userinfo
+cvars: walker_robots ("k7.3:osa.2:osa.1,molot.1:taran.1": type.level and the
+weapon of every slot, "-" for an empty one, of every robot ready for a battle)
+and walker_level. After a battle cgame puts the reward
 into walker_reward and UI_AccountUpdate adds it to the account.
 
 The menu here lists the accounts and creates and deletes them; it comes up at
@@ -21,7 +24,7 @@ This file is part of WALKER, based on the Quake III Arena source code
 
 #define ACCOUNT_DIR			"accounts"
 #define ACCOUNT_EXT			"acc"
-#define ACCOUNT_VERSION		1
+#define ACCOUNT_VERSION		2
 #define START_CURRENCY		1500
 
 account_t	uiAccount;
@@ -64,6 +67,53 @@ static void Account_FileName( const char *nick, char *path, int size ) {
 
 /*
 =================
+Account_AddWeapon
+=================
+*/
+static int Account_AddWeapon( account_t *account, int type, int level ) {
+	accountWeapon_t	*weapon;
+
+	if ( type < 0 || type >= RWEAPON_COUNT || account->numWeapons >= MAX_ACCOUNT_WEAPONS ) {
+		return -1;
+	}
+	weapon = &account->weapons[account->numWeapons];
+	memset( weapon, 0, sizeof( *weapon ) );
+	weapon->type = type;
+	weapon->level = level < 1 ? 1 : ( level > WEAPON_LEVELS ? WEAPON_LEVELS : level );
+	return account->numWeapons++;
+}
+
+
+/*
+=================
+Account_AddRobot
+
+a robot with new weapons of its default set in the slots
+=================
+*/
+static accountRobot_t *Account_AddRobot( account_t *account, int type, int level, int weaponLevel ) {
+	accountRobot_t	*robot;
+	int				slot;
+
+	if ( type < 0 || type >= ROBOT_COUNT || account->numRobots >= ROBOT_HANGAR_SIZE ) {
+		return NULL;
+	}
+	robot = &account->robots[account->numRobots++];
+	memset( robot, 0, sizeof( *robot ) );
+	robot->type = type;
+	robot->level = level < 1 ? 1 : ( level > ROBOT_LEVELS ? ROBOT_LEVELS : level );
+	for ( slot = 0; slot < ROBOT_MAX_SLOTS; slot++ ) {
+		robot->slots[slot] = -1;
+		if ( slot < bg_robots[type].numSlots ) {
+			robot->slots[slot] = Account_AddWeapon( account, bg_robots[type].defaultWeapon[slot], weaponLevel );
+		}
+	}
+	return robot;
+}
+
+
+/*
+=================
 Account_New
 =================
 */
@@ -72,11 +122,41 @@ static void Account_New( account_t *account, const char *nick ) {
 	Q_strncpyz( account->nick, nick, sizeof( account->nick ) );
 	account->level = 1;
 	account->currency = START_CURRENCY;
-	account->numRobots = 1;
-	account->robots[0].type = ROBOT_K7;
-	account->robots[0].level = 1;
-	account->robots[0].weaponLevel = 1;
+	Account_AddRobot( account, ROBOT_K7, 1, 1 );
 	account->loaded = qtrue;
+}
+
+
+/*
+=================
+Account_Check
+
+slots point at weapons that exist, fit and are not mounted twice
+=================
+*/
+static void Account_Check( account_t *account ) {
+	int		robot, slot, other, otherSlot;
+
+	for ( robot = 0; robot < account->numRobots; robot++ ) {
+		accountRobot_t	*entry = &account->robots[robot];
+		for ( slot = 0; slot < ROBOT_MAX_SLOTS; slot++ ) {
+			int		weapon = entry->slots[slot];
+			if ( weapon < 0 ) {
+				continue;
+			}
+			if ( weapon >= account->numWeapons || !BG_WeaponFits( entry->type, slot, account->weapons[weapon].type ) ) {
+				entry->slots[slot] = -1;
+				continue;
+			}
+			for ( other = 0; other <= robot; other++ ) {
+				for ( otherSlot = 0; otherSlot < ROBOT_MAX_SLOTS; otherSlot++ ) {
+					if ( ( other < robot || otherSlot < slot ) && account->robots[other].slots[otherSlot] == weapon ) {
+						entry->slots[slot] = -1;
+					}
+				}
+			}
+		}
+	}
 }
 
 
@@ -89,8 +169,8 @@ qfalse: no such file, a deleted account or not an account file
 */
 static qboolean Account_Read( const char *path, account_t *account ) {
 	fileHandle_t	file;
-	int				length;
-	char			text[4096];
+	int				length, version;
+	char			text[8192];
 	char			*cursor, *token;
 
 	length = trap_FS_FOpenFile( path, &file, FS_READ );
@@ -114,6 +194,7 @@ static qboolean Account_Read( const char *path, account_t *account ) {
 	if ( !Q_stricmp( token, "deleted" ) ) {
 		return qfalse;
 	}
+	version = atoi( token );
 	account->level = 1;
 	while ( 1 ) {
 		token = COM_Parse( &cursor );
@@ -132,24 +213,58 @@ static qboolean Account_Read( const char *path, account_t *account ) {
 			account->points = atoi( COM_Parse( &cursor ) );
 		} else if ( !Q_stricmp( token, "lastReward" ) ) {
 			Q_strncpyz( account->lastReward, COM_Parse( &cursor ), sizeof( account->lastReward ) );
-		} else if ( !Q_stricmp( token, "robot" ) ) {
-			accountRobot_t	*robot;
-			int				type = BG_RobotByName( COM_Parse( &cursor ) );
+		} else if ( !Q_stricmp( token, "weapon" ) ) {
+			// weapon <id> <level> <upgrading> <upgrade end>
+			int		type = BG_WeaponByName( COM_Parse( &cursor ) );
+			int		level = atoi( COM_Parse( &cursor ) );
+			int		upgrading = atoi( COM_Parse( &cursor ) );
+			int		upgradeEnd = atoi( COM_Parse( &cursor ) );
+			int		index = Account_AddWeapon( account, type, level );
 
-			robot = &account->robots[account->numRobots];
-			robot->level = atoi( COM_Parse( &cursor ) );
-			robot->weaponLevel = atoi( COM_Parse( &cursor ) );
-			robot->upgrade = atoi( COM_Parse( &cursor ) );
-			robot->upgradeEnd = atoi( COM_Parse( &cursor ) );
-			if ( type >= 0 && account->numRobots < ROBOT_HANGAR_SIZE ) {
-				robot->type = type;
-				if ( robot->level < 1 || robot->level > ROBOT_LEVELS ) {
-					robot->level = 1;
+			if ( index < 0 ) {
+				// keep the numbering of the slots: an unknown weapon takes its place
+				index = Account_AddWeapon( account, RWEAPON_OSA, 1 );
+			}
+			if ( index >= 0 ) {
+				account->weapons[index].upgrading = upgrading != 0;
+				account->weapons[index].upgradeEnd = upgradeEnd;
+			}
+		} else if ( !Q_stricmp( token, "robot" ) ) {
+			int				type = BG_RobotByName( COM_Parse( &cursor ) );
+			int				level = atoi( COM_Parse( &cursor ) );
+			int				values[5], count, slot;
+			accountRobot_t	*robot;
+
+			if ( version < 2 ) {
+				// version 1: robot <id> <level> <weapon level> <upgrade 0 none 1 robot 2 weapon> <end>
+				values[0] = atoi( COM_Parse( &cursor ) );
+				values[1] = atoi( COM_Parse( &cursor ) );
+				values[2] = atoi( COM_Parse( &cursor ) );
+				robot = Account_AddRobot( account, type, level, values[0] );
+				if ( robot && values[1] == 1 ) {
+					robot->upgrading = qtrue;
+					robot->upgradeEnd = values[2];
+				} else if ( robot && values[1] == 2 && robot->slots[0] >= 0 ) {
+					account->weapons[robot->slots[0]].upgrading = qtrue;
+					account->weapons[robot->slots[0]].upgradeEnd = values[2];
 				}
-				if ( robot->weaponLevel < 1 || robot->weaponLevel > WEAPON_LEVELS ) {
-					robot->weaponLevel = 1;
-				}
-				account->numRobots++;
+				continue;
+			}
+			// version 2: robot <id> <level> <upgrading> <end> <slot 1> <slot 2> <slot 3>
+			for ( count = 0; count < 5; count++ ) {
+				values[count] = atoi( COM_Parse( &cursor ) );
+			}
+			if ( type < 0 || account->numRobots >= ROBOT_HANGAR_SIZE ) {
+				continue;
+			}
+			robot = &account->robots[account->numRobots++];
+			memset( robot, 0, sizeof( *robot ) );
+			robot->type = type;
+			robot->level = level < 1 ? 1 : ( level > ROBOT_LEVELS ? ROBOT_LEVELS : level );
+			robot->upgrading = values[0] != 0;
+			robot->upgradeEnd = values[1];
+			for ( slot = 0; slot < ROBOT_MAX_SLOTS; slot++ ) {
+				robot->slots[slot] = values[2 + slot];
 			}
 		}
 	}
@@ -159,6 +274,7 @@ static qboolean Account_Read( const char *path, account_t *account ) {
 	if ( account->level < 1 ) {
 		account->level = 1;
 	}
+	Account_Check( account );
 	account->loaded = qtrue;
 	return qtrue;
 }
@@ -172,7 +288,7 @@ Account_Write
 static void Account_Write( const account_t *account ) {
 	fileHandle_t	file;
 	char			path[MAX_QPATH];
-	char			text[4096];
+	char			text[8192];
 	int				index;
 
 	Account_FileName( account->nick, path, sizeof( path ) );
@@ -186,10 +302,16 @@ static void Account_Write( const account_t *account ) {
 		"lastReward \"%s\"\n",
 		ACCOUNT_VERSION, account->nick, account->level, account->xp, account->currency, account->points,
 		account->lastReward );
+	// weapons first: the slots of the robots refer to them by number
+	for ( index = 0; index < account->numWeapons; index++ ) {
+		const accountWeapon_t	*weapon = &account->weapons[index];
+		Q_strcat( text, sizeof( text ), va( "weapon %s %i %i %i\n", bg_robotWeapons[weapon->type].id,
+			weapon->level, weapon->upgrading, weapon->upgradeEnd ) );
+	}
 	for ( index = 0; index < account->numRobots; index++ ) {
 		const accountRobot_t	*robot = &account->robots[index];
-		Q_strcat( text, sizeof( text ), va( "robot %s %i %i %i %i\n", bg_robots[robot->type].id,
-			robot->level, robot->weaponLevel, robot->upgrade, robot->upgradeEnd ) );
+		Q_strcat( text, sizeof( text ), va( "robot %s %i %i %i %i %i %i\n", bg_robots[robot->type].id,
+			robot->level, robot->upgrading, robot->upgradeEnd, robot->slots[0], robot->slots[1], robot->slots[2] ) );
 	}
 	if ( trap_FS_FOpenFile( path, &file, FS_WRITE ) < 0 || !file ) {
 		Com_Printf( "^1Could not save the account %s\n", path );
@@ -197,6 +319,38 @@ static void Account_Write( const account_t *account ) {
 	}
 	trap_FS_Write( text, strlen( text ), file );
 	trap_FS_FCloseFile( file );
+}
+
+
+/*
+=================
+UI_AccountAddWeapon / UI_AccountAddRobot / UI_AccountWeaponRobot
+
+for the hangar
+=================
+*/
+int UI_AccountAddWeapon( int type, int level ) {
+	return Account_AddWeapon( &uiAccount, type, level );
+}
+
+qboolean UI_AccountAddRobot( int type ) {
+	return Account_AddRobot( &uiAccount, type, 1, 1 ) != NULL;
+}
+
+int UI_AccountWeaponRobot( int weapon, int *slot ) {
+	int		robot, index;
+
+	for ( robot = 0; robot < uiAccount.numRobots; robot++ ) {
+		for ( index = 0; index < ROBOT_MAX_SLOTS; index++ ) {
+			if ( uiAccount.robots[robot].slots[index] == weapon ) {
+				if ( slot ) {
+					*slot = index;
+				}
+				return robot;
+			}
+		}
+	}
+	return -1;
 }
 
 
@@ -238,16 +392,45 @@ void UI_AccountSave( void ) {
 
 /*
 =================
+UI_AccountRobotReady
+
+a robot goes into a battle when neither it nor a weapon in its slots is being
+upgraded and it carries at least one weapon
+=================
+*/
+qboolean UI_AccountRobotReady( const accountRobot_t *robot ) {
+	int			slot;
+	qboolean	armed = qfalse;
+
+	if ( robot->upgrading ) {
+		return qfalse;
+	}
+	for ( slot = 0; slot < ROBOT_MAX_SLOTS; slot++ ) {
+		int		weapon = robot->slots[slot];
+		if ( weapon < 0 || weapon >= uiAccount.numWeapons ) {
+			continue;
+		}
+		if ( uiAccount.weapons[weapon].upgrading ) {
+			return qfalse;
+		}
+		armed = qtrue;
+	}
+	return armed;
+}
+
+
+/*
+=================
 UI_AccountAvailableRobots
 
-robots that are not being upgraded: they go into a battle
+robots ready for a battle
 =================
 */
 int UI_AccountAvailableRobots( void ) {
 	int		index, count = 0;
 
 	for ( index = 0; index < uiAccount.numRobots; index++ ) {
-		if ( uiAccount.robots[index].upgrade == UPGRADE_NONE ) {
+		if ( UI_AccountRobotReady( &uiAccount.robots[index] ) ) {
 			count++;
 		}
 	}
@@ -324,26 +507,31 @@ void UI_AccountUpdate( void ) {
 	// ui_testHangar 0 turns it off, robots already given stay
 	if ( trap_Cvar_VariableValue( "ui_testHangar" ) && uiAccount.numRobots < ROBOT_HANGAR_SIZE ) {
 		while ( uiAccount.numRobots < ROBOT_HANGAR_SIZE ) {
-			accountRobot_t	*robot = &uiAccount.robots[uiAccount.numRobots];
-
-			memset( robot, 0, sizeof( *robot ) );
-			robot->type = uiAccount.numRobots % ROBOT_COUNT;
-			robot->level = 1;
-			robot->weaponLevel = 1;
-			uiAccount.numRobots++;
+			if ( !Account_AddRobot( &uiAccount, uiAccount.numRobots % ROBOT_COUNT, 1, 1 ) ) {
+				break;
+			}
 		}
 		changed = qtrue;
 	}
 	for ( index = 0; index < uiAccount.numRobots; index++ ) {
 		accountRobot_t	*robot = &uiAccount.robots[index];
-		if ( robot->upgrade != UPGRADE_NONE && now >= robot->upgradeEnd ) {
-			if ( robot->upgrade == UPGRADE_ROBOT && robot->level < ROBOT_LEVELS ) {
+		if ( robot->upgrading && now >= robot->upgradeEnd ) {
+			if ( robot->level < ROBOT_LEVELS ) {
 				robot->level++;
-			} else if ( robot->upgrade == UPGRADE_WEAPON && robot->weaponLevel < WEAPON_LEVELS ) {
-				robot->weaponLevel++;
 			}
-			robot->upgrade = UPGRADE_NONE;
+			robot->upgrading = qfalse;
 			robot->upgradeEnd = 0;
+			changed = qtrue;
+		}
+	}
+	for ( index = 0; index < uiAccount.numWeapons; index++ ) {
+		accountWeapon_t	*weapon = &uiAccount.weapons[index];
+		if ( weapon->upgrading && now >= weapon->upgradeEnd ) {
+			if ( weapon->level < WEAPON_LEVELS ) {
+				weapon->level++;
+			}
+			weapon->upgrading = qfalse;
+			weapon->upgradeEnd = 0;
 			changed = qtrue;
 		}
 	}
@@ -356,11 +544,21 @@ void UI_AccountUpdate( void ) {
 	total = 0;
 	for ( index = 0; index < uiAccount.numRobots; index++ ) {
 		accountRobot_t	*robot = &uiAccount.robots[index];
-		if ( robot->upgrade != UPGRADE_NONE ) {
+		int				slot;
+
+		if ( !UI_AccountRobotReady( robot ) ) {
 			continue;
 		}
-		Q_strcat( robots, sizeof( robots ), va( "%s%s.%i.%i", robots[0] ? "," : "",
-			bg_robots[robot->type].id, robot->level, robot->weaponLevel ) );
+		Q_strcat( robots, sizeof( robots ), va( "%s%s.%i", robots[0] ? "," : "", bg_robots[robot->type].id, robot->level ) );
+		for ( slot = 0; slot < bg_robots[robot->type].numSlots; slot++ ) {
+			int		weapon = robot->slots[slot];
+			if ( weapon >= 0 ) {
+				Q_strcat( robots, sizeof( robots ), va( ":%s.%i", bg_robotWeapons[uiAccount.weapons[weapon].type].id,
+					uiAccount.weapons[weapon].level ) );
+			} else {
+				Q_strcat( robots, sizeof( robots ), ":-" );
+			}
+		}
 		total += robot->level;
 	}
 	trap_Cvar_Set( "walker_robots", robots );

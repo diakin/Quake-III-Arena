@@ -7,6 +7,13 @@ characteristics by level, the cost and time of upgrades. The structure (health)
 and shield inside the game are kept in tenths (ROBOT_HEALTH_SCALE): the 16 bit
 fields of the player state hold up to 32767, a strong robot has over 100 000.
 
+Weapons come in three classes (light, medium, heavy). A robot has slots of
+given classes (K7: two light, STRIZH: one medium and one light, MOLOT: one
+heavy); a weapon goes into a slot of its own class. Weapons are separate items
+of the pilot (ui_account.c) with their own levels and move between robots.
+All weapons of a robot fire together with the attack button, each at its own
+rate (g_robots.c).
+
 This file is part of WALKER, based on the Quake III Arena source code
 (GPL v2, see COPYING.txt).
 ===========================================================================
@@ -20,11 +27,29 @@ This file is part of WALKER, based on the Quake III Arena source code
 #define	ROBOT_HEALTH_SCALE		10		// structure and shield in the game: real value / 10
 #define	ROBOT_HANGAR_SIZE		5		// bays of a hangar, robots a player takes into a battle
 #define	ROBOT_SPEED_UNITS		38.0f	// km/h that move a robot at g_speed units per second
+#define	ROBOT_MAX_SLOTS			3		// weapon slots of a robot (tag_weapon1 .. tag_weapon3)
 
 typedef enum {
-	RWEAPON_AUTOCANNON,		// K7: one heavy machine gun
-	RWEAPON_RAPIDGUNS,		// light robot: two fast machine guns
-	RWEAPON_CANNON,			// heavy robot: a cannon firing shells
+	WCLASS_LIGHT,
+	WCLASS_MEDIUM,
+	WCLASS_HEAVY,
+	WCLASS_COUNT
+} weaponClass_t;
+
+typedef enum {
+	WFIRE_BULLET,			// hitscan, tracer
+	WFIRE_SHELL,			// projectile with an explosion
+	WFIRE_PLASMA,			// projectile, plasma ball
+	WFIRE_RAIL				// hitscan through the line of sight, beam
+} weaponFire_t;
+
+typedef enum {
+	RWEAPON_OSA,			// light: machine gun
+	RWEAPON_SHMEL,			// light: rocket pod
+	RWEAPON_TOPOR,			// medium: autocannon
+	RWEAPON_ISKRA,			// medium: plasma gun
+	RWEAPON_TARAN,			// heavy: cannon
+	RWEAPON_KOPYO,			// heavy: railgun
 	RWEAPON_COUNT
 } robotWeapon_t;
 
@@ -44,33 +69,46 @@ typedef struct {
 	int			armor;			// level 1, percent taken off every hit on the structure
 	int			shield;			// level 1, absorbs damage first, recovers
 	int			speed;			// level 1, km/h
-	int			weapon;			// robotWeapon_t
 	int			price;			// currency
+	int			numSlots;
+	int			slotClass[ROBOT_MAX_SLOTS];		// weaponClass_t
+	int			defaultWeapon[ROBOT_MAX_SLOTS];	// a new robot comes with these
+	float		slotOffset[ROBOT_MAX_SLOTS][3];	// mount (tag_weaponN) from the eye: forward, left, up
 } robotInfo_t;
 
 typedef struct {
-	const char	*id;
+	const char	*id;			// in accounts and in the userinfo
 	const char	*title;
+	const char	*description;
+	int			weaponClass;	// weaponClass_t
+	int			fire;			// weaponFire_t
 	int			damage;			// level 1, per hit (a shell: at the point of impact)
 	int			interval;		// level 1, msec between shots
 	int			range;			// units, the same on every level
-	int			splashRadius;	// shells only
-	int			projectileSpeed;// shells only, units per second
+	int			splashRadius;	// shells
+	int			projectileSpeed;// shells, units per second
+	int			spread;			// bullets, Quake spread (the machine gun has 200)
+	int			price;			// currency
+	int			length;			// from the mount to the muzzle (tag_flash of the model), units
 } robotWeaponInfo_t;
 
-extern const robotInfo_t	bg_robots[ROBOT_COUNT];
+extern const robotInfo_t		bg_robots[ROBOT_COUNT];
 extern const robotWeaponInfo_t	bg_robotWeapons[RWEAPON_COUNT];
+extern const char				*bg_weaponClassNames[WCLASS_COUNT];
 
 int		BG_RobotByName( const char *id );		// -1: unknown
 int		BG_RobotByModel( const char *model );	// player model "strizh/red" -> ROBOT_STRIZH, K7 for unknown
+int		BG_WeaponByName( const char *id );		// -1: unknown
 int		BG_RobotStructure( int type, int level );
 int		BG_RobotArmor( int type, int level );
 int		BG_RobotShield( int type, int level );
 int		BG_RobotSpeed( int type, int level );		// km/h
 int		BG_WeaponDamage( int weapon, int level );
 int		BG_WeaponInterval( int weapon, int level );
-int		BG_UpgradeCost( qboolean weapon, int level );	// development points from level to level + 1
-int		BG_UpgradeTime( qboolean weapon, int level );	// seconds from level to level + 1
+qboolean BG_WeaponFits( int robot, int slot, int weapon );
+int		BG_RobotUpgradeCost( int level );				// development points from level to level + 1
+int		BG_WeaponUpgradeCost( int weapon, int level );
+int		BG_UpgradeTime( int level );					// seconds from level to level + 1
 int		BG_SpeedUpCost( int secondsLeft );				// currency to finish an upgrade at once
 int		BG_PlayerLevelXP( int level );					// experience from level to level + 1
 

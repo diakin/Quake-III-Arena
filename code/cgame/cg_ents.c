@@ -417,8 +417,8 @@ static void CG_Missile( centity_t *cent ) {
 	// calculate the axis
 	VectorCopy( s1->angles, cent->lerpAngles);
 
-	// add trails
-	if ( weapon->missileTrailFunc ) 
+	// add trails (WALKER: a plasma ball of a robot has none, the Quake one needs missing art)
+	if ( weapon->missileTrailFunc && !( s1->generic1 > 0 && s1->weapon == WP_PLASMAGUN ) )
 	{
 		weapon->missileTrailFunc( cent, weapon );
 	}
@@ -458,6 +458,27 @@ static void CG_Missile( centity_t *cent ) {
 	memset (&ent, 0, sizeof(ent));
 	VectorCopy( cent->lerpOrigin, ent.origin);
 	VectorCopy( cent->lerpOrigin, ent.oldorigin);
+
+	// WALKER: shots of the robot weapons (s.generic1: weapon + 1, g_weapon.c)
+	if ( s1->generic1 > 0 && s1->generic1 <= RWEAPON_COUNT ) {
+		int		type = s1->generic1 - 1;
+
+		ent.reType = RT_SPRITE;
+		ent.rotation = 0;
+		if ( bg_robotWeapons[type].fire == WFIRE_PLASMA ) {
+			ent.radius = 10;
+			ent.customShader = cgs.media.plasmaBoltShader;
+			trap_R_AddLightToScene( cent->lerpOrigin, 140, 0.4f, 0.8f, 1.0f );
+		} else if ( bg_robotWeapons[type].weaponClass == WCLASS_LIGHT ) {
+			ent.radius = 6;
+			ent.customShader = cgs.media.rocketGlowShader;
+		} else {
+			ent.radius = 9;
+			ent.customShader = cgs.media.shellShader;
+		}
+		trap_R_AddRefEntityToScene( &ent );
+		return;
+	}
 
 	if ( cent->currentState.weapon == WP_PLASMAGUN ) {
 		ent.reType = RT_SPRITE;

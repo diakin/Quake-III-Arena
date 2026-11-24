@@ -1047,6 +1047,21 @@ static void CG_RegisterGraphics( void ) {
 	cgs.media.beaconRingShader = trap_R_RegisterShader( "beaconRing" );
 	cgs.media.barrierShader = trap_R_RegisterShader( "barrierGrid" );
 	cgs.media.shellShader = trap_R_RegisterShader( "shellGlow" );
+	// WALKER: effects of the robot weapons use these Quake weapons (rocket, plasma, rail)
+	CG_RegisterWeapon( WP_ROCKET_LAUNCHER );
+	CG_RegisterWeapon( WP_PLASMAGUN );
+	CG_RegisterWeapon( WP_RAILGUN );
+	cgs.media.rocketGlowShader = trap_R_RegisterShader( "rocketGlow" );
+	cgs.media.plasmaBoltShader = trap_R_RegisterShader( "plasmaBolt" );
+	// WALKER: weapons of the robot slots (models: make_robots.py, sounds: make_sounds.py)
+	{
+		int		weapon;
+
+		for ( weapon = 0; weapon < RWEAPON_COUNT; weapon++ ) {
+			cgs.media.robotWeaponModels[weapon] = trap_R_RegisterModel( va( "models/robotweapons/%s.md3", bg_robotWeapons[weapon].id ) );
+			cgs.media.robotWeaponSounds[weapon] = trap_S_RegisterSound( va( "sound/weapons/robot/%s.wav", bg_robotWeapons[weapon].id ), qfalse );
+		}
+	}
 	cgs.media.wakeMarkShader = trap_R_RegisterShader( "wake" );
 	cgs.media.bloodMarkShader = trap_R_RegisterShader( "bloodMark" );
 

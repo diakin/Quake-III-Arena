@@ -400,18 +400,6 @@ void Weapon_RocketLauncher_Fire (gentity_t *ent) {
 	gentity_t	*m;
 
 	m = fire_rocket (ent, muzzle, forward);
-	// WALKER: the cannon of the robot: damage, splash and speed of the shell, and its range
-	if ( ent->client ) {
-		const robotWeaponInfo_t	*weapon = G_RobotWeapon( ent->client );
-		m->damage = G_RobotWeaponDamage( ent->client );
-		m->splashDamage = m->damage / 2;
-		m->splashRadius = weapon->splashRadius;
-		if ( weapon->projectileSpeed > 0 ) {
-			VectorScale( forward, weapon->projectileSpeed, m->s.pos.trDelta );
-			SnapVector( m->s.pos.trDelta );
-			m->nextthink = level.time + weapon->range * 1000 / weapon->projectileSpeed;	// bursts at its range
-		}
-	}
 	m->damage *= s_quadFactor;
 	m->splashDamage *= s_quadFactor;
 
@@ -945,10 +933,8 @@ void FireWeapon( gentity_t *ent ) {
 		weapon_supershotgun_fire( ent );
 		break;
 	case WP_MACHINEGUN:
-		// WALKER: damage and range of the robot gun (bg_robots.c)
-		bulletRange = G_RobotWeapon( ent->client )->range;
-		Bullet_Fire( ent, MACHINEGUN_SPREAD, G_RobotWeaponDamage( ent->client ) );
-		bulletRange = 8192 * 16;
+		// WALKER: robots fire their slots in G_RobotFireWeapon, not here
+		Bullet_Fire( ent, MACHINEGUN_SPREAD, MACHINEGUN_DAMAGE );
 		break;
 	case WP_GRENADE_LAUNCHER:
 		weapon_grenadelauncher_fire( ent );
@@ -985,6 +971,134 @@ void FireWeapon( gentity_t *ent ) {
 	}
 }
 
+
+
+/*
+===============
+Robot_Rail
+
+WALKER: the railgun of a robot: through up to MAX_RAIL_HITS robots in a line,
+a beam from the muzzle to the end point (EV_RAILTRAIL)
+===============
+*/
+static void Robot_Rail( gentity_t *ent, int damage, float range ) {
+	vec3_t		end, start;
+	trace_t		trace;
+	gentity_t	*tent, *traceEnt;
+	gentity_t	*unlinkedEntities[MAX_RAIL_HITS];
+	int			unlinked = 0, index;
+
+	VectorCopy( muzzle, start );
+	VectorMA( muzzle, range, forward, end );
+	do {
+		trap_Trace( &trace, start, NULL, NULL, end, ent->s.number, MASK_SHOT );
+		if ( trace.entityNum >= ENTITYNUM_MAX_NORMAL ) {
+			break;
+		}
+		traceEnt = &g_entities[trace.entityNum];
+		if ( traceEnt->takedamage ) {
+			if ( LogAccuracyHit( traceEnt, ent ) ) {
+				ent->client->accuracy_hits++;
+			}
+			G_Damage( traceEnt, ent, ent, forward, trace.endpos, damage, 0, MOD_RAILGUN );
+		}
+		if ( trace.contents & CONTENTS_SOLID ) {
+			break;
+		}
+		trap_UnlinkEntity( traceEnt );
+		unlinkedEntities[unlinked++] = traceEnt;
+	} while ( unlinked < MAX_RAIL_HITS );
+	for ( index = 0; index < unlinked; index++ ) {
+		trap_LinkEntity( unlinkedEntities[index] );
+	}
+
+	SnapVectorTowards( trace.endpos, muzzle );
+	tent = G_TempEntity( trace.endpos, EV_RAILTRAIL );
+	tent->s.clientNum = ent->s.clientNum;
+	VectorCopy( muzzle, tent->s.origin2 );
+	if ( trace.surfaceFlags & SURF_NOIMPACT || trace.fraction == 1.0f ) {
+		tent->s.eventParm = 255;	// no explosion at the end
+	} else {
+		tent->s.eventParm = DirToByte( trace.plane.normal );
+	}
+}
+
+
+/*
+===============
+G_RobotFireWeapon
+
+WALKER: one shot of the weapon in a slot of the robot (g_robots.c, G_RobotFire).
+The shot starts at the muzzle of the slot (bg_robots.c, slotOffset) and goes to
+the point the player aims at: the crosshair in third person (AimAtCrosshair),
+otherwise the point along the view at the range of the weapon. A temporary
+entity EV_ROBOT_FIRE tells the clients which slot fired (flash, sound).
+===============
+*/
+void G_RobotFireWeapon( gentity_t *ent, int slot, int weapon, int weaponLevel ) {
+	const robotWeaponInfo_t	*info = &bg_robotWeapons[weapon];
+	const robotInfo_t		*robot = &bg_robots[G_RobotCurrent( ent->client )->type];
+	const float				*offset = robot->slotOffset[slot];
+	vec3_t		eye, target, direction, angles;
+	trace_t		trace;
+	gentity_t	*tent, *missile;
+	int			damage = BG_WeaponDamage( weapon, weaponLevel ) / ROBOT_HEALTH_SCALE;
+
+	if ( damage < 1 ) {
+		damage = 1;
+	}
+	s_quadFactor = 1;
+	ent->client->accuracy_shots++;
+
+	AngleVectors( ent->client->ps.viewangles, forward, right, up );
+	VectorCopy( ent->client->ps.origin, eye );
+	eye[2] += ent->client->ps.viewheight;
+
+	// the muzzle of the slot, not inside a wall
+	VectorMA( eye, offset[0] + info->length, forward, target );
+	VectorMA( target, -offset[1], right, target );
+	VectorMA( target, offset[2], up, target );
+	trap_Trace( &trace, eye, NULL, NULL, target, ent->s.number, MASK_SHOT );
+	VectorCopy( trace.endpos, muzzle );
+
+	// the guns on both sides meet at the point along the view
+	VectorMA( eye, info->range, forward, target );
+	trap_Trace( &trace, eye, NULL, NULL, target, ent->s.number, MASK_SHOT );
+	VectorSubtract( trace.endpos, muzzle, direction );
+	if ( VectorNormalize( direction ) > 1 && DotProduct( direction, forward ) > 0.25f ) {
+		vectoangles( direction, angles );
+		AngleVectors( angles, forward, right, up );
+	}
+	AimAtCrosshair( ent );
+	SnapVector( muzzle );
+
+	tent = G_TempEntity( muzzle, EV_ROBOT_FIRE );
+	tent->s.otherEntityNum = ent->s.number;
+	tent->s.eventParm = slot;
+	tent->s.weapon = weapon;
+
+	switch ( info->fire ) {
+	case WFIRE_BULLET:
+		bulletRange = info->range;
+		Bullet_Fire( ent, info->spread, damage );
+		bulletRange = 8192 * 16;
+		break;
+	case WFIRE_SHELL:
+	case WFIRE_PLASMA:
+		missile = info->fire == WFIRE_PLASMA ? fire_plasma( ent, muzzle, forward ) : fire_rocket( ent, muzzle, forward );
+		missile->damage = damage;
+		missile->splashDamage = damage / 2;
+		missile->splashRadius = info->splashRadius;
+		missile->s.generic1 = weapon + 1;		// cgame: how to draw it (cg_ents.c)
+		VectorScale( forward, info->projectileSpeed, missile->s.pos.trDelta );
+		SnapVector( missile->s.pos.trDelta );
+		missile->nextthink = level.time + info->range * 1000 / info->projectileSpeed;	// bursts at its range
+		break;
+	case WFIRE_RAIL:
+		Robot_Rail( ent, damage, info->range );
+		break;
+	}
+}
 
 #ifdef MISSIONPACK
 

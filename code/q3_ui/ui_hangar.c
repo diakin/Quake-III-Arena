@@ -4,19 +4,23 @@ WALKER: hangar.
 
 The robots of the pilot account stand in five bays along the bottom of the
 screen; an empty bay sells a new robot. The selected robot is shown large on the
-left and can be turned around every axis: drag with the left mouse button
-(left/right - turn, up/down - tilt), drag with the right button (roll), arrow
-keys and PgUp/PgDn; HOME or "RESET VIEW" puts it back, the wheel zooms.
+left with the weapons in its slots and can be turned around every axis: drag
+with the left mouse button (left/right - turn, up/down - tilt), drag with the
+right button (roll), arrow keys and PgUp/PgDn; HOME or "RESET VIEW" puts it
+back, the wheel zooms.
 
-On the right: the characteristics of the robot and its weapon at their levels,
-the upgrades (for development points, they take real time: from 10 minutes on
-the first levels to 24 hours on the last) and finishing an upgrade at once for
-currency. Robots being upgraded do not go into battles. All the others do, in
-the order of the bays (ui_account.c, walker_robots).
+On the right: the characteristics of the robot, its weapon slots (a slot takes
+a weapon of its class: light, medium or heavy, bg_robots.c) and the selected
+slot's weapon. CHANGE WEAPON lists the weapons of that class the pilot owns
+(free ones and those on other robots: taking one moves it here) and the ones
+the shop sells. Robots and weapons are upgraded separately for development
+points; an upgrade takes real time (10 minutes on the first levels to 24 hours
+on the last) and can be finished at once for currency. A robot goes into
+battles when neither it nor one of its weapons is being upgraded (ui_account.c).
 
 Layout (virtual 640x480): top bar with the pilot and his money, preview on the
-left, characteristics panel on the right, bays, bottom bar with BACK. Texts use
-the small 6x12 font (UI_TINYFONT); buttons are drawn by Hangar_DrawButton.
+left, panel on the right, bays, bottom bar with BACK. Texts use the small 6x12
+font (UI_TINYFONT); buttons are drawn by Hangar_DrawButton.
 
 This file is part of WALKER, based on the Quake III Arena source code
 (GPL v2, see COPYING.txt).
@@ -30,17 +34,21 @@ This file is part of WALKER, based on the Quake III Arena source code
 #define ART_BAY_SELECTED	"menu/art/maps_selected"
 
 #define MAX_BAYS			ROBOT_HANGAR_SIZE
+#define MAX_CHOICES			6		// rows of the weapon list
 
 #define ID_BACK				10
 #define ID_AUTOROTATE		12
 #define ID_RESETVIEW		13
 #define ID_UPGRADE_ROBOT	14
 #define ID_UPGRADE_WEAPON	15
-#define ID_FINISH			16
+#define ID_CHANGE_WEAPON	16
 #define ID_BUY				17
 #define ID_SHOP_PREV		18
 #define ID_SHOP_NEXT		19
-#define ID_BAY0				20
+#define ID_CHOOSE_BACK		20
+#define ID_SLOT0			30
+#define ID_CHOICE0			40
+#define ID_BAY0				60
 
 #define ZOOM_STEP			1.12f	// one wheel notch
 #define ZOOM_MIN			0.6f
@@ -57,15 +65,16 @@ This file is part of WALKER, based on the Quake III Arena source code
 #define PREVIEW_W			384
 #define PREVIEW_H			304
 
-// characteristics
+// panel
 #define PANEL_X				400
 #define PANEL_Y				30
 #define PANEL_W				232
-#define PANEL_H				250
+#define PANEL_H				292
 #define PANEL_PAD			8
 #define LINE				14
 #define BUTTON_H			18
-#define ROW_FIRST			( PANEL_Y + 176 )	// first line under the characteristics
+#define ROW_STEP			22
+#define SLOTS_Y				( PANEL_Y + 107 )	// first slot row, under the characteristics
 
 // bays
 #define BAY_Y				338
@@ -76,11 +85,16 @@ This file is part of WALKER, based on the Quake III Arena source code
 // bottom bar
 #define BOTTOM_Y			430
 
+#define CHOICE_EMPTY		0		// take the weapon out of the slot
+#define CHOICE_OWN			1		// value: weapon of the pilot
+#define CHOICE_BUY			2		// value: weapon type
+
 typedef struct {
 	menubitmap_s	item;			// first: the menu code sees a bitmap item
 	char			label[48];
 	char			detail[48];		// right-aligned part (cost, time), may be empty
 	qboolean		enabled;		// enough points / credits: bright, otherwise dim
+	qboolean		marked;			// the selected one of a group (slot)
 } hangarButton_t;
 
 typedef struct {
@@ -90,19 +104,29 @@ typedef struct {
 	hangarButton_t	back;
 	hangarButton_t	autoRotate;
 	hangarButton_t	resetView;
+	hangarButton_t	slots[ROBOT_MAX_SLOTS];
 	hangarButton_t	upgradeRobot;
 	hangarButton_t	upgradeWeapon;
-	hangarButton_t	finish;
+	hangarButton_t	changeWeapon;
 	hangarButton_t	buy;
 	hangarButton_t	shopPrev;
 	hangarButton_t	shopNext;
+	hangarButton_t	choices[MAX_CHOICES];
+	hangarButton_t	chooseBack;
+
+	int				choiceKind[MAX_CHOICES];
+	int				choiceValue[MAX_CHOICES];
+	int				numChoices;
 
 	playerInfo_t	players[MAX_BAYS];
 	playerInfo_t	shopPlayer;
+	qhandle_t		weaponModels[RWEAPON_COUNT];
 	int				shopType;		// robot shown in an empty bay
 	int				shopLoaded;		// type loaded into shopPlayer, -1 none
 	int				loadedType[MAX_BAYS];
-	int				selected;
+	int				selected;		// bay
+	int				selectedSlot;
+	qboolean		choosing;		// the weapon list of the selected slot is open
 	float			previewYaw;
 	float			previewPitch;
 	float			previewRoll;
@@ -132,6 +156,7 @@ static vec4_t hangarGreenColor = { 0.45f, 1.0f, 0.45f, 1.0f };
 static vec4_t hangarMoneyColor = { 1.0f, 0.85f, 0.30f, 1.0f };
 static vec4_t hangarButtonColor = { 0.06f, 0.08f, 0.10f, 0.85f };
 static vec4_t hangarButtonFocusColor = { 0.30f, 0.15f, 0.04f, 0.90f };
+static vec4_t hangarButtonMarkedColor = { 0.16f, 0.10f, 0.04f, 0.90f };
 static vec4_t hangarBorderColor = { 0.40f, 0.46f, 0.50f, 1.0f };
 
 
@@ -177,18 +202,6 @@ static const char *Hangar_Number( int value ) {
 
 /*
 =================
-Hangar_RobotModel
-
-the player model with the paint of the robot type
-=================
-*/
-static const char *Hangar_RobotModel( int type ) {
-	return bg_robots[type].model;
-}
-
-
-/*
-=================
 Hangar_FaceYaw
 
 points the whole robot (legs, torso, head) at one angle, without the swing
@@ -216,35 +229,8 @@ static void Hangar_SetPlayer( playerInfo_t *player, int type ) {
 	VectorClear( angles );
 	angles[YAW] = 150;
 	memset( player, 0, sizeof( *player ) );
-	UI_PlayerInfo_SetModel( player, (char *)Hangar_RobotModel( type ) );
-	UI_PlayerInfo_SetInfo( player, LEGS_IDLE, TORSO_STAND, angles, angles, WP_MACHINEGUN, qfalse );
-}
-
-
-/*
-=================
-Hangar_SyncModels
-
-loads the models of the robots that came or changed
-=================
-*/
-static void Hangar_SyncModels( void ) {
-	int		index;
-
-	for ( index = 0; index < MAX_BAYS; index++ ) {
-		int		type = index < uiAccount.numRobots ? uiAccount.robots[index].type : -1;
-		if ( type >= 0 && hangarMenuInfo.loadedType[index] != type ) {
-			Hangar_SetPlayer( &hangarMenuInfo.players[index], type );
-			hangarMenuInfo.loadedType[index] = type;
-		}
-		if ( type < 0 ) {
-			hangarMenuInfo.loadedType[index] = -1;
-		}
-	}
-	if ( hangarMenuInfo.shopLoaded != hangarMenuInfo.shopType ) {
-		Hangar_SetPlayer( &hangarMenuInfo.shopPlayer, hangarMenuInfo.shopType );
-		hangarMenuInfo.shopLoaded = hangarMenuInfo.shopType;
-	}
+	UI_PlayerInfo_SetModel( player, (char *)bg_robots[type].model );
+	UI_PlayerInfo_SetInfo( player, LEGS_IDLE, TORSO_STAND, angles, angles, WP_NONE, qfalse );
 }
 
 
@@ -265,6 +251,63 @@ static accountRobot_t *Hangar_SelectedRobot( void ) {
 
 /*
 =================
+Hangar_SlotWeapon
+
+weapon of the pilot in a slot of the selected robot, NULL when empty
+=================
+*/
+static accountWeapon_t *Hangar_SlotWeapon( int slot ) {
+	accountRobot_t	*robot = Hangar_SelectedRobot();
+
+	if ( !robot || slot < 0 || slot >= bg_robots[robot->type].numSlots ) {
+		return NULL;
+	}
+	if ( robot->slots[slot] < 0 || robot->slots[slot] >= uiAccount.numWeapons ) {
+		return NULL;
+	}
+	return &uiAccount.weapons[robot->slots[slot]];
+}
+
+
+/*
+=================
+Hangar_SyncModels
+
+loads the models of the robots that came or changed and puts the weapons of
+their slots on them
+=================
+*/
+static void Hangar_SyncModels( void ) {
+	int		index, slot;
+
+	for ( index = 0; index < MAX_BAYS; index++ ) {
+		int		type = index < uiAccount.numRobots ? uiAccount.robots[index].type : -1;
+		if ( type >= 0 && hangarMenuInfo.loadedType[index] != type ) {
+			Hangar_SetPlayer( &hangarMenuInfo.players[index], type );
+			hangarMenuInfo.loadedType[index] = type;
+		}
+		if ( type < 0 ) {
+			hangarMenuInfo.loadedType[index] = -1;
+			continue;
+		}
+		for ( slot = 0; slot < ROBOT_MAX_SLOTS; slot++ ) {
+			int		weapon = uiAccount.robots[index].slots[slot];
+			hangarMenuInfo.players[index].slotModels[slot] = ( weapon >= 0 && weapon < uiAccount.numWeapons )
+				? hangarMenuInfo.weaponModels[uiAccount.weapons[weapon].type] : 0;
+		}
+	}
+	if ( hangarMenuInfo.shopLoaded != hangarMenuInfo.shopType ) {
+		Hangar_SetPlayer( &hangarMenuInfo.shopPlayer, hangarMenuInfo.shopType );
+		hangarMenuInfo.shopLoaded = hangarMenuInfo.shopType;
+		for ( slot = 0; slot < bg_robots[hangarMenuInfo.shopType].numSlots; slot++ ) {
+			hangarMenuInfo.shopPlayer.slotModels[slot] = hangarMenuInfo.weaponModels[bg_robots[hangarMenuInfo.shopType].defaultWeapon[slot]];
+		}
+	}
+}
+
+
+/*
+=================
 Hangar_Show
 =================
 */
@@ -274,20 +317,6 @@ static void Hangar_Show( hangarButton_t *button, qboolean show ) {
 	} else {
 		button->item.generic.flags |= QMF_HIDDEN | QMF_INACTIVE;
 	}
-}
-
-
-/*
-=================
-Hangar_PlaceButton
-
-moves a button inside the panel (its row depends on the state of the robot)
-=================
-*/
-static void Hangar_PlaceButton( hangarButton_t *button, int y ) {
-	button->item.generic.y = y;
-	button->item.generic.top = y;
-	button->item.generic.bottom = y + button->item.height;
 }
 
 
@@ -306,63 +335,189 @@ static void Hangar_SetButton( hangarButton_t *button, const char *label, const c
 
 /*
 =================
+Hangar_PlaceButton
+
+moves a button inside the panel (its row depends on the robot)
+=================
+*/
+static void Hangar_PlaceButton( hangarButton_t *button, int y ) {
+	button->item.generic.y = y;
+	button->item.generic.top = y;
+	button->item.generic.bottom = y + button->item.height;
+}
+
+
+/*
+=================
+Hangar_DetailsY / Hangar_ActionsY
+
+rows under the slots: the weapon of the selected slot, then the actions
+=================
+*/
+static int Hangar_DetailsY( int numSlots ) {
+	return SLOTS_Y + numSlots * ROW_STEP + 2;
+}
+
+static int Hangar_ActionsY( int numSlots ) {
+	return Hangar_DetailsY( numSlots ) + 3 * LINE + 8;
+}
+
+
+/*
+=================
+Hangar_BuildChoices
+
+the weapon list of the selected slot: the weapons of its class the pilot owns
+(this slot's own first), then the ones to buy, and "empty" when it has one
+=================
+*/
+static void Hangar_BuildChoices( void ) {
+	accountRobot_t	*robot = Hangar_SelectedRobot();
+	int				weaponClass, index, count = 0, current;
+
+	hangarMenuInfo.numChoices = 0;
+	if ( !robot ) {
+		return;
+	}
+	weaponClass = bg_robots[robot->type].slotClass[hangarMenuInfo.selectedSlot];
+	current = robot->slots[hangarMenuInfo.selectedSlot];
+	for ( index = 0; index < uiAccount.numWeapons && count < MAX_CHOICES - RWEAPON_COUNT / WCLASS_COUNT - 1; index++ ) {
+		if ( index == current || bg_robotWeapons[uiAccount.weapons[index].type].weaponClass != weaponClass ) {
+			continue;
+		}
+		hangarMenuInfo.choiceKind[count] = CHOICE_OWN;
+		hangarMenuInfo.choiceValue[count] = index;
+		count++;
+	}
+	for ( index = 0; index < RWEAPON_COUNT && count < MAX_CHOICES; index++ ) {
+		if ( bg_robotWeapons[index].weaponClass != weaponClass ) {
+			continue;
+		}
+		hangarMenuInfo.choiceKind[count] = CHOICE_BUY;
+		hangarMenuInfo.choiceValue[count] = index;
+		count++;
+	}
+	if ( current >= 0 && count < MAX_CHOICES ) {
+		hangarMenuInfo.choiceKind[count] = CHOICE_EMPTY;
+		hangarMenuInfo.choiceValue[count] = 0;
+		count++;
+	}
+	hangarMenuInfo.numChoices = count;
+}
+
+
+/*
+=================
 Hangar_UpdateButtons
 =================
 */
 static void Hangar_UpdateButtons( void ) {
 	accountRobot_t	*robot = Hangar_SelectedRobot();
+	accountWeapon_t	*weapon;
 	int				now = UI_AccountTime();
+	int				index, numSlots, actionsY;
 
 	Hangar_SetButton( &hangarMenuInfo.autoRotate,
 		trap_Cvar_VariableValue( "ui_hangarAutoRotate" ) ? "AUTO ROTATE: ON" : "AUTO ROTATE: OFF", "", qtrue );
 
-	// rows under the characteristics: upgrades right after them; the shop and the
-	// finish button leave a line for the text above them (Hangar_DrawPanel)
-	Hangar_PlaceButton( &hangarMenuInfo.upgradeRobot, ROW_FIRST );
-	Hangar_PlaceButton( &hangarMenuInfo.upgradeWeapon, ROW_FIRST + BUTTON_H + 6 );
-	Hangar_PlaceButton( &hangarMenuInfo.finish, ROW_FIRST + 2 * LINE + 4 );
-	Hangar_PlaceButton( &hangarMenuInfo.shopPrev, ROW_FIRST + LINE + 6 );
-	Hangar_PlaceButton( &hangarMenuInfo.buy, ROW_FIRST + LINE + 6 );
-	Hangar_PlaceButton( &hangarMenuInfo.shopNext, ROW_FIRST + LINE + 6 );
-
-	if ( !robot ) {
-		const robotInfo_t	*info = &bg_robots[hangarMenuInfo.shopType];
-		Hangar_SetButton( &hangarMenuInfo.buy, va( "BUY  %s CR", Hangar_Number( info->price ) ), "",
-			uiAccount.currency >= info->price );
-		Hangar_SetButton( &hangarMenuInfo.shopPrev, "<", "", qtrue );
-		Hangar_SetButton( &hangarMenuInfo.shopNext, ">", "", qtrue );
-		Hangar_Show( &hangarMenuInfo.upgradeRobot, qfalse );
-		Hangar_Show( &hangarMenuInfo.upgradeWeapon, qfalse );
-		Hangar_Show( &hangarMenuInfo.finish, qfalse );
-		return;
+	numSlots = bg_robots[robot ? robot->type : hangarMenuInfo.shopType].numSlots;
+	actionsY = Hangar_ActionsY( numSlots );
+	for ( index = 0; index < ROBOT_MAX_SLOTS; index++ ) {
+		Hangar_Show( &hangarMenuInfo.slots[index], qfalse );
 	}
+	for ( index = 0; index < MAX_CHOICES; index++ ) {
+		Hangar_Show( &hangarMenuInfo.choices[index], qfalse );
+	}
+	Hangar_Show( &hangarMenuInfo.chooseBack, qfalse );
+	Hangar_Show( &hangarMenuInfo.upgradeRobot, qfalse );
+	Hangar_Show( &hangarMenuInfo.upgradeWeapon, qfalse );
+	Hangar_Show( &hangarMenuInfo.changeWeapon, qfalse );
 	Hangar_Show( &hangarMenuInfo.buy, qfalse );
 	Hangar_Show( &hangarMenuInfo.shopPrev, qfalse );
 	Hangar_Show( &hangarMenuInfo.shopNext, qfalse );
 
-	if ( robot->upgrade != UPGRADE_NONE ) {
-		int		cost = BG_SpeedUpCost( robot->upgradeEnd - now );
-		Hangar_SetButton( &hangarMenuInfo.finish, "FINISH NOW", va( "%i CR", cost ), uiAccount.currency >= cost );
-		Hangar_Show( &hangarMenuInfo.upgradeRobot, qfalse );
-		Hangar_Show( &hangarMenuInfo.upgradeWeapon, qfalse );
+	if ( !robot ) {
+		// the shop: the robot comes with the weapons drawn on it
+		const robotInfo_t	*info = &bg_robots[hangarMenuInfo.shopType];
+		hangarMenuInfo.choosing = qfalse;
+		Hangar_SetButton( &hangarMenuInfo.buy, va( "BUY  %s CR", Hangar_Number( info->price ) ), "",
+			uiAccount.currency >= info->price );
+		Hangar_SetButton( &hangarMenuInfo.shopPrev, "<", "", qtrue );
+		Hangar_SetButton( &hangarMenuInfo.shopNext, ">", "", qtrue );
+		Hangar_PlaceButton( &hangarMenuInfo.shopPrev, actionsY );
+		Hangar_PlaceButton( &hangarMenuInfo.buy, actionsY );
+		Hangar_PlaceButton( &hangarMenuInfo.shopNext, actionsY );
 		return;
 	}
-	Hangar_Show( &hangarMenuInfo.finish, qfalse );
 
-	if ( robot->level < ROBOT_LEVELS ) {
-		int		cost = BG_UpgradeCost( qfalse, robot->level );
+	if ( hangarMenuInfo.selectedSlot >= numSlots ) {
+		hangarMenuInfo.selectedSlot = 0;
+	}
+
+	// the slots
+	for ( index = 0; index < numSlots; index++ ) {
+		accountWeapon_t	*slotWeapon = Hangar_SlotWeapon( index );
+		const char		*className = bg_weaponClassNames[bg_robots[robot->type].slotClass[index]];
+		if ( slotWeapon ) {
+			Hangar_SetButton( &hangarMenuInfo.slots[index],
+				va( "%c  %s  LV %i", className[0], bg_robotWeapons[slotWeapon->type].title, slotWeapon->level ),
+				slotWeapon->upgrading ? "UPGRADING" : bg_robotWeapons[slotWeapon->type].description, qtrue );
+		} else {
+			Hangar_SetButton( &hangarMenuInfo.slots[index], va( "%c  EMPTY", className[0] ), va( "%s slot", className ), qfalse );
+		}
+		hangarMenuInfo.slots[index].marked = ( index == hangarMenuInfo.selectedSlot );
+	}
+
+	if ( hangarMenuInfo.choosing ) {
+		// the weapon list in place of the details and actions
+		Hangar_BuildChoices();
+		for ( index = 0; index < hangarMenuInfo.numChoices; index++ ) {
+			int		value = hangarMenuInfo.choiceValue[index];
+			Hangar_PlaceButton( &hangarMenuInfo.choices[index], Hangar_DetailsY( numSlots ) + 18 + index * ( BUTTON_H + 2 ) );
+			if ( hangarMenuInfo.choiceKind[index] == CHOICE_OWN ) {
+				int		slot, carrier = UI_AccountWeaponRobot( value, &slot );
+				Hangar_SetButton( &hangarMenuInfo.choices[index],
+					va( "%s  LV %i", bg_robotWeapons[uiAccount.weapons[value].type].title, uiAccount.weapons[value].level ),
+					carrier >= 0 ? va( "on %s (bay %i)", bg_robots[uiAccount.robots[carrier].type].title, carrier + 1 ) : "in store",
+					qtrue );
+			} else if ( hangarMenuInfo.choiceKind[index] == CHOICE_BUY ) {
+				Hangar_SetButton( &hangarMenuInfo.choices[index], va( "BUY %s", bg_robotWeapons[value].title ),
+					va( "%s CR", Hangar_Number( bg_robotWeapons[value].price ) ), uiAccount.currency >= bg_robotWeapons[value].price );
+			} else {
+				Hangar_SetButton( &hangarMenuInfo.choices[index], "TAKE OUT", "slot stays empty", qtrue );
+			}
+		}
+		Hangar_SetButton( &hangarMenuInfo.chooseBack, "BACK", "", qtrue );
+		Hangar_PlaceButton( &hangarMenuInfo.chooseBack, Hangar_DetailsY( numSlots ) - 1 );
+		return;
+	}
+
+	// the actions: robot, weapon of the selected slot, change it
+	if ( robot->upgrading ) {
+		int		cost = BG_SpeedUpCost( robot->upgradeEnd - now );
+		Hangar_SetButton( &hangarMenuInfo.upgradeRobot, va( "FINISH ROBOT  %s", Hangar_Duration( robot->upgradeEnd - now ) ),
+			va( "%i CR", cost ), uiAccount.currency >= cost );
+	} else if ( robot->level < ROBOT_LEVELS ) {
+		int		cost = BG_RobotUpgradeCost( robot->level );
 		Hangar_SetButton( &hangarMenuInfo.upgradeRobot, "UPGRADE ROBOT",
-			va( "%i PTS  %s", cost, Hangar_Duration( BG_UpgradeTime( qfalse, robot->level ) ) ), uiAccount.points >= cost );
-	} else {
-		Hangar_Show( &hangarMenuInfo.upgradeRobot, qfalse );
+			va( "%i PTS  %s", cost, Hangar_Duration( BG_UpgradeTime( robot->level ) ) ), uiAccount.points >= cost );
 	}
-	if ( robot->weaponLevel < WEAPON_LEVELS ) {
-		int		cost = BG_UpgradeCost( qtrue, robot->weaponLevel );
+	weapon = Hangar_SlotWeapon( hangarMenuInfo.selectedSlot );
+	if ( weapon && weapon->upgrading ) {
+		int		cost = BG_SpeedUpCost( weapon->upgradeEnd - now );
+		Hangar_SetButton( &hangarMenuInfo.upgradeWeapon, va( "FINISH WEAPON  %s", Hangar_Duration( weapon->upgradeEnd - now ) ),
+			va( "%i CR", cost ), uiAccount.currency >= cost );
+	} else if ( weapon && weapon->level < WEAPON_LEVELS ) {
+		int		cost = BG_WeaponUpgradeCost( weapon->type, weapon->level );
 		Hangar_SetButton( &hangarMenuInfo.upgradeWeapon, "UPGRADE WEAPON",
-			va( "%i PTS  %s", cost, Hangar_Duration( BG_UpgradeTime( qtrue, robot->weaponLevel ) ) ), uiAccount.points >= cost );
-	} else {
-		Hangar_Show( &hangarMenuInfo.upgradeWeapon, qfalse );
+			va( "%i PTS  %s", cost, Hangar_Duration( BG_UpgradeTime( weapon->level ) ) ), uiAccount.points >= cost );
 	}
+	Hangar_SetButton( &hangarMenuInfo.changeWeapon, weapon ? "CHANGE WEAPON" : "PUT A WEAPON",
+		va( "%s slot %i", bg_weaponClassNames[bg_robots[robot->type].slotClass[hangarMenuInfo.selectedSlot]],
+			hangarMenuInfo.selectedSlot + 1 ), qtrue );
+	Hangar_PlaceButton( &hangarMenuInfo.upgradeRobot, actionsY );
+	Hangar_PlaceButton( &hangarMenuInfo.upgradeWeapon, actionsY + ROW_STEP + 2 );
+	Hangar_PlaceButton( &hangarMenuInfo.changeWeapon, actionsY + 2 * ( ROW_STEP + 2 ) );
 }
 
 
@@ -406,28 +561,49 @@ static void Hangar_DrawLine( int y, const char *name, const char *value, const c
 
 /*
 =================
+Hangar_DrawWeaponLines
+
+damage, rate and range of a weapon at its level, with the gain of the next one
+=================
+*/
+static void Hangar_DrawWeaponLines( int y, int type, int level, qboolean showNext ) {
+	int		next = level < WEAPON_LEVELS ? level + 1 : level;
+	int		value;
+
+	showNext = showNext && next > level;
+	value = BG_WeaponDamage( type, level );
+	Hangar_DrawLine( y, "DAMAGE", Hangar_Number( value ),
+		showNext ? va( "+%s", Hangar_Number( BG_WeaponDamage( type, next ) - value ) ) : "" );
+	y += LINE;
+	value = BG_WeaponInterval( type, level );
+	Hangar_DrawLine( y, "RATE", va( "%i.%i /s", 1000 / value, ( 10000 / value ) % 10 ),
+		showNext ? va( "%i.%i /s", 1000 / BG_WeaponInterval( type, next ), ( 10000 / BG_WeaponInterval( type, next ) ) % 10 ) : "" );
+	y += LINE;
+	Hangar_DrawLine( y, "RANGE", va( "%i", bg_robotWeapons[type].range ), "" );
+}
+
+
+/*
+=================
 Hangar_DrawPanel
 =================
 */
 static void Hangar_DrawPanel( void ) {
 	accountRobot_t		*robot = Hangar_SelectedRobot();
 	const robotInfo_t	*info;
-	const robotWeaponInfo_t	*weapon;
-	int					type, level, weaponLevel, y, next, value;
+	accountWeapon_t		*weapon;
+	int					type, level, y, next, value, slot;
 	qboolean			showNext;
 
 	if ( robot ) {
 		type = robot->type;
 		level = robot->level;
-		weaponLevel = robot->weaponLevel;
 	} else {
 		type = hangarMenuInfo.shopType;
 		level = 1;
-		weaponLevel = 1;
 	}
 	info = &bg_robots[type];
-	weapon = &bg_robotWeapons[info->weapon];
-	showNext = robot && robot->upgrade == UPGRADE_NONE;
+	showNext = robot && !robot->upgrading;
 
 	UI_FillRect( PANEL_X, PANEL_Y, PANEL_W, PANEL_H, hangarPanelColor );
 	UI_FillRect( PANEL_X, PANEL_Y, PANEL_W, 2, hangarAccentColor );
@@ -457,36 +633,34 @@ static void Hangar_DrawPanel( void ) {
 	value = BG_RobotSpeed( type, level );
 	Hangar_DrawLine( y, "SPEED", va( "%i km/h", value ),
 		showNext && next > level && BG_RobotSpeed( type, next ) > value ? va( "+%i", BG_RobotSpeed( type, next ) - value ) : "" );
-	y += LINE + 6;
-
+	y += LINE + 3;
 	Hangar_Rule( y - 3 );
-	Hangar_Text( PANEL_X + PANEL_PAD, y, weapon->title, UI_LEFT, hangarAccentColor );
-	Hangar_Text( PANEL_X + PANEL_W - PANEL_PAD, y, va( "LEVEL %i / %i", weaponLevel, WEAPON_LEVELS ), UI_RIGHT, hangarAccentColor );
-	y += LINE + 2;
-	next = weaponLevel < WEAPON_LEVELS ? weaponLevel + 1 : weaponLevel;
-	value = BG_WeaponDamage( info->weapon, weaponLevel );
-	Hangar_DrawLine( y, "DAMAGE", Hangar_Number( value ),
-		showNext && next > weaponLevel ? va( "+%s", Hangar_Number( BG_WeaponDamage( info->weapon, next ) - value ) ) : "" );
-	y += LINE;
-	value = BG_WeaponInterval( info->weapon, weaponLevel );
-	Hangar_DrawLine( y, "RATE", va( "%i.%i /s", 1000 / value, ( 10000 / value ) % 10 ),
-		showNext && next > weaponLevel ? va( "%i.%i /s", 1000 / BG_WeaponInterval( info->weapon, next ),
-			( 10000 / BG_WeaponInterval( info->weapon, next ) ) % 10 ) : "" );
-	y += LINE;
-	Hangar_DrawLine( y, "RANGE", va( "%i", weapon->range ), "" );
-	y += LINE + 6;
-	Hangar_Rule( y - 3 );
+	// y is SLOTS_Y here
 
-	// the rows under the characteristics start at ROW_FIRST (Hangar_UpdateButtons)
-	y = ROW_FIRST + 2;
-	if ( robot && robot->upgrade != UPGRADE_NONE ) {
-		Hangar_Text( PANEL_X + PANEL_PAD, y, va( "UPGRADING %s", robot->upgrade == UPGRADE_ROBOT ? "ROBOT" : "WEAPON" ),
-			UI_LEFT, color_yellow );
-		Hangar_Text( PANEL_X + PANEL_W - PANEL_PAD, y, va( "%s left", Hangar_Duration( robot->upgradeEnd - UI_AccountTime() ) ),
-			UI_RIGHT, color_yellow );
-		Hangar_Text( PANEL_X + PANEL_PAD, y + LINE, "stays out of battles until done", UI_LEFT, hangarDimColor );
-	} else if ( !robot ) {
-		Hangar_Text( PANEL_X + PANEL_PAD, y, "Empty bay: choose a robot to buy", UI_LEFT, hangarDimColor );
+	if ( !robot ) {
+		// the shop: slots with the weapons the robot comes with
+		for ( slot = 0; slot < info->numSlots; slot++ ) {
+			Hangar_Text( PANEL_X + PANEL_PAD, SLOTS_Y + slot * ROW_STEP + 3,
+				va( "%s SLOT", bg_weaponClassNames[info->slotClass[slot]] ), UI_LEFT, hangarDimColor );
+			Hangar_Text( PANEL_X + PANEL_W - PANEL_PAD, SLOTS_Y + slot * ROW_STEP + 3,
+				bg_robotWeapons[info->defaultWeapon[slot]].title, UI_RIGHT, hangarTextColor );
+		}
+		Hangar_Text( PANEL_X + PANEL_PAD, Hangar_DetailsY( info->numSlots ) + 2, "Comes with these weapons.", UI_LEFT, hangarDimColor );
+		Hangar_Text( PANEL_X + PANEL_PAD, Hangar_DetailsY( info->numSlots ) + 2 + LINE, "Empty bay: buy a robot here.", UI_LEFT, hangarDimColor );
+	} else if ( hangarMenuInfo.choosing ) {
+		Hangar_Text( PANEL_X + PANEL_PAD, Hangar_DetailsY( info->numSlots ) + 2,
+			va( "%s WEAPONS FOR SLOT %i", bg_weaponClassNames[info->slotClass[hangarMenuInfo.selectedSlot]],
+				hangarMenuInfo.selectedSlot + 1 ), UI_LEFT, hangarAccentColor );
+	} else {
+		// the weapon of the selected slot
+		y = Hangar_DetailsY( info->numSlots );
+		weapon = Hangar_SlotWeapon( hangarMenuInfo.selectedSlot );
+		if ( weapon ) {
+			Hangar_DrawWeaponLines( y, weapon->type, weapon->level, !weapon->upgrading );
+		} else {
+			Hangar_Text( PANEL_X + PANEL_PAD, y, "Empty slot: put a weapon in it.", UI_LEFT, hangarDimColor );
+		}
+		Hangar_Rule( Hangar_ActionsY( info->numSlots ) - 5 );
 	}
 	if ( hangarMenuInfo.message[0] ) {
 		Hangar_Text( PANEL_X + PANEL_W / 2, PANEL_Y + PANEL_H - 14, hangarMenuInfo.message, UI_CENTER, color_red );
@@ -503,11 +677,17 @@ static void Hangar_DrawButton( void *self ) {
 	hangarButton_t	*button = (hangarButton_t *)self;
 	menucommon_s	*item = &button->item.generic;
 	qboolean		focus = ( item->parent->cursor == item->menuPosition );
-	float			*color;
+	float			*color, *fill;
 	int				textY = item->y + ( button->item.height - TINYFONT_HEIGHT ) / 2;
 
-	UI_FillRect( item->x, item->y, button->item.width, button->item.height, focus ? hangarButtonFocusColor : hangarButtonColor );
-	UI_DrawRect( item->x, item->y, button->item.width, button->item.height, focus ? hangarAccentColor : hangarBorderColor );
+	if ( focus ) {
+		fill = hangarButtonFocusColor;
+	} else {
+		fill = button->marked ? hangarButtonMarkedColor : hangarButtonColor;
+	}
+	UI_FillRect( item->x, item->y, button->item.width, button->item.height, fill );
+	UI_DrawRect( item->x, item->y, button->item.width, button->item.height,
+		( focus || button->marked ) ? hangarAccentColor : hangarBorderColor );
 	if ( !button->enabled ) {
 		color = hangarDimColor;
 	} else {
@@ -563,8 +743,9 @@ static void Hangar_DrawBay( void *self ) {
 		Hangar_FaceYaw( &hangarMenuInfo.players[index], hangarMenuInfo.bayYaw + index * 25 );
 		UI_DrawPlayer( bay->generic.x + 4, bay->generic.y + 2, bay->width - 8, bay->height - 16, &hangarMenuInfo.players[index], uis.realtime / 2 );
 		Com_sprintf( label, sizeof( label ), "%s  LV %i", bg_robots[robot->type].title, robot->level );
-		if ( robot->upgrade != UPGRADE_NONE ) {
-			Hangar_Text( bay->generic.x + bay->width / 2, bay->generic.y + 4, "UPGRADING", UI_CENTER, color_yellow );
+		if ( !UI_AccountRobotReady( robot ) ) {
+			Hangar_Text( bay->generic.x + bay->width / 2, bay->generic.y + 4, robot->upgrading ? "UPGRADING" : "NOT READY",
+				UI_CENTER, color_yellow );
 		}
 	} else {
 		Q_strncpyz( label, "+ BUY", sizeof( label ) );
@@ -709,6 +890,12 @@ static sfxHandle_t Hangar_Key( int key ) {
 			hangarMenuInfo.previewZoom = ZOOM_MIN;
 		}
 		return 0;
+	case K_ESCAPE:
+		if ( hangarMenuInfo.choosing ) {
+			hangarMenuInfo.choosing = qfalse;		// out of the weapon list first
+			return 0;
+		}
+		break;
 	}
 	return Menu_DefaultKey( &hangarMenuInfo.menu, key );
 }
@@ -716,30 +903,54 @@ static sfxHandle_t Hangar_Key( int key ) {
 
 /*
 =================
-Hangar_StartUpgrade
+Hangar_Spend
+
+takes points or credits; qfalse with a message when there are not enough
 =================
 */
-static void Hangar_StartUpgrade( qboolean weapon ) {
-	accountRobot_t	*robot = Hangar_SelectedRobot();
-	int				level, cost;
-
-	hangarMenuInfo.message[0] = 0;
-	if ( !robot || robot->upgrade != UPGRADE_NONE ) {
-		return;
-	}
-	level = weapon ? robot->weaponLevel : robot->level;
-	if ( level >= ( weapon ? WEAPON_LEVELS : ROBOT_LEVELS ) ) {
-		return;
-	}
-	cost = BG_UpgradeCost( weapon, level );
-	if ( uiAccount.points < cost ) {
+static qboolean Hangar_Spend( int points, int credits ) {
+	if ( uiAccount.points < points ) {
 		Com_sprintf( hangarMenuInfo.message, sizeof( hangarMenuInfo.message ), "Not enough development points: %i more needed",
-			cost - uiAccount.points );
+			points - uiAccount.points );
+		return qfalse;
+	}
+	if ( uiAccount.currency < credits ) {
+		Com_sprintf( hangarMenuInfo.message, sizeof( hangarMenuInfo.message ), "Not enough credits: %s more needed",
+			Hangar_Number( credits - uiAccount.currency ) );
+		return qfalse;
+	}
+	uiAccount.points -= points;
+	uiAccount.currency -= credits;
+	return qtrue;
+}
+
+
+/*
+=================
+Hangar_UpgradeRobot
+
+starts an upgrade of the robot, or finishes the running one for credits
+=================
+*/
+static void Hangar_UpgradeRobot( void ) {
+	accountRobot_t	*robot = Hangar_SelectedRobot();
+	int				now = UI_AccountTime();
+
+	if ( !robot ) {
 		return;
 	}
-	uiAccount.points -= cost;
-	robot->upgrade = weapon ? UPGRADE_WEAPON : UPGRADE_ROBOT;
-	robot->upgradeEnd = UI_AccountTime() + BG_UpgradeTime( weapon, level );
+	if ( robot->upgrading ) {
+		if ( !Hangar_Spend( 0, BG_SpeedUpCost( robot->upgradeEnd - now ) ) ) {
+			return;
+		}
+		robot->upgradeEnd = now;
+	} else {
+		if ( robot->level >= ROBOT_LEVELS || !Hangar_Spend( BG_RobotUpgradeCost( robot->level ), 0 ) ) {
+			return;
+		}
+		robot->upgrading = qtrue;
+		robot->upgradeEnd = now + BG_UpgradeTime( robot->level );
+	}
 	UI_AccountSave();
 	UI_AccountUpdate();
 }
@@ -747,27 +958,75 @@ static void Hangar_StartUpgrade( qboolean weapon ) {
 
 /*
 =================
-Hangar_Finish
+Hangar_UpgradeWeapon
+
+the same for the weapon in the selected slot
 =================
 */
-static void Hangar_Finish( void ) {
-	accountRobot_t	*robot = Hangar_SelectedRobot();
-	int				cost;
+static void Hangar_UpgradeWeapon( void ) {
+	accountWeapon_t	*weapon = Hangar_SlotWeapon( hangarMenuInfo.selectedSlot );
+	int				now = UI_AccountTime();
 
-	hangarMenuInfo.message[0] = 0;
-	if ( !robot || robot->upgrade == UPGRADE_NONE ) {
+	if ( !weapon ) {
 		return;
 	}
-	cost = BG_SpeedUpCost( robot->upgradeEnd - UI_AccountTime() );
-	if ( uiAccount.currency < cost ) {
-		Com_sprintf( hangarMenuInfo.message, sizeof( hangarMenuInfo.message ), "Not enough credits: %i more needed",
-			cost - uiAccount.currency );
-		return;
+	if ( weapon->upgrading ) {
+		if ( !Hangar_Spend( 0, BG_SpeedUpCost( weapon->upgradeEnd - now ) ) ) {
+			return;
+		}
+		weapon->upgradeEnd = now;
+	} else {
+		if ( weapon->level >= WEAPON_LEVELS || !Hangar_Spend( BG_WeaponUpgradeCost( weapon->type, weapon->level ), 0 ) ) {
+			return;
+		}
+		weapon->upgrading = qtrue;
+		weapon->upgradeEnd = now + BG_UpgradeTime( weapon->level );
 	}
-	uiAccount.currency -= cost;
-	robot->upgradeEnd = UI_AccountTime();
-	UI_AccountUpdate();		// finishes it and saves
 	UI_AccountSave();
+	UI_AccountUpdate();
+}
+
+
+/*
+=================
+Hangar_Choose
+
+a row of the weapon list: put an owned weapon into the slot (taking it off the
+robot that carries it), buy one and put it in, or empty the slot
+=================
+*/
+static void Hangar_Choose( int index ) {
+	accountRobot_t	*robot = Hangar_SelectedRobot();
+	int				kind, value, slot, carrier;
+
+	if ( !robot || index < 0 || index >= hangarMenuInfo.numChoices ) {
+		return;
+	}
+	kind = hangarMenuInfo.choiceKind[index];
+	value = hangarMenuInfo.choiceValue[index];
+	if ( kind == CHOICE_BUY ) {
+		if ( uiAccount.numWeapons >= MAX_ACCOUNT_WEAPONS ) {
+			Q_strncpyz( hangarMenuInfo.message, "The weapon store is full", sizeof( hangarMenuInfo.message ) );
+			return;
+		}
+		if ( !Hangar_Spend( 0, bg_robotWeapons[value].price ) ) {
+			return;
+		}
+		value = UI_AccountAddWeapon( value, 1 );
+		kind = CHOICE_OWN;
+	}
+	if ( kind == CHOICE_OWN && value >= 0 ) {
+		carrier = UI_AccountWeaponRobot( value, &slot );
+		if ( carrier >= 0 ) {
+			uiAccount.robots[carrier].slots[slot] = -1;
+		}
+		robot->slots[hangarMenuInfo.selectedSlot] = value;
+	} else if ( kind == CHOICE_EMPTY ) {
+		robot->slots[hangarMenuInfo.selectedSlot] = -1;
+	}
+	hangarMenuInfo.choosing = qfalse;
+	UI_AccountSave();
+	UI_AccountUpdate();
 }
 
 
@@ -778,25 +1037,19 @@ Hangar_Buy
 */
 static void Hangar_Buy( void ) {
 	const robotInfo_t	*info = &bg_robots[hangarMenuInfo.shopType];
-	accountRobot_t		*robot;
 
-	hangarMenuInfo.message[0] = 0;
 	if ( uiAccount.numRobots >= ROBOT_HANGAR_SIZE ) {
 		return;
 	}
-	if ( uiAccount.currency < info->price ) {
-		Com_sprintf( hangarMenuInfo.message, sizeof( hangarMenuInfo.message ), "Not enough credits: %s more needed",
-			Hangar_Number( info->price - uiAccount.currency ) );
+	if ( uiAccount.numWeapons + info->numSlots > MAX_ACCOUNT_WEAPONS ) {
+		Q_strncpyz( hangarMenuInfo.message, "The weapon store is full", sizeof( hangarMenuInfo.message ) );
 		return;
 	}
-	uiAccount.currency -= info->price;
-	robot = &uiAccount.robots[uiAccount.numRobots];
-	memset( robot, 0, sizeof( *robot ) );
-	robot->type = hangarMenuInfo.shopType;
-	robot->level = 1;
-	robot->weaponLevel = 1;
+	if ( !Hangar_Spend( 0, info->price ) ) {
+		return;
+	}
 	hangarMenuInfo.selected = uiAccount.numRobots;
-	uiAccount.numRobots++;
+	UI_AccountAddRobot( hangarMenuInfo.shopType );
 	UI_AccountSave();
 	UI_AccountUpdate();
 }
@@ -814,12 +1067,23 @@ static void Hangar_Event( void *ptr, int event ) {
 		return;
 	}
 	id = ( (menucommon_s *)ptr )->id;
+	hangarMenuInfo.message[0] = 0;
 	if ( id >= ID_BAY0 && id < ID_BAY0 + MAX_BAYS ) {
 		hangarMenuInfo.selected = id - ID_BAY0;
 		if ( hangarMenuInfo.selected > uiAccount.numRobots ) {
 			hangarMenuInfo.selected = uiAccount.numRobots;		// the first empty bay sells
 		}
-		hangarMenuInfo.message[0] = 0;
+		hangarMenuInfo.selectedSlot = 0;
+		hangarMenuInfo.choosing = qfalse;
+		return;
+	}
+	if ( id >= ID_SLOT0 && id < ID_SLOT0 + ROBOT_MAX_SLOTS ) {
+		hangarMenuInfo.selectedSlot = id - ID_SLOT0;
+		hangarMenuInfo.choosing = qfalse;
+		return;
+	}
+	if ( id >= ID_CHOICE0 && id < ID_CHOICE0 + MAX_CHOICES ) {
+		Hangar_Choose( id - ID_CHOICE0 );
 		return;
 	}
 	switch ( id ) {
@@ -833,13 +1097,16 @@ static void Hangar_Event( void *ptr, int event ) {
 		hangarMenuInfo.previewZoom = 1;
 		break;
 	case ID_UPGRADE_ROBOT:
-		Hangar_StartUpgrade( qfalse );
+		Hangar_UpgradeRobot();
 		break;
 	case ID_UPGRADE_WEAPON:
-		Hangar_StartUpgrade( qtrue );
+		Hangar_UpgradeWeapon();
 		break;
-	case ID_FINISH:
-		Hangar_Finish();
+	case ID_CHANGE_WEAPON:
+		hangarMenuInfo.choosing = qtrue;
+		break;
+	case ID_CHOOSE_BACK:
+		hangarMenuInfo.choosing = qfalse;
 		break;
 	case ID_BUY:
 		Hangar_Buy();
@@ -863,9 +1130,14 @@ UI_Hangar_Cache
 =================
 */
 void UI_Hangar_Cache( void ) {
+	int		index;
+
 	trap_R_RegisterShaderNoMip( ART_BACKGROUND );
 	trap_R_RegisterShaderNoMip( ART_BAY );
 	trap_R_RegisterShaderNoMip( ART_BAY_SELECTED );
+	for ( index = 0; index < RWEAPON_COUNT; index++ ) {
+		trap_R_RegisterModel( va( "models/robotweapons/%s.md3", bg_robotWeapons[index].id ) );
+	}
 }
 
 
@@ -901,7 +1173,7 @@ Hangar_Init
 =================
 */
 static void Hangar_Init( void ) {
-	int		index, buttonY, buttonX, buttonW;
+	int		index, buttonX, buttonW;
 
 	memset( &hangarMenuInfo, 0, sizeof( hangarMenuInfo ) );
 	hangarMenuInfo.menu.fullscreen = qtrue;
@@ -913,6 +1185,9 @@ static void Hangar_Init( void ) {
 	hangarMenuInfo.backgroundShader = trap_R_RegisterShaderNoMip( ART_BACKGROUND );
 	hangarMenuInfo.bayShader = trap_R_RegisterShaderNoMip( ART_BAY );
 	hangarMenuInfo.baySelectedShader = trap_R_RegisterShaderNoMip( ART_BAY_SELECTED );
+	for ( index = 0; index < RWEAPON_COUNT; index++ ) {
+		hangarMenuInfo.weaponModels[index] = trap_R_RegisterModel( va( "models/robotweapons/%s.md3", bg_robotWeapons[index].id ) );
+	}
 
 	for ( index = 0; index < MAX_BAYS; index++ ) {
 		hangarMenuInfo.loadedType[index] = -1;
@@ -950,16 +1225,22 @@ static void Hangar_Init( void ) {
 		Menu_AddItem( &hangarMenuInfo.menu, &hangarMenuInfo.bays[index] );
 	}
 
-	// actions at the bottom of the characteristics panel
+	// the panel: slots, actions, weapon list, shop (rows are set by Hangar_UpdateButtons)
 	buttonX = PANEL_X + PANEL_PAD;
 	buttonW = PANEL_W - 2 * PANEL_PAD;
-	buttonY = ROW_FIRST;		// rows are set again by Hangar_UpdateButtons
-	Hangar_InitButton( &hangarMenuInfo.upgradeRobot, ID_UPGRADE_ROBOT, buttonX, buttonY, buttonW, BUTTON_H );
-	Hangar_InitButton( &hangarMenuInfo.upgradeWeapon, ID_UPGRADE_WEAPON, buttonX, buttonY + BUTTON_H + 6, buttonW, BUTTON_H );
-	Hangar_InitButton( &hangarMenuInfo.finish, ID_FINISH, buttonX, buttonY + BUTTON_H + 6, buttonW, BUTTON_H );
-	Hangar_InitButton( &hangarMenuInfo.shopPrev, ID_SHOP_PREV, buttonX, buttonY + BUTTON_H + 6, 24, BUTTON_H );
-	Hangar_InitButton( &hangarMenuInfo.buy, ID_BUY, buttonX + 30, buttonY + BUTTON_H + 6, buttonW - 60, BUTTON_H );
-	Hangar_InitButton( &hangarMenuInfo.shopNext, ID_SHOP_NEXT, buttonX + buttonW - 24, buttonY + BUTTON_H + 6, 24, BUTTON_H );
+	for ( index = 0; index < ROBOT_MAX_SLOTS; index++ ) {
+		Hangar_InitButton( &hangarMenuInfo.slots[index], ID_SLOT0 + index, buttonX, SLOTS_Y + index * ROW_STEP, buttonW, BUTTON_H );
+	}
+	Hangar_InitButton( &hangarMenuInfo.upgradeRobot, ID_UPGRADE_ROBOT, buttonX, SLOTS_Y, buttonW, BUTTON_H );
+	Hangar_InitButton( &hangarMenuInfo.upgradeWeapon, ID_UPGRADE_WEAPON, buttonX, SLOTS_Y, buttonW, BUTTON_H );
+	Hangar_InitButton( &hangarMenuInfo.changeWeapon, ID_CHANGE_WEAPON, buttonX, SLOTS_Y, buttonW, BUTTON_H );
+	for ( index = 0; index < MAX_CHOICES; index++ ) {
+		Hangar_InitButton( &hangarMenuInfo.choices[index], ID_CHOICE0 + index, buttonX, SLOTS_Y, buttonW, BUTTON_H );
+	}
+	Hangar_InitButton( &hangarMenuInfo.chooseBack, ID_CHOOSE_BACK, buttonX + buttonW - 48, SLOTS_Y, 48, 15 );
+	Hangar_InitButton( &hangarMenuInfo.shopPrev, ID_SHOP_PREV, buttonX, SLOTS_Y, 24, BUTTON_H );
+	Hangar_InitButton( &hangarMenuInfo.buy, ID_BUY, buttonX + 30, SLOTS_Y, buttonW - 60, BUTTON_H );
+	Hangar_InitButton( &hangarMenuInfo.shopNext, ID_SHOP_NEXT, buttonX + buttonW - 24, SLOTS_Y, 24, BUTTON_H );
 
 	// preview controls under the robot
 	Hangar_InitButton( &hangarMenuInfo.autoRotate, ID_AUTOROTATE, PREVIEW_X + 8, PREVIEW_Y + PREVIEW_H - 20, 116, 16 );

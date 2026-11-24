@@ -892,6 +892,16 @@ void ClientUserinfoChanged( int clientNum ) {
 			client->pers.maxHealth, client->sess.wins, client->sess.losses, teamTask, teamLeader);
 	}
 
+	// WALKER: the weapons in the slots of the current robot (cgame draws them)
+	{
+		static char	info[MAX_INFO_STRING];
+
+		Q_strncpyz( info, s, sizeof( info ) );
+		Q_strcat( info, sizeof( info ), "\\rw\\" );
+		Q_strcat( info, sizeof( info ), G_RobotWeaponList( client ) );
+		s = info;
+	}
+
 	trap_SetConfigstring( CS_PLAYERS+clientNum, s );
 
 	// this is not the userinfo, more like the configstring actually
@@ -1227,7 +1237,7 @@ void ClientSpawn(gentity_t *ent) {
 		trap_LinkEntity (ent);
 
 		// force the base weapon up (WALKER: the weapon of the robot)
-		client->ps.weapon = ( client->ps.stats[STAT_WEAPONS] & ( 1 << WP_ROCKET_LAUNCHER ) ) ? WP_ROCKET_LAUNCHER : WP_MACHINEGUN;
+		client->ps.weapon = WP_MACHINEGUN;		// the slots fire (g_robots.c)
 		client->ps.weaponstate = WEAPON_READY;
 
 	}

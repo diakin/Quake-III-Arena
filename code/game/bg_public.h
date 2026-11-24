@@ -467,7 +467,8 @@ typedef enum {
 	EV_TAUNT_FOLLOWME,
 	EV_TAUNT_GETFLAG,
 	EV_TAUNT_GUARDBASE,
-	EV_TAUNT_PATROL
+	EV_TAUNT_PATROL,
+	EV_ROBOT_FIRE			// WALKER: otherEntity fired the weapon s.weapon of slot eventParm
 
 } entity_event_t;
 

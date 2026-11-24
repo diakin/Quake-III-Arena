@@ -224,7 +224,7 @@ void CG_RailTrail (clientInfo_t *ci, vec3_t start, vec3_t end) {
 #define ROTATION 1
 #define SPACING  5
  
-	start[2] -= 4;
+	// WALKER: the beam starts at the muzzle of the railgun slot (g_weapon.c, Robot_Rail)
 	VectorCopy (start, move);
 	VectorSubtract (end, start, vec);
 	len = VectorNormalize (vec);
@@ -248,14 +248,15 @@ void CG_RailTrail (clientInfo_t *ci, vec3_t start, vec3_t end) {
 	VectorCopy(start, re->origin);
 	VectorCopy(end, re->oldorigin);
  
-	re->shaderRGBA[0] = ci->color1[0] * 255;
-    re->shaderRGBA[1] = ci->color1[1] * 255;
-    re->shaderRGBA[2] = ci->color1[2] * 255;
-    re->shaderRGBA[3] = 255;
+	// WALKER: one colour for every robot (the player colours are not used)
+	re->shaderRGBA[0] = 150;
+	re->shaderRGBA[1] = 225;
+	re->shaderRGBA[2] = 255;
+	re->shaderRGBA[3] = 255;
 
-	le->color[0] = ci->color1[0] * 0.75;
-	le->color[1] = ci->color1[1] * 0.75;
-	le->color[2] = ci->color1[2] * 0.75;
+	le->color[0] = 0.6f;
+	le->color[1] = 0.88f;
+	le->color[2] = 1.0f;
 	le->color[3] = 1.0f;
 
 	AxisClear( re->axis );
@@ -265,9 +266,6 @@ void CG_RailTrail (clientInfo_t *ci, vec3_t start, vec3_t end) {
 	VectorScale (vec, SPACING, vec);
 
 	if (cg_oldRail.integer != 0) {
-		// nudge down a bit so it isn't exactly in center
-		re->origin[2] -= 8;
-		re->oldorigin[2] -= 8;
 		return;
 	}
 	skip = -1;
@@ -1212,6 +1210,91 @@ static void CG_AddWeaponWithPowerups( refEntity_t *gun, int powerups ) {
 
 /*
 =============
+CG_AddRobotWeapons
+
+WALKER: the weapon models in the slots of a robot ("rw" of its configstring),
+each on tag_weaponN of the torso, with a flash and a light at its tag_flash for a
+while after it fired (EV_ROBOT_FIRE)
+=============
+*/
+void CG_AddRobotWeapons( refEntity_t *parent, centity_t *cent ) {
+	clientInfo_t	*ci = &cgs.clientinfo[cent->currentState.clientNum];
+	refEntity_t		gun, flash;
+	int				slot;
+
+	if ( !parent->hModel ) {
+		return;
+	}
+	for ( slot = 0; slot < ROBOT_MAX_SLOTS; slot++ ) {
+		int		type = ci->slotWeapons[slot];
+
+		if ( type < 0 || type >= RWEAPON_COUNT || !cgs.media.robotWeaponModels[type] ) {
+			continue;
+		}
+		memset( &gun, 0, sizeof( gun ) );
+		VectorCopy( parent->lightingOrigin, gun.lightingOrigin );
+		gun.shadowPlane = parent->shadowPlane;
+		gun.renderfx = parent->renderfx;
+		gun.hModel = cgs.media.robotWeaponModels[type];
+		CG_PositionEntityOnTag( &gun, parent, parent->hModel, va( "tag_weapon%i", slot + 1 ) );
+		CG_AddWeaponWithPowerups( &gun, cent->currentState.powerups );
+
+		if ( cg.time - cent->pe.slotFlashTime[slot] > MUZZLE_FLASH_TIME || bg_robotWeapons[type].fire == WFIRE_RAIL ) {
+			continue;
+		}
+		memset( &flash, 0, sizeof( flash ) );
+		CG_PositionEntityOnTag( &flash, &gun, gun.hModel, "tag_flash" );
+		flash.reType = RT_SPRITE;
+		flash.radius = 5 + 3 * bg_robotWeapons[type].weaponClass + ( rand() & 3 );
+		flash.rotation = rand() % 360;
+		flash.customShader = cgs.media.plasmaBallShader;
+		if ( bg_robotWeapons[type].fire == WFIRE_PLASMA ) {
+			flash.shaderRGBA[0] = 120;
+			flash.shaderRGBA[1] = 220;
+			flash.shaderRGBA[2] = 255;
+		} else {
+			flash.shaderRGBA[0] = 255;
+			flash.shaderRGBA[1] = 220;
+			flash.shaderRGBA[2] = 160;
+		}
+		flash.shaderRGBA[3] = 255;
+		trap_R_AddRefEntityToScene( &flash );
+		trap_R_AddLightToScene( flash.origin, 120 + 40 * bg_robotWeapons[type].weaponClass + ( rand() & 31 ),
+			flash.shaderRGBA[0] / 255.0f, flash.shaderRGBA[1] / 255.0f, flash.shaderRGBA[2] / 255.0f );
+	}
+}
+
+
+/*
+=============
+CG_RobotFire
+
+WALKER: EV_ROBOT_FIRE, a weapon in a slot of a robot fired: flash, sound, and
+the start of its tracer
+=============
+*/
+void CG_RobotFire( entityState_t *es ) {
+	centity_t	*shooter;
+	int			slot = es->eventParm;
+	int			type = es->weapon;
+
+	if ( es->otherEntityNum < 0 || es->otherEntityNum >= MAX_GENTITIES || slot < 0 || slot >= ROBOT_MAX_SLOTS
+		|| type < 0 || type >= RWEAPON_COUNT ) {
+		return;
+	}
+	shooter = &cg_entities[es->otherEntityNum];
+	shooter->pe.slotFlashTime[slot] = cg.time;
+	shooter->muzzleFlashTime = cg.time;
+	VectorCopy( es->pos.trBase, shooter->pe.lastFireOrigin );
+	shooter->pe.lastFireTime = cg.time;
+	if ( cgs.media.robotWeaponSounds[type] ) {
+		trap_S_StartSound( es->pos.trBase, es->otherEntityNum, CHAN_WEAPON, cgs.media.robotWeaponSounds[type] );
+	}
+}
+
+
+/*
+=============
 CG_AddPlayerWeapon
 
 Used for both the view weapon (ps is valid) and the world modelother character models (ps is NULL)
@@ -1260,26 +1343,8 @@ void CG_AddPlayerWeapon( refEntity_t *parent, playerState_t *ps, centity_t *cent
 
 	gun.hModel = weapon->weaponModel;
 	if (!gun.hModel) {
-		// WALKER: the guns are part of the robot model; draw only a muzzle flash
-		// sprite and light at the torso tag_weapon
-		if ( cg.time - cent->muzzleFlashTime <= MUZZLE_FLASH_TIME && parent->hModel ) {
-			CG_PositionEntityOnTag( &gun, parent, parent->hModel, "tag_weapon" );
-			memset( &flash, 0, sizeof( flash ) );
-			flash.reType = RT_SPRITE;
-			VectorMA( gun.origin, 6, gun.axis[0], flash.origin );
-			flash.radius = 9 + ( rand() & 7 );
-			flash.rotation = rand() % 360;
-			flash.customShader = cgs.media.plasmaBallShader;
-			flash.shaderRGBA[0] = 255;
-			flash.shaderRGBA[1] = 220;
-			flash.shaderRGBA[2] = 160;
-			flash.shaderRGBA[3] = 255;
-			trap_R_AddRefEntityToScene( &flash );
-			if ( weapon->flashDlightColor[0] || weapon->flashDlightColor[1] || weapon->flashDlightColor[2] ) {
-				trap_R_AddLightToScene( flash.origin, 200 + ( rand() & 31 ), weapon->flashDlightColor[0],
-					weapon->flashDlightColor[1], weapon->flashDlightColor[2] );
-			}
-		}
+		// WALKER: the weapons hang in the slots of the robot (tag_weapon1..3 of the torso)
+		CG_AddRobotWeapons( parent, cent );
 		return;
 	}
 
@@ -1868,11 +1933,18 @@ void CG_MissileHitWall( int weapon, int clientNum, vec3_t origin, vec3_t dir, im
 		}
 		break;
 	case WP_RAILGUN:
+		// WALKER: a flash sprite (no ring model in the game data)
 		mod = cgs.media.ringFlashModel;
 		shader = cgs.media.railExplosionShader;
 		sfx = cgs.media.sfx_plasmaexp;
 		mark = cgs.media.energyMarkShader;
 		radius = 24;
+		isSprite = qtrue;
+		duration = 500;
+		light = 200;
+		lightColor[0] = 0.6f;
+		lightColor[1] = 0.85f;
+		lightColor[2] = 1.0f;
 		break;
 	case WP_PLASMAGUN:
 		mod = cgs.media.ringFlashModel;
@@ -1880,6 +1952,12 @@ void CG_MissileHitWall( int weapon, int clientNum, vec3_t origin, vec3_t dir, im
 		sfx = cgs.media.sfx_plasmaexp;
 		mark = cgs.media.energyMarkShader;
 		radius = 16;
+		isSprite = qtrue;
+		duration = 400;
+		light = 150;
+		lightColor[0] = 0.4f;
+		lightColor[1] = 0.8f;
+		lightColor[2] = 1.0f;
 		break;
 	case WP_BFG:
 		mod = cgs.media.dishFlashModel;
@@ -2216,6 +2294,13 @@ static qboolean	CG_CalcMuzzlePoint( int entityNum, vec3_t muzzle ) {
 	vec3_t		forward;
 	centity_t	*cent;
 	int			anim;
+
+	// WALKER: the muzzle of the slot that fired just now (EV_ROBOT_FIRE)
+	cent = &cg_entities[entityNum];
+	if ( cg.time - cent->pe.lastFireTime < 100 ) {
+		VectorCopy( cent->pe.lastFireOrigin, muzzle );
+		return qtrue;
+	}
 
 	if ( entityNum == cg.snap->ps.clientNum ) {
 		VectorCopy( cg.snap->ps.origin, muzzle );

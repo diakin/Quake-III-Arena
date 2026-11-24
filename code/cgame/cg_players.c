@@ -955,6 +955,28 @@ void CG_NewClientInfo( int clientNum ) {
 	v = Info_ValueForKey( configstring, "hc" );
 	newInfo.handicap = atoi( v );
 
+	// WALKER: weapons in the slots of the robot, "osa,osa"
+	{
+		char	list[64];
+		char	*cursor, *comma;
+		int		slot;
+
+		Q_strncpyz( list, Info_ValueForKey( configstring, "rw" ), sizeof( list ) );
+		cursor = list;
+		for ( slot = 0; slot < ROBOT_MAX_SLOTS; slot++ ) {
+			newInfo.slotWeapons[slot] = -1;
+			if ( !cursor || !*cursor ) {
+				continue;
+			}
+			comma = strchr( cursor, ',' );
+			if ( comma ) {
+				*comma = 0;
+			}
+			newInfo.slotWeapons[slot] = BG_WeaponByName( cursor );
+			cursor = comma ? comma + 1 : NULL;
+		}
+	}
+
 	// wins
 	v = Info_ValueForKey( configstring, "w" );
 	newInfo.wins = atoi( v );
