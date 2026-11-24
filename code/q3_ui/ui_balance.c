@@ -3,10 +3,11 @@
 WALKER: balance menu for tests.
 
 All robots and weapons in one column: a parameter, an edit field with the new
-value and the stock value. Up/Down (Tab) choose a field, typing replaces its
+value and the stock value; the robot and the weapons of the player in the battle
+are marked. Up/Down (Tab) choose a field, typing replaces its
 value, Backspace edits it, Enter applies. ESC and BACK apply too and close.
 The values go to the cvars bal_<id> (bg_robots.c), which the server sends to the
-clients; weapons change at once, structure and shield at the next spawn.
+clients; applies at once to all robots in the battle, bots included.
 
 This file is part of WALKER, based on the Quake III Arena source code
 (GPL v2, see COPYING.txt).
@@ -66,6 +67,10 @@ typedef struct {
 
 static balanceMenu_t	balanceMenu;
 
+// the robot and the weapons of the player in the battle, marked in the list
+static int				ownRobot = -1;
+static char				ownWeapons[RWEAPON_COUNT][48];	// "RIGHT L2, LEFT L1", "" when not mounted
+
 static const vec4_t	balanceBackColor = { 0.04f, 0.05f, 0.07f, 1.0f };
 static const vec4_t	balanceBarColor = { 0.09f, 0.11f, 0.14f, 1.0f };
 static const vec4_t	balanceRuleColor = { 0.25f, 0.30f, 0.36f, 1.0f };
@@ -76,6 +81,80 @@ static const vec4_t	balanceChangedColor = { 0.45f, 0.85f, 1.0f, 1.0f };	// diffe
 static const vec4_t	balancePendingColor = { 1.0f, 0.95f, 0.35f, 1.0f };	// typed, not applied
 static const vec4_t	balanceFieldColor = { 0.10f, 0.12f, 0.15f, 1.0f };
 static const vec4_t	balanceSelectedColor = { 0.18f, 0.24f, 0.32f, 1.0f };
+static const vec4_t	balanceOwnColor = { 1.0f, 0.72f, 0.25f, 0.14f };	// band of an own robot or weapon
+
+
+/*
+=================
+Balance_FindOwn
+
+the robot and the weapons of the player from his configstring ("model", "rw")
+=================
+*/
+static void Balance_FindOwn( void ) {
+	uiClientState_t	state;
+	char			info[MAX_INFO_STRING];
+	char			model[MAX_QPATH], list[64];
+	char			*slash, *cursor;
+	int				index, slot;
+
+	ownRobot = -1;
+	memset( ownWeapons, 0, sizeof( ownWeapons ) );
+	trap_GetClientState( &state );
+	if ( state.connState != CA_ACTIVE ) {
+		return;
+	}
+	trap_GetConfigString( CS_PLAYERS + state.clientNum, info, sizeof( info ) );
+	Q_strncpyz( model, Info_ValueForKey( info, "model" ), sizeof( model ) );
+	slash = strchr( model, '/' );
+	if ( slash ) {
+		*slash = 0;
+	}
+	for ( index = 0; index < ROBOT_COUNT; index++ ) {
+		if ( !Q_stricmp( model, bg_robots[index].model ) ) {
+			ownRobot = index;
+		}
+	}
+	if ( ownRobot < 0 ) {
+		return;
+	}
+
+	// "osa.2,osa.1": by slot, "-" for an empty one
+	Q_strncpyz( list, Info_ValueForKey( info, "rw" ), sizeof( list ) );
+	cursor = list;
+	for ( slot = 0; slot < bg_robots[ownRobot].numSlots && cursor && *cursor; slot++ ) {
+		char		*next = strchr( cursor, ',' );
+		char		*dot;
+		float		side = bg_robots[ownRobot].slotOffset[slot][1];
+		int			weaponLevel = 1;
+		int			weapon;
+
+		if ( next ) {
+			*next++ = 0;
+		}
+		dot = strchr( cursor, '.' );
+		if ( dot ) {
+			*dot = 0;
+			weaponLevel = atoi( dot + 1 );
+		}
+		weapon = BG_WeaponByName( cursor );
+		if ( weapon >= 0 && weapon < RWEAPON_COUNT ) {
+			Q_strcat( ownWeapons[weapon], sizeof( ownWeapons[weapon] ), va( "%s%s L%i", ownWeapons[weapon][0] ? ", " : "",
+				side > 2 ? "LEFT" : ( side < -2 ? "RIGHT" : "CENTER" ), weaponLevel ) );
+		}
+		cursor = next;
+	}
+}
+
+
+/*
+=================
+Balance_IsOwn
+=================
+*/
+static qboolean Balance_IsOwn( const balanceRow_t *row ) {
+	return row->weapon ? ownWeapons[row->index][0] != 0 : row->index == ownRobot;
+}
 
 
 /*
@@ -332,6 +411,12 @@ static void Balance_DrawRow( int index, int y ) {
 		UI_FillRect( LIST_X + 9 * TINYFONT_WIDTH, y + 7, LIST_W - 9 * TINYFONT_WIDTH, 1, balanceRuleColor );
 		return;
 	case ROW_OBJECT:
+		if ( Balance_IsOwn( row ) ) {
+			UI_FillRect( LIST_X, y, LIST_W, ROW_H - 1, balanceOwnColor );
+			UI_FillRect( LIST_X, y, 3, ROW_H - 1, balanceAccentColor );
+			Balance_Text( LIST_X + LIST_W - 4, y + 1, row->weapon ? va( "YOURS: %s", ownWeapons[row->index] ) : "YOUR ROBOT",
+				UI_RIGHT, balanceAccentColor );
+		}
 		if ( row->weapon ) {
 			const robotWeaponInfo_t	*info = &bg_robotWeapons[row->index];
 			Balance_Text( LIST_X + 8, y + 1, info->title, UI_LEFT, balanceTextColor );
@@ -345,6 +430,9 @@ static void Balance_DrawRow( int index, int y ) {
 		return;
 	}
 
+	if ( Balance_IsOwn( row ) ) {
+		UI_FillRect( LIST_X, y, 3, ROW_H, balanceAccentColor );
+	}
 	Balance_Text( LABEL_X, y + 1, ( row->weapon && row->param == WPARAM_INTERVAL ) ? "SHOTS/S"
 		: ( row->weapon ? bg_weaponParams[row->param].name : bg_robotParams[row->param].name ), UI_LEFT, balanceDimColor );
 
@@ -381,7 +469,7 @@ static void Balance_Draw( void ) {
 	UI_FillRect( 0, 0, SCREEN_WIDTH, TOPBAR_H, balanceBarColor );
 	UI_FillRect( 0, TOPBAR_H, SCREEN_WIDTH, 1, balanceRuleColor );
 	Balance_Text( 10, 5, "BALANCE (TEST)", UI_LEFT, balanceAccentColor );
-	Balance_Text( 630, 5, "weapons change at once, structure and shield at the next spawn", UI_RIGHT, balanceDimColor );
+	Balance_Text( 630, 5, "applies at once to all robots in the battle, bots included", UI_RIGHT, balanceDimColor );
 
 	Balance_Text( LABEL_X, HEADER_Y, "PARAMETER", UI_LEFT, balanceDimColor );
 	Balance_Text( FIELD_X + 4, HEADER_Y, "NEW", UI_LEFT, balanceDimColor );
@@ -583,6 +671,7 @@ void UI_BalanceMenu( void ) {
 	balanceMenu.menu.key = Balance_Key;
 
 	BG_BalanceUpdate();
+	Balance_FindOwn();
 	Balance_AddRow( ROW_SECTION, qfalse, 0, 0 );
 	for ( index = 0; index < ROBOT_COUNT; index++ ) {
 		Balance_AddRow( ROW_OBJECT, qfalse, index, 0 );

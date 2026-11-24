@@ -154,6 +154,6 @@ void	BG_SetWeaponParam( int weapon, int param, int value );
 const char *BG_BalanceCvarName( qboolean weapon, int index );
 void	BG_BalanceString( qboolean weapon, int index, char *buffer, int size );	// "" when all stock
 void	BG_BalanceRegister( int flags );		// once at the module start
-void	BG_BalanceUpdate( void );				// every frame: takes changed cvars
+qboolean BG_BalanceUpdate( void );			// every frame: takes changed cvars, qtrue when any
 
 #endif

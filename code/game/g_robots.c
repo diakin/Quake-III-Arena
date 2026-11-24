@@ -345,6 +345,51 @@ void G_RobotFire( gentity_t *ent, int msec ) {
 
 /*
 =================
+G_RobotBalanceChanged
+
+the test balance changed (bg_robots.c): the robots in the battle take the new
+structure and shield at once, keeping the share they have left
+=================
+*/
+void G_RobotBalanceChanged( void ) {
+	int		index;
+
+	for ( index = 0; index < level.maxclients; index++ ) {
+		gentity_t		*ent = &g_entities[index];
+		gclient_t		*client = ent->client;
+		battleRobot_t	*robot;
+		int				structure, shield;
+
+		if ( !ent->inuse || client->pers.connected != CON_CONNECTED || client->sess.sessionTeam == TEAM_SPECTATOR ) {
+			continue;
+		}
+		robot = G_RobotCurrent( client );
+		structure = BG_RobotStructure( robot->type, robot->level ) / ROBOT_HEALTH_SCALE;
+		shield = BG_RobotShield( robot->type, robot->level ) / ROBOT_HEALTH_SCALE;
+		if ( structure < 1 ) {
+			structure = 1;
+		}
+		if ( ent->health > 0 && client->ps.stats[STAT_MAX_HEALTH] > 0 && structure != client->ps.stats[STAT_MAX_HEALTH] ) {
+			ent->health = (int)( (float)ent->health * structure / client->ps.stats[STAT_MAX_HEALTH] + 0.5f );
+			if ( ent->health < 1 ) {
+				ent->health = 1;
+			}
+			client->ps.stats[STAT_HEALTH] = ent->health;
+		}
+		if ( client->ps.stats[STAT_MAX_SHIELD] > 0 ) {
+			client->ps.stats[STAT_SHIELD] = (int)( (float)client->ps.stats[STAT_SHIELD] * shield / client->ps.stats[STAT_MAX_SHIELD] + 0.5f );
+		} else if ( ent->health > 0 ) {
+			client->ps.stats[STAT_SHIELD] = shield;		// had none: full
+		}
+		client->pers.maxHealth = structure;
+		client->ps.stats[STAT_MAX_HEALTH] = structure;
+		client->ps.stats[STAT_MAX_SHIELD] = shield;
+	}
+}
+
+
+/*
+=================
 G_RobotWeaponList
 
 "osa.2,osa.1" - the weapons of the current robot by slot with their levels, for the

@@ -387,7 +387,9 @@ void G_UpdateCvars( void ) {
 	cvarTable_t	*cv;
 	qboolean remapped = qfalse;
 
-	BG_BalanceUpdate();		// WALKER
+	if ( BG_BalanceUpdate() ) {		// WALKER: test balance changed, robots in the battle take it now
+		G_RobotBalanceChanged();
+	}
 
 	for ( i = 0, cv = gameCvarTable ; i < gameCvarTableSize ; i++, cv++ ) {
 		if ( cv->vmCvar ) {

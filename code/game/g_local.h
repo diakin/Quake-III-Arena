@@ -619,6 +619,7 @@ void			G_RobotModel( gclient_t *client, char *model, int size );
 void			G_RobotSpawn( gentity_t *ent );
 float			G_RobotSpeed( gclient_t *client );
 void			G_RobotFire( gentity_t *ent, int msec );
+void			G_RobotBalanceChanged( void );
 const char		*G_RobotWeaponList( gclient_t *client );
 int				G_RobotAbsorb( gentity_t *targ, int damage );
 void			G_RobotThink( gentity_t *ent, int msec );

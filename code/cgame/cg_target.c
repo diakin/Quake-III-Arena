@@ -8,8 +8,8 @@ taken into a frame and held while it stays valid (alive, in sight, in range);
 the distance (1 unit = 1 m) and the damage done to this robot so far (server
 command "dmg <client> <total>", g_combat.c; reset when it gets a new robot).
 
-Behind each own weapon (at its mount, the camera looks from behind) its range
-and damage per shot are written; grey when the target in the frame is out of
+Behind each own weapon (at its mount, the camera looks from behind) its name,
+range and damage per shot are written; grey when the target in the frame is out of
 its range.
 
 This file is part of WALKER, based on the Quake III Arena source code
@@ -382,6 +382,7 @@ void CG_DrawWeaponLabels( void ) {
 			continue;
 		}
 		color = ( distance >= 0 && distance > bg_robotWeapons[type].range ) ? farColor : readyColor;
+		CG_DrawStringExt( x - strlen( bg_robotWeapons[type].title ) * 3, y - 23, bg_robotWeapons[type].title, color, qtrue, qtrue, 6, 10, 0 );
 		range = va( "%i m", bg_robotWeapons[type].range );
 		CG_DrawStringExt( x - strlen( range ) * 3, y - 12, range, color, qtrue, qtrue, 6, 10, 0 );
 		damage = va( "%i", BG_WeaponDamage( type, ci->slotLevels[slot] ) );

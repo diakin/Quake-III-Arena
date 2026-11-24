@@ -309,8 +309,9 @@ void BG_BalanceRegister( int flags ) {
 	BG_BalanceUpdate();
 }
 
-void BG_BalanceUpdate( void ) {
+qboolean BG_BalanceUpdate( void ) {
 	int		index;
+	qboolean changed = qfalse;
 
 	for ( index = 0; index < ROBOT_COUNT + RWEAPON_COUNT; index++ ) {
 		qboolean	weapon = index >= ROBOT_COUNT;
@@ -318,6 +319,8 @@ void BG_BalanceUpdate( void ) {
 		if ( balanceCvars[index].modificationCount != balanceCounts[index] ) {
 			balanceCounts[index] = balanceCvars[index].modificationCount;
 			BG_BalanceParse( weapon, weapon ? index - ROBOT_COUNT : index, balanceCvars[index].string );
+			changed = qtrue;
 		}
 	}
+	return changed;
 }
