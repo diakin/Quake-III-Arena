@@ -49,6 +49,7 @@ SETUP MENU
 #define ID_DEFAULTS				17
 #define ID_BACK					18
 #define ID_EFFECTS				19
+#define ID_BALANCE				20	// WALKER: test balance of robots and weapons
 
 
 typedef struct {
@@ -62,6 +63,7 @@ typedef struct {
 	menutext_s		setupsystem;
 	menutext_s		game;
 	menutext_s		effects;
+	menutext_s			balance;
 	menutext_s		cdkey;
 //	menutext_s		load;
 //	menutext_s		save;
@@ -119,6 +121,10 @@ static void UI_SetupMenu_Event( void *ptr, int event ) {
 
 	case ID_SYSTEMCONFIG:
 		UI_GraphicsOptionsMenu();
+		break;
+
+	case ID_BALANCE:
+		UI_BalanceMenu();
 		break;
 
 	case ID_EFFECTS:
@@ -245,6 +251,17 @@ static void UI_SetupMenu_Init( void ) {
 	setupMenuInfo.effects.color						= color_red;
 	setupMenuInfo.effects.style						= UI_CENTER;
 
+	y += SETUP_MENU_VERTICAL_SPACING;
+	setupMenuInfo.balance.generic.type				= MTYPE_PTEXT;
+	setupMenuInfo.balance.generic.flags				= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
+	setupMenuInfo.balance.generic.x					= 320;
+	setupMenuInfo.balance.generic.y					= y;
+	setupMenuInfo.balance.generic.id				= ID_BALANCE;
+	setupMenuInfo.balance.generic.callback			= UI_SetupMenu_Event;
+	setupMenuInfo.balance.string					= "BALANCE";
+	setupMenuInfo.balance.color						= color_red;
+	setupMenuInfo.balance.style						= UI_CENTER;
+
 	// WALKER: no CD key menu
 	setupMenuInfo.cdkey.generic.type				= MTYPE_PTEXT;
 	setupMenuInfo.cdkey.generic.flags				= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
@@ -312,6 +329,7 @@ static void UI_SetupMenu_Init( void ) {
 	Menu_AddItem( &setupMenuInfo.menu, &setupMenuInfo.setupsystem );
 	Menu_AddItem( &setupMenuInfo.menu, &setupMenuInfo.game );
 	Menu_AddItem( &setupMenuInfo.menu, &setupMenuInfo.effects );
+	Menu_AddItem( &setupMenuInfo.menu, &setupMenuInfo.balance );
 //	Menu_AddItem( &setupMenuInfo.menu, &setupMenuInfo.load );
 //	Menu_AddItem( &setupMenuInfo.menu, &setupMenuInfo.save );
 	if( !trap_Cvar_VariableValue( "cl_paused" ) ) {

@@ -21,7 +21,8 @@ This file is part of WALKER, based on the Quake III Arena source code
 #define ID_RESET		11
 #define ID_BACK			12
 
-#define MAX_ROWS		( 2 + ROBOT_COUNT * ( RPARAM_COUNT + 1 ) + RWEAPON_COUNT * ( WPARAM_COUNT + 1 ) )
+#define INFO_ROWS		2				// under each weapon: time to destroy
+#define MAX_ROWS		( 3 + CALC_COUNT + ROBOT_COUNT * ( RPARAM_COUNT + 1 ) + RWEAPON_COUNT * ( WPARAM_COUNT + 1 + INFO_ROWS ) )
 #define TEXT_SIZE		16
 
 #define TOPBAR_H		22
@@ -38,16 +39,30 @@ This file is part of WALKER, based on the Quake III Arena source code
 #define BOTTOM_Y		( LIST_Y + VISIBLE_ROWS * ROW_H + 6 )
 
 typedef enum {
-	ROW_SECTION,	// ROBOTS, WEAPONS
+	ROW_SECTION,	// CALCULATOR, ROBOTS, WEAPONS (param)
 	ROW_OBJECT,		// a robot or a weapon
-	ROW_VALUE
+	ROW_VALUE,
+	ROW_INFO		// computed for a weapon, read only (param: line)
 } rowKind_t;
+
+// calculator: the time a weapon needs to destroy a structure, and the damage per shot
+// for the norm time; kept in the cvar bal_calc "<structure> <seconds>"
+typedef enum {
+	CALC_NONE,
+	CALC_TARGET,
+	CALC_NORM,
+	CALC_COUNT = CALC_NORM
+} calcParam_t;
+
+static int		calcTarget;		// structure
+static int		calcNorm;		// seconds
 
 typedef struct {
 	int		kind;
 	qboolean weapon;
 	int		index;
 	int		param;
+	int		calc;					// calcParam_t of a calculator row
 	char	text[TEXT_SIZE];		// in the field
 	char	loaded[TEXT_SIZE];		// as it was put in the field
 } balanceRow_t;
@@ -107,6 +122,9 @@ static void Balance_FindOwn( void ) {
 		return;
 	}
 	trap_GetConfigString( CS_PLAYERS + state.clientNum, info, sizeof( info ) );
+	if ( atoi( Info_ValueForKey( info, "t" ) ) == TEAM_SPECTATOR ) {
+		return;
+	}
 	Q_strncpyz( model, Info_ValueForKey( info, "model" ), sizeof( model ) );
 	slash = strchr( model, '/' );
 	if ( slash ) {
@@ -155,6 +173,9 @@ Balance_IsOwn
 =================
 */
 static qboolean Balance_IsOwn( const balanceRow_t *row ) {
+	if ( row->calc ) {
+		return qfalse;
+	}
 	return row->weapon ? ownWeapons[row->index][0] != 0 : row->index == ownRobot;
 }
 
@@ -167,6 +188,9 @@ a parameter in table units
 =================
 */
 static int Balance_Value( const balanceRow_t *row, qboolean stock ) {
+	if ( row->calc ) {
+		return row->calc == CALC_TARGET ? calcTarget : calcNorm;
+	}
 	return row->weapon ? BG_WeaponParam( row->index, row->param, stock ) : BG_RobotParam( row->index, row->param, stock );
 }
 
@@ -251,6 +275,79 @@ static void Balance_Load( void ) {
 
 /*
 =================
+Balance_CalcLoad / Balance_CalcSave
+=================
+*/
+static void Balance_CalcLoad( void ) {
+	char	text[MAX_CVAR_VALUE_STRING];
+	char	*cursor = text, *token;
+
+	trap_Cvar_VariableStringBuffer( "bal_calc", text, sizeof( text ) );
+	token = COM_ParseExt( &cursor, qfalse );
+	calcTarget = token[0] ? atoi( token ) : 70000;
+	token = COM_ParseExt( &cursor, qfalse );
+	calcNorm = token[0] ? atoi( token ) : 15;
+	if ( calcTarget < 1 ) {
+		calcTarget = 1;
+	}
+	if ( calcNorm < 1 ) {
+		calcNorm = 1;
+	}
+}
+
+static void Balance_CalcSave( void ) {
+	trap_Cvar_Set( "bal_calc", va( "%i %i", calcTarget, calcNorm ) );
+}
+
+
+/*
+=================
+Balance_Tenths
+
+"12.3"
+=================
+*/
+static const char *Balance_Tenths( float value ) {
+	int		tenths = (int)( value * 10.0f + 0.5f );
+	return va( "%i.%i", tenths / 10, tenths % 10 );
+}
+
+
+/*
+=================
+Balance_InfoText
+
+line 0: damage per second, time to destroy the calculator structure, damage per shot
+for the norm time; line 1: time to destroy each robot of level 1 with its shield and armor
+=================
+*/
+static void Balance_InfoText( const balanceRow_t *row, char *buffer, int size ) {
+	const robotWeaponInfo_t	*info = &bg_robotWeapons[row->index];
+	float	perSecond = (float)info->damage * 1000.0f / ( info->interval > 0 ? info->interval : 1 );
+	int		robot;
+
+	buffer[0] = 0;
+	if ( perSecond <= 0 ) {
+		Q_strncpyz( buffer, "no damage", size );
+		return;
+	}
+	if ( row->param == 0 ) {
+		Q_strcat( buffer, size, va( "DPS %i   TO %i: %s s   ", (int)( perSecond + 0.5f ), calcTarget, Balance_Tenths( calcTarget / perSecond ) ) );
+		Q_strcat( buffer, size, va( "FOR %i s: DAMAGE %i", calcNorm,
+			(int)( (float)calcTarget * info->interval / ( calcNorm * 1000.0f ) + 0.5f ) ) );
+		return;
+	}
+	Q_strcat( buffer, size, "WITH SHIELD, ARMOR:" );
+	for ( robot = 0; robot < ROBOT_COUNT; robot++ ) {
+		const robotInfo_t	*target = &bg_robots[robot];
+		float	effective = target->shield + (float)target->structure * 100.0f / ( 100 - target->armor );
+		Q_strcat( buffer, size, va( "  %s %s", target->title, Balance_Tenths( effective / perSecond ) ) );
+	}
+}
+
+
+/*
+=================
 Balance_SetStatus
 =================
 */
@@ -330,6 +427,7 @@ static void Balance_SaveFile( void ) {
 		BG_BalanceString( weapon, weapon ? index - ROBOT_COUNT : index, buffer, sizeof( buffer ) );
 		BALANCE_PUT( va( "seta %s \"%s\"\n", BG_BalanceCvarName( weapon, weapon ? index - ROBOT_COUNT : index ), buffer ) );
 	}
+	BALANCE_PUT( va( "seta bal_calc \"%i %i\"\n", calcTarget, calcNorm ) );
 #undef BALANCE_PUT
 	trap_FS_FCloseFile( file );
 }
@@ -370,6 +468,17 @@ static void Balance_Apply( void ) {
 		int				value;
 
 		if ( row->kind != ROW_VALUE || !strcmp( row->text, row->loaded ) ) {
+			continue;
+		}
+		if ( row->calc ) {
+			if ( Balance_Parse( row, &value ) ) {
+				if ( row->calc == CALC_TARGET ) {
+					calcTarget = value < 1 ? 1 : ( value > 100000000 ? 100000000 : value );
+				} else {
+					calcNorm = value < 1 ? 1 : ( value > 3600 ? 3600 : value );
+				}
+				Balance_CalcSave();
+			}
 			continue;
 		}
 		if ( Balance_Parse( row, &value ) ) {
@@ -427,11 +536,19 @@ static void Balance_Select( int row, int direction ) {
 	if ( row >= balanceMenu.numRows ) {
 		row = balanceMenu.numRows - 1;
 	}
-	while ( row >= 0 && row < balanceMenu.numRows && balanceMenu.rows[row].kind != ROW_VALUE ) {
-		row += direction;
-	}
-	if ( row < 0 || row >= balanceMenu.numRows ) {
-		return;		// nothing that way, keep the current one
+	{
+		int		start = row;
+		while ( row >= 0 && row < balanceMenu.numRows && balanceMenu.rows[row].kind != ROW_VALUE ) {
+			row += direction;
+		}
+		if ( row < 0 || row >= balanceMenu.numRows ) {
+			// nothing that way (the list ends with computed rows): the nearest the other way
+			for ( row = start; row >= 0 && row < balanceMenu.numRows && balanceMenu.rows[row].kind != ROW_VALUE; row -= direction ) {
+			}
+			if ( row < 0 || row >= balanceMenu.numRows ) {
+				return;
+			}
+		}
 	}
 	balanceMenu.selected = row;
 	balanceMenu.fresh = qtrue;
@@ -439,8 +556,14 @@ static void Balance_Select( int row, int direction ) {
 	if ( row - 1 < balanceMenu.top ) {
 		balanceMenu.top = row - 1;
 	}
-	if ( row >= balanceMenu.top + VISIBLE_ROWS ) {
-		balanceMenu.top = row - VISIBLE_ROWS + 1;
+	{
+		int		last = row;		// and the computed rows right under it
+		while ( last + 1 < balanceMenu.numRows && balanceMenu.rows[last + 1].kind == ROW_INFO ) {
+			last++;
+		}
+		if ( last >= balanceMenu.top + VISIBLE_ROWS ) {
+			balanceMenu.top = last - VISIBLE_ROWS + 1;
+		}
 	}
 }
 
@@ -485,8 +608,22 @@ static void Balance_DrawRow( int index, int y ) {
 
 	switch ( row->kind ) {
 	case ROW_SECTION:
-		Balance_Text( LIST_X, y + 1, row->weapon ? "WEAPONS" : "ROBOTS", UI_LEFT, balanceAccentColor );
-		UI_FillRect( LIST_X + 9 * TINYFONT_WIDTH, y + 7, LIST_W - 9 * TINYFONT_WIDTH, 1, balanceRuleColor );
+		{
+			static const char	*titles[] = { "CALCULATOR", "ROBOTS", "WEAPONS" };
+			int					width = ( strlen( titles[row->param] ) + 1 ) * TINYFONT_WIDTH;
+			Balance_Text( LIST_X, y + 1, titles[row->param], UI_LEFT, balanceAccentColor );
+			UI_FillRect( LIST_X + width, y + 7, LIST_W - width, 1, balanceRuleColor );
+		}
+		return;
+	case ROW_INFO:
+		{
+			char	text[128];
+			if ( Balance_IsOwn( row ) ) {
+				UI_FillRect( LIST_X, y, 3, ROW_H, balanceAccentColor );
+			}
+			Balance_InfoText( row, text, sizeof( text ) );
+			Balance_Text( LABEL_X, y + 1, text, UI_LEFT, balanceChangedColor );
+		}
 		return;
 	case ROW_OBJECT:
 		if ( Balance_IsOwn( row ) ) {
@@ -511,8 +648,9 @@ static void Balance_DrawRow( int index, int y ) {
 	if ( Balance_IsOwn( row ) ) {
 		UI_FillRect( LIST_X, y, 3, ROW_H, balanceAccentColor );
 	}
-	Balance_Text( LABEL_X, y + 1, ( row->weapon && row->param == WPARAM_INTERVAL ) ? "SHOTS/S"
-		: ( row->weapon ? bg_weaponParams[row->param].name : bg_robotParams[row->param].name ), UI_LEFT, balanceDimColor );
+	Balance_Text( LABEL_X, y + 1, row->calc ? ( row->calc == CALC_TARGET ? "TARGET STRUCTURE" : "NORM TIME, S" )
+		: ( ( row->weapon && row->param == WPARAM_INTERVAL ) ? "SHOTS/S"
+		: ( row->weapon ? bg_weaponParams[row->param].name : bg_robotParams[row->param].name ) ), UI_LEFT, balanceDimColor );
 
 	UI_FillRect( FIELD_X, y, FIELD_W, ROW_H - 1, index == balanceMenu.selected ? balanceSelectedColor : balanceFieldColor );
 	if ( index == balanceMenu.selected ) {
@@ -520,7 +658,7 @@ static void Balance_DrawRow( int index, int y ) {
 	}
 	if ( strcmp( row->text, row->loaded ) ) {
 		color = balancePendingColor;
-	} else if ( Balance_Value( row, qfalse ) != Balance_Value( row, qtrue ) ) {
+	} else if ( !row->calc && Balance_Value( row, qfalse ) != Balance_Value( row, qtrue ) ) {
 		color = balanceChangedColor;
 	} else {
 		color = balanceTextColor;
@@ -530,8 +668,10 @@ static void Balance_DrawRow( int index, int y ) {
 		Balance_Text( FIELD_X + 4 + strlen( row->text ) * TINYFONT_WIDTH, y + 1, "_", UI_LEFT, balanceAccentColor );
 	}
 
-	Balance_Format( row, Balance_Value( row, qtrue ), stock, sizeof( stock ) );
-	Balance_Text( OLD_X, y + 1, stock, UI_LEFT, balanceDimColor );
+	if ( !row->calc ) {
+		Balance_Format( row, Balance_Value( row, qtrue ), stock, sizeof( stock ) );
+		Balance_Text( OLD_X, y + 1, stock, UI_LEFT, balanceDimColor );
+	}
 }
 
 
@@ -750,20 +890,29 @@ void UI_BalanceMenu( void ) {
 
 	BG_BalanceUpdate();
 	Balance_FindOwn();
+	Balance_CalcLoad();
 	Balance_AddRow( ROW_SECTION, qfalse, 0, 0 );
+	Balance_AddRow( ROW_VALUE, qfalse, -1, 0 );
+	balanceMenu.rows[balanceMenu.numRows - 1].calc = CALC_TARGET;
+	Balance_AddRow( ROW_VALUE, qfalse, -1, 0 );
+	balanceMenu.rows[balanceMenu.numRows - 1].calc = CALC_NORM;
+	Balance_AddRow( ROW_SECTION, qfalse, 0, 1 );
 	for ( index = 0; index < ROBOT_COUNT; index++ ) {
 		Balance_AddRow( ROW_OBJECT, qfalse, index, 0 );
 		for ( param = 0; param < RPARAM_COUNT; param++ ) {
 			Balance_AddRow( ROW_VALUE, qfalse, index, param );
 		}
 	}
-	Balance_AddRow( ROW_SECTION, qtrue, 0, 0 );
+	Balance_AddRow( ROW_SECTION, qtrue, 0, 2 );
 	for ( index = 0; index < RWEAPON_COUNT; index++ ) {
 		Balance_AddRow( ROW_OBJECT, qtrue, index, 0 );
 		for ( param = 0; param < WPARAM_COUNT; param++ ) {
 			if ( BG_WeaponHasParam( index, param ) ) {
 				Balance_AddRow( ROW_VALUE, qtrue, index, param );
 			}
+		}
+		for ( param = 0; param < INFO_ROWS; param++ ) {
+			Balance_AddRow( ROW_INFO, qtrue, index, param );
 		}
 	}
 	Balance_Load();

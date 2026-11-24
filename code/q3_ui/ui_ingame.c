@@ -34,7 +34,7 @@ INGAME MENU
 
 #define INGAME_FRAME					"menu/art/addbotframe"
 //#define INGAME_FRAME					"menu/art/cut_frame"
-#define INGAME_MENU_VERTICAL_SPACING	26
+#define INGAME_MENU_VERTICAL_SPACING	28
 
 #define ID_TEAM					10
 #define ID_ADDBOTS				11
@@ -47,7 +47,6 @@ INGAME MENU
 #define ID_RESUME				18
 #define ID_TEAMORDERS			19
 #define ID_ENDBATTLE			20	// WALKER: test: end the battle now and take the reward
-#define ID_BALANCE				21	// WALKER: test: robot and weapon parameters
 
 
 typedef struct {
@@ -65,7 +64,6 @@ typedef struct {
 	menutext_s		quit;
 	menutext_s		resume;
 	menutext_s		endBattle;
-	menutext_s		balance;
 } ingamemenu_t;
 
 static ingamemenu_t	s_ingame;
@@ -154,10 +152,6 @@ void InGame_Event( void *ptr, int notification ) {
 
 	case ID_RESUME:
 		UI_PopMenu();
-		break;
-
-	case ID_BALANCE:
-		UI_BalanceMenu();
 		break;
 	}
 }
@@ -334,17 +328,6 @@ void InGame_MenuInit( void ) {
 		s_ingame.endBattle.generic.flags |= QMF_GRAYED;
 	}
 
-	y += INGAME_MENU_VERTICAL_SPACING;
-	s_ingame.balance.generic.type		= MTYPE_PTEXT;
-	s_ingame.balance.generic.flags		= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
-	s_ingame.balance.generic.x			= 320;
-	s_ingame.balance.generic.y			= y;
-	s_ingame.balance.generic.id			= ID_BALANCE;
-	s_ingame.balance.generic.callback	= InGame_Event;
-	s_ingame.balance.string				= "BALANCE (TEST)";
-	s_ingame.balance.color				= color_yellow;
-	s_ingame.balance.style				= UI_CENTER|UI_SMALLFONT;
-
 	Menu_AddItem( &s_ingame.menu, &s_ingame.frame );
 	Menu_AddItem( &s_ingame.menu, &s_ingame.team );
 	Menu_AddItem( &s_ingame.menu, &s_ingame.addbots );
@@ -356,7 +339,6 @@ void InGame_MenuInit( void ) {
 	Menu_AddItem( &s_ingame.menu, &s_ingame.leave );
 	Menu_AddItem( &s_ingame.menu, &s_ingame.quit );
 	Menu_AddItem( &s_ingame.menu, &s_ingame.endBattle );
-	Menu_AddItem( &s_ingame.menu, &s_ingame.balance );
 }
 
 
