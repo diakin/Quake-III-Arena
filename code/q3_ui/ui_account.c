@@ -601,9 +601,6 @@ ACCOUNT MENU
 ===============================================================================
 */
 
-#define ART_BACK0			"menu/art/back_0"
-#define ART_BACK1			"menu/art/back_1"
-
 #define ID_ENTRY0			100
 #define ID_PLAY				10
 #define ID_DELETE			11
@@ -611,24 +608,38 @@ ACCOUNT MENU
 #define ID_BACK				13
 #define ID_NAME				14
 
-#define LIST_Y				86
+// layout (virtual 640x480), the same look as the hangar
+#define PANEL_X				140
+#define PANEL_Y				40
+#define PANEL_W				360
+#define PANEL_H				380
+#define PANEL_PAD			10
+#define LIST_Y				( PANEL_Y + 26 )
 #define LIST_STEP			22
+#define ROW_H				19
+#define ACTIONS_Y			( PANEL_Y + 300 )
+#define NEW_Y				( PANEL_Y + 336 )
+
+typedef struct {
+	menubitmap_s	item;			// first: the menu code sees a bitmap item
+	char			label[64];
+	char			detail[64];
+	qboolean		marked;			// the selected pilot
+	qboolean		strong;			// main action: accent fill
+} accountButton_t;
 
 typedef struct {
 	menuframework_s	menu;
-	menutext_s		banner;
-	menutext_s		entries[MAX_ACCOUNTS];
+	accountButton_t	entries[MAX_ACCOUNTS];
 	menufield_s		name;
-	menutext_s		create;
-	menutext_s		play;
-	menutext_s		remove;
-	menubitmap_s	back;
+	accountButton_t	create;
+	accountButton_t	play;
+	accountButton_t	remove;
+	accountButton_t	back;
 
 	int				count;
 	int				selected;
 	account_t		accounts[MAX_ACCOUNTS];
-	char			labels[MAX_ACCOUNTS][64];
-	char			playLabel[64];
 	char			message[128];
 } accountMenu_t;
 
@@ -730,6 +741,10 @@ static void AccountMenu_Event( void *ptr, int event ) {
 	}
 	id = ( (menucommon_s *)ptr )->id;
 	if ( id >= ID_ENTRY0 && id < ID_ENTRY0 + MAX_ACCOUNTS ) {
+		if ( accountMenu.selected == id - ID_ENTRY0 ) {
+			AccountMenu_Choose( accountMenu.selected );		// a second click flies as this pilot
+			return;
+		}
 		accountMenu.selected = id - ID_ENTRY0;
 		AccountMenu_Fill();
 		return;
@@ -787,32 +802,74 @@ static void AccountMenu_Fill( void ) {
 	}
 
 	for ( index = 0; index < MAX_ACCOUNTS; index++ ) {
+		accountButton_t	*entry = &accountMenu.entries[index];
 		if ( index < accountMenu.count ) {
 			account_t	*account = &accountMenu.accounts[index];
-			Com_sprintf( accountMenu.labels[index], sizeof( accountMenu.labels[index] ), "%s   LV %i   %i ROBOT%s",
-				account->nick, account->level, account->numRobots, account->numRobots == 1 ? "" : "S" );
-			accountMenu.entries[index].string = accountMenu.labels[index];
-			accountMenu.entries[index].color = ( index == accountMenu.selected ) ? color_orange : color_white;
-			accountMenu.entries[index].generic.flags &= ~( QMF_HIDDEN | QMF_INACTIVE );
+			Q_strncpyz( entry->label, account->nick, sizeof( entry->label ) );
+			Com_sprintf( entry->detail, sizeof( entry->detail ), "LV %i   %i robot%s   %i CR", account->level,
+				account->numRobots, account->numRobots == 1 ? "" : "s", account->currency );
+			entry->marked = ( index == accountMenu.selected );
+			entry->item.generic.flags &= ~( QMF_HIDDEN | QMF_INACTIVE );
 		} else {
-			accountMenu.entries[index].string = "";
-			accountMenu.entries[index].generic.flags |= QMF_HIDDEN | QMF_INACTIVE;
+			entry->item.generic.flags |= QMF_HIDDEN | QMF_INACTIVE;
 		}
 	}
 	if ( accountMenu.selected >= 0 ) {
-		Com_sprintf( accountMenu.playLabel, sizeof( accountMenu.playLabel ), "FLY AS %s", accountMenu.accounts[accountMenu.selected].nick );
-		accountMenu.play.generic.flags &= ~( QMF_HIDDEN | QMF_INACTIVE );
-		accountMenu.remove.generic.flags &= ~( QMF_HIDDEN | QMF_INACTIVE );
+		Com_sprintf( accountMenu.play.label, sizeof( accountMenu.play.label ), "FLY AS %s", accountMenu.accounts[accountMenu.selected].nick );
+		accountMenu.play.item.generic.flags &= ~( QMF_HIDDEN | QMF_INACTIVE );
+		accountMenu.remove.item.generic.flags &= ~( QMF_HIDDEN | QMF_INACTIVE );
 	} else {
-		accountMenu.playLabel[0] = 0;
-		accountMenu.play.generic.flags |= QMF_HIDDEN | QMF_INACTIVE;
-		accountMenu.remove.generic.flags |= QMF_HIDDEN | QMF_INACTIVE;
+		accountMenu.play.item.generic.flags |= QMF_HIDDEN | QMF_INACTIVE;
+		accountMenu.remove.item.generic.flags |= QMF_HIDDEN | QMF_INACTIVE;
 	}
-	accountMenu.play.string = accountMenu.playLabel;
 	if ( uiAccount.loaded ) {
-		accountMenu.back.generic.flags &= ~( QMF_HIDDEN | QMF_INACTIVE );
+		accountMenu.back.item.generic.flags &= ~( QMF_HIDDEN | QMF_INACTIVE );
 	} else {
-		accountMenu.back.generic.flags |= QMF_HIDDEN | QMF_INACTIVE;
+		accountMenu.back.item.generic.flags |= QMF_HIDDEN | QMF_INACTIVE;
+	}
+}
+
+
+static vec4_t accountDimColor = { 0.55f, 0.62f, 0.66f, 1.00f };
+static vec4_t accountTextColor = { 0.88f, 0.90f, 0.92f, 1.00f };
+static vec4_t accountAccentColor = { 1.00f, 0.55f, 0.15f, 1.00f };
+static vec4_t accountPanelColor = { 0.0f, 0.0f, 0.0f, 0.65f };
+static vec4_t accountBarColor = { 0.0f, 0.0f, 0.0f, 0.70f };
+static vec4_t accountRuleColor = { 0.55f, 0.62f, 0.66f, 0.35f };
+static vec4_t accountButtonColor = { 0.06f, 0.08f, 0.10f, 0.85f };
+static vec4_t accountFocusColor = { 0.30f, 0.15f, 0.04f, 0.90f };
+static vec4_t accountMarkedColor = { 0.16f, 0.10f, 0.04f, 0.90f };
+static vec4_t accountBorderColor = { 0.40f, 0.46f, 0.50f, 1.0f };
+
+
+/*
+=================
+AccountMenu_DrawButton
+
+the buttons look like those of the hangar (ui_hangar.c)
+=================
+*/
+static void AccountMenu_DrawButton( void *self ) {
+	accountButton_t	*button = (accountButton_t *)self;
+	menucommon_s	*item = &button->item.generic;
+	qboolean		focus = ( item->parent->cursor == item->menuPosition );
+	float			*fill, *color;
+	int				textY = item->y + ( button->item.height - TINYFONT_HEIGHT ) / 2;
+
+	if ( focus ) {
+		fill = accountFocusColor;
+	} else {
+		fill = ( button->marked || button->strong ) ? accountMarkedColor : accountButtonColor;
+	}
+	UI_FillRect( item->x, item->y, button->item.width, button->item.height, fill );
+	UI_DrawRect( item->x, item->y, button->item.width, button->item.height,
+		( focus || button->marked || button->strong ) ? accountAccentColor : accountBorderColor );
+	color = focus ? colorWhite : ( button->marked ? accountAccentColor : ( button->strong ? accountAccentColor : accountTextColor ) );
+	if ( button->detail[0] ) {
+		UI_DrawString( item->x + 8, textY, button->label, UI_LEFT | UI_TINYFONT, color );
+		UI_DrawString( item->x + button->item.width - 8, textY, button->detail, UI_RIGHT | UI_TINYFONT, accountDimColor );
+	} else {
+		UI_DrawString( item->x + button->item.width / 2, textY, button->label, UI_CENTER | UI_TINYFONT, color );
 	}
 }
 
@@ -824,13 +881,32 @@ AccountMenu_Draw
 */
 static void AccountMenu_Draw( void ) {
 	UI_DrawNamedPic( 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, "menu/art/hangar" );
-	UI_FillRect( 120, LIST_Y - 10, 400, ( accountMenu.count > 0 ? accountMenu.count : 2 ) * LIST_STEP + 16, colorMdGrey );
-	if ( !accountMenu.count ) {
-		UI_DrawString( 320, LIST_Y + 20, "No pilots yet: type a name below and press CREATE", UI_CENTER | UI_SMALLFONT, color_white );
+
+	// top bar
+	UI_FillRect( 0, 0, SCREEN_WIDTH, 22, accountBarColor );
+	UI_FillRect( 0, 22, SCREEN_WIDTH, 1, accountRuleColor );
+	UI_DrawString( 10, 5, "PILOTS", UI_LEFT | UI_TINYFONT, accountAccentColor );
+	if ( uiAccount.loaded ) {
+		UI_DrawString( 630, 5, va( "flying as %s", uiAccount.nick ), UI_RIGHT | UI_TINYFONT, accountDimColor );
 	}
+
+	UI_FillRect( PANEL_X, PANEL_Y, PANEL_W, PANEL_H, accountPanelColor );
+	UI_FillRect( PANEL_X, PANEL_Y, PANEL_W, 2, accountAccentColor );
+	UI_DrawString( PANEL_X + PANEL_PAD, PANEL_Y + 8, "CHOOSE A PILOT", UI_LEFT | UI_TINYFONT, accountAccentColor );
+	UI_DrawString( PANEL_X + PANEL_W - PANEL_PAD, PANEL_Y + 8, va( "%i of %i", accountMenu.count, MAX_ACCOUNTS ),
+		UI_RIGHT | UI_TINYFONT, accountDimColor );
+	if ( !accountMenu.count ) {
+		UI_DrawString( PANEL_X + PANEL_W / 2, LIST_Y + 40, "No pilots yet: type a name below and press CREATE",
+			UI_CENTER | UI_TINYFONT, accountTextColor );
+	}
+	UI_FillRect( PANEL_X + PANEL_PAD, NEW_Y - 10, PANEL_W - 2 * PANEL_PAD, 1, accountRuleColor );
+	UI_DrawString( PANEL_X + PANEL_PAD, NEW_Y - 2, "NEW PILOT", UI_LEFT | UI_TINYFONT, accountAccentColor );
+	UI_FillRect( PANEL_X + PANEL_PAD, NEW_Y + 12, 230, 20, accountButtonColor );
+	UI_DrawRect( PANEL_X + PANEL_PAD, NEW_Y + 12, 230, 20, accountBorderColor );
+
 	Menu_Draw( &accountMenu.menu );
 	if ( accountMenu.message[0] ) {
-		UI_DrawString( 320, 410, accountMenu.message, UI_CENTER | UI_SMALLFONT, color_red );
+		UI_DrawString( PANEL_X + PANEL_W / 2, PANEL_Y + PANEL_H + 8, accountMenu.message, UI_CENTER | UI_TINYFONT, color_red );
 	}
 }
 
@@ -854,6 +930,31 @@ static sfxHandle_t AccountMenu_Key( int key ) {
 
 /*
 =================
+AccountMenu_InitButton
+=================
+*/
+static void AccountMenu_InitButton( accountButton_t *button, int id, int x, int y, int width, int height ) {
+	menubitmap_s	*item = &button->item;
+
+	item->generic.type		= MTYPE_BITMAP;
+	item->generic.flags		= QMF_NODEFAULTINIT;
+	item->generic.id		= id;
+	item->generic.callback	= AccountMenu_Event;
+	item->generic.ownerdraw	= AccountMenu_DrawButton;
+	item->generic.x			= x;
+	item->generic.y			= y;
+	item->width				= width;
+	item->height			= height;
+	item->generic.left		= x;
+	item->generic.top		= y;
+	item->generic.right		= x + width;
+	item->generic.bottom	= y + height;
+	Menu_AddItem( &accountMenu.menu, item );
+}
+
+
+/*
+=================
 UI_AccountMenu
 =================
 */
@@ -867,91 +968,39 @@ void UI_AccountMenu( void ) {
 	accountMenu.menu.key = AccountMenu_Key;
 	accountMenu.selected = -1;
 
-	trap_R_RegisterShaderNoMip( ART_BACK0 );
-	trap_R_RegisterShaderNoMip( ART_BACK1 );
-
-	accountMenu.banner.generic.type		= MTYPE_BTEXT;
-	accountMenu.banner.generic.x		= 320;
-	accountMenu.banner.generic.y		= 16;
-	accountMenu.banner.string			= "PILOTS";
-	accountMenu.banner.color			= color_white;
-	accountMenu.banner.style			= UI_CENTER;
-	Menu_AddItem( &accountMenu.menu, &accountMenu.banner );
-
 	for ( index = 0; index < MAX_ACCOUNTS; index++ ) {
-		accountMenu.entries[index].generic.type		= MTYPE_PTEXT;
-		accountMenu.entries[index].generic.flags	= QMF_CENTER_JUSTIFY | QMF_PULSEIFFOCUS;
-		accountMenu.entries[index].generic.id		= ID_ENTRY0 + index;
-		accountMenu.entries[index].generic.callback	= AccountMenu_Event;
-		accountMenu.entries[index].generic.x		= 320;
-		accountMenu.entries[index].generic.y		= LIST_Y + index * LIST_STEP;
-		accountMenu.entries[index].style			= UI_CENTER | UI_SMALLFONT;
-		accountMenu.entries[index].color			= color_white;
-		accountMenu.entries[index].string			= "";
-		Menu_AddItem( &accountMenu.menu, &accountMenu.entries[index] );
+		AccountMenu_InitButton( &accountMenu.entries[index], ID_ENTRY0 + index, PANEL_X + PANEL_PAD, LIST_Y + index * LIST_STEP,
+			PANEL_W - 2 * PANEL_PAD, ROW_H );
 	}
+	AccountMenu_InitButton( &accountMenu.play, ID_PLAY, PANEL_X + PANEL_PAD, ACTIONS_Y, 240, 22 );
+	accountMenu.play.strong = qtrue;
+	AccountMenu_InitButton( &accountMenu.remove, ID_DELETE, PANEL_X + PANEL_W - PANEL_PAD - 100, ACTIONS_Y, 100, 22 );
+	Q_strncpyz( accountMenu.remove.label, "DELETE PILOT", sizeof( accountMenu.remove.label ) );
 
 	accountMenu.name.generic.type		= MTYPE_FIELD;
-	accountMenu.name.generic.name		= "New pilot:";
 	accountMenu.name.generic.flags		= QMF_NODEFAULTINIT;
 	accountMenu.name.generic.id			= ID_NAME;
-	accountMenu.name.generic.x			= 250;
-	accountMenu.name.generic.y			= 440;
-	accountMenu.name.generic.left		= 250 - 100;
-	accountMenu.name.generic.top		= 440 - 2;
-	accountMenu.name.generic.right		= 250 + 200;
-	accountMenu.name.generic.bottom		= 440 + 18;
-	accountMenu.name.field.widthInChars	= 16;
+	accountMenu.name.generic.x			= PANEL_X + PANEL_PAD + 6;
+	accountMenu.name.generic.y			= NEW_Y + 14;
+	accountMenu.name.generic.left		= PANEL_X + PANEL_PAD;
+	accountMenu.name.generic.top		= NEW_Y + 12;
+	accountMenu.name.generic.right		= PANEL_X + PANEL_PAD + 230;
+	accountMenu.name.generic.bottom		= NEW_Y + 32;
+	accountMenu.name.field.widthInChars	= 20;
 	accountMenu.name.field.maxchars		= 20;
 	Menu_AddItem( &accountMenu.menu, &accountMenu.name );
 
-	accountMenu.create.generic.type		= MTYPE_PTEXT;
-	accountMenu.create.generic.flags	= QMF_LEFT_JUSTIFY | QMF_PULSEIFFOCUS;
-	accountMenu.create.generic.id		= ID_CREATE;
-	accountMenu.create.generic.callback	= AccountMenu_Event;
-	accountMenu.create.generic.x		= 470;
-	accountMenu.create.generic.y		= 436;
-	accountMenu.create.string			= "CREATE";
-	accountMenu.create.style			= UI_LEFT | UI_SMALLFONT;
-	accountMenu.create.color			= color_red;
-	Menu_AddItem( &accountMenu.menu, &accountMenu.create );
+	AccountMenu_InitButton( &accountMenu.create, ID_CREATE, PANEL_X + PANEL_W - PANEL_PAD - 100, NEW_Y + 12, 100, 20 );
+	Q_strncpyz( accountMenu.create.label, "CREATE", sizeof( accountMenu.create.label ) );
 
-	accountMenu.play.generic.type		= MTYPE_PTEXT;
-	accountMenu.play.generic.flags		= QMF_CENTER_JUSTIFY | QMF_PULSEIFFOCUS;
-	accountMenu.play.generic.id			= ID_PLAY;
-	accountMenu.play.generic.callback	= AccountMenu_Event;
-	accountMenu.play.generic.x			= 320;
-	accountMenu.play.generic.y			= 380;
-	accountMenu.play.style				= UI_CENTER;
-	accountMenu.play.color				= color_red;
-	Menu_AddItem( &accountMenu.menu, &accountMenu.play );
-
-	accountMenu.remove.generic.type		= MTYPE_PTEXT;
-	accountMenu.remove.generic.flags	= QMF_RIGHT_JUSTIFY | QMF_PULSEIFFOCUS;
-	accountMenu.remove.generic.id		= ID_DELETE;
-	accountMenu.remove.generic.callback	= AccountMenu_Event;
-	accountMenu.remove.generic.x		= 632;
-	accountMenu.remove.generic.y		= 20;
-	accountMenu.remove.string			= "DELETE PILOT";
-	accountMenu.remove.style			= UI_RIGHT | UI_SMALLFONT;
-	accountMenu.remove.color			= color_red;
-	Menu_AddItem( &accountMenu.menu, &accountMenu.remove );
-
-	accountMenu.back.generic.type		= MTYPE_BITMAP;
-	accountMenu.back.generic.name		= ART_BACK0;
-	accountMenu.back.generic.flags		= QMF_LEFT_JUSTIFY | QMF_PULSEIFFOCUS;
-	accountMenu.back.generic.id			= ID_BACK;
-	accountMenu.back.generic.callback	= AccountMenu_Event;
-	accountMenu.back.generic.x			= 0;
-	accountMenu.back.generic.y			= 480 - 64;
-	accountMenu.back.width				= 128;
-	accountMenu.back.height				= 64;
-	accountMenu.back.focuspic			= ART_BACK1;
-	Menu_AddItem( &accountMenu.menu, &accountMenu.back );
+	AccountMenu_InitButton( &accountMenu.back, ID_BACK, 10, 442, 96, 24 );
+	Q_strncpyz( accountMenu.back.label, "BACK", sizeof( accountMenu.back.label ) );
 
 	AccountMenu_Fill();
 	UI_PushMenu( &accountMenu.menu );
 	if ( !accountMenu.count ) {
 		Menu_SetCursorToItem( &accountMenu.menu, &accountMenu.name );
+	} else if ( accountMenu.selected >= 0 ) {
+		Menu_SetCursorToItem( &accountMenu.menu, &accountMenu.play );
 	}
 }

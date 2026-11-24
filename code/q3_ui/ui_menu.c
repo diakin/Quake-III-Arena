@@ -52,7 +52,7 @@ typedef struct {
 
 	menutext_s		singleplayer;
 	menutext_s		hangar;		// WALKER
-	menutext_s		pilot;		// WALKER: the account, opens the list of pilots
+	menutext_s		pilots;		// WALKER: the list of pilot accounts
 	char			pilotLabel[96];
 	menutext_s		multiplayer;
 	menutext_s		setup;
@@ -245,6 +245,7 @@ static void Main_MenuDraw( void ) {
 		} else {
 			Q_strncpyz( s_main.pilotLabel, "CHOOSE PILOT", sizeof( s_main.pilotLabel ) );
 		}
+		UI_DrawString( 632, 10, s_main.pilotLabel, UI_RIGHT|UI_SMALLFONT, color_orange );
 		// standard menu drawing
 		Menu_Draw( &s_main.menu );		
 	}
@@ -338,7 +339,7 @@ void UI_MainMenu( void ) {
 	s_main.menu.wrapAround = qtrue;
 	s_main.menu.showlogo = qtrue;
 
-	y = 154;	// WALKER: six items, centered
+	y = 137;	// WALKER: seven items, centered
 	s_main.singleplayer.generic.type		= MTYPE_PTEXT;
 	s_main.singleplayer.generic.flags		= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
 	s_main.singleplayer.generic.x			= 320;
@@ -359,6 +360,18 @@ void UI_MainMenu( void ) {
 	s_main.hangar.string					= "HANGAR";
 	s_main.hangar.color						= text_color_normal;
 	s_main.hangar.style						= style;
+
+	// WALKER: the pilot accounts (choose, create, delete)
+	y += MAIN_MENU_VERTICAL_SPACING;
+	s_main.pilots.generic.type				= MTYPE_PTEXT;
+	s_main.pilots.generic.flags				= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
+	s_main.pilots.generic.x					= 320;
+	s_main.pilots.generic.y					= y;
+	s_main.pilots.generic.id				= ID_PILOT;
+	s_main.pilots.generic.callback			= Main_MenuEvent;
+	s_main.pilots.string					= "PILOTS";
+	s_main.pilots.color						= text_color_normal;
+	s_main.pilots.style						= style;
 
 	y += MAIN_MENU_VERTICAL_SPACING;
 	s_main.multiplayer.generic.type			= MTYPE_PTEXT;
@@ -442,6 +455,7 @@ void UI_MainMenu( void ) {
 
 	Menu_AddItem( &s_main.menu,	&s_main.singleplayer );
 	Menu_AddItem( &s_main.menu,	&s_main.hangar );
+	Menu_AddItem( &s_main.menu,	&s_main.pilots );
 	Menu_AddItem( &s_main.menu,	&s_main.multiplayer );
 	Menu_AddItem( &s_main.menu,	&s_main.setup );
 	Menu_AddItem( &s_main.menu,	&s_main.demos );
@@ -450,17 +464,8 @@ void UI_MainMenu( void ) {
 	}
 	Menu_AddItem( &s_main.menu,	&s_main.exit );             
 
-	// WALKER: the pilot account (top right), its menu comes up first until one is chosen
-	s_main.pilot.generic.type		= MTYPE_PTEXT;
-	s_main.pilot.generic.flags		= QMF_RIGHT_JUSTIFY | QMF_PULSEIFFOCUS;
-	s_main.pilot.generic.id			= ID_PILOT;
-	s_main.pilot.generic.callback	= Main_MenuEvent;
-	s_main.pilot.generic.x			= 632;
-	s_main.pilot.generic.y			= 8;
-	s_main.pilot.string				= s_main.pilotLabel;
-	s_main.pilot.style				= UI_RIGHT | UI_SMALLFONT;
-	s_main.pilot.color				= color_red;
-	Menu_AddItem( &s_main.menu,	&s_main.pilot );
+	// WALKER: the current pilot is written at the top right (Main_MenuDraw); PILOTS in the
+	// list opens the accounts, which also come up first until one is chosen
 
 	trap_Key_SetCatcher( KEYCATCH_UI );
 	uis.menusp = 0;
