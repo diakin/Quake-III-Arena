@@ -320,6 +320,20 @@ void UI_AccountUpdate( void ) {
 	}
 	now = UI_AccountTime();
 	changed = Account_TakeReward();
+	// WALKER, for testing: a full hangar of free robots (K7, STRIZH, MOLOT in turn);
+	// ui_testHangar 0 turns it off, robots already given stay
+	if ( trap_Cvar_VariableValue( "ui_testHangar" ) && uiAccount.numRobots < ROBOT_HANGAR_SIZE ) {
+		while ( uiAccount.numRobots < ROBOT_HANGAR_SIZE ) {
+			accountRobot_t	*robot = &uiAccount.robots[uiAccount.numRobots];
+
+			memset( robot, 0, sizeof( *robot ) );
+			robot->type = uiAccount.numRobots % ROBOT_COUNT;
+			robot->level = 1;
+			robot->weaponLevel = 1;
+			uiAccount.numRobots++;
+		}
+		changed = qtrue;
+	}
 	for ( index = 0; index < uiAccount.numRobots; index++ ) {
 		accountRobot_t	*robot = &uiAccount.robots[index];
 		if ( robot->upgrade != UPGRADE_NONE && now >= robot->upgradeEnd ) {
