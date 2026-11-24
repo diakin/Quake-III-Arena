@@ -340,8 +340,10 @@ static void Balance_InfoText( const balanceRow_t *row, char *buffer, int size ) 
 	Q_strcat( buffer, size, "WITH SHIELD, ARMOR:" );
 	for ( robot = 0; robot < ROBOT_COUNT; robot++ ) {
 		const robotInfo_t	*target = &bg_robots[robot];
-		float	effective = target->shield + (float)target->structure * 100.0f / ( 100 - target->armor );
-		Q_strcat( buffer, size, va( "  %s %s", target->title, Balance_Tenths( effective / perSecond ) ) );
+		// the shield takes whole hits, the armor cuts the hits on the structure
+		float	throughArmor = (float)BG_ArmorHit( info->damage, target->armor ) * 1000.0f / ( info->interval > 0 ? info->interval : 1 );
+		float	seconds = target->shield / perSecond + ( throughArmor > 0 ? target->structure / throughArmor : 9999 );
+		Q_strcat( buffer, size, va( "  %s %s", target->title, Balance_Tenths( seconds ) ) );
 	}
 }
 

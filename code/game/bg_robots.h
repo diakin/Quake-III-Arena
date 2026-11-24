@@ -66,7 +66,7 @@ typedef struct {
 	const char	*description;
 	const char	*model;			// player model folder
 	int			structure;		// level 1
-	int			armor;			// level 1, percent taken off every hit on the structure
+	int			armor;			// level 1, taken off every hit on the structure (real units)
 	int			shield;			// level 1, absorbs damage first, recovers
 	int			speed;			// level 1, km/h
 	int			price;			// currency
@@ -101,7 +101,8 @@ int		BG_RobotByName( const char *id );		// -1: unknown
 int		BG_RobotByModel( const char *model );	// player model "strizh/red" -> ROBOT_STRIZH, K7 for unknown
 int		BG_WeaponByName( const char *id );		// -1: unknown
 int		BG_RobotStructure( int type, int level );
-int		BG_RobotArmor( int type, int level );
+int		BG_RobotArmor( int type, int level );		// taken off every hit on the structure
+int		BG_ArmorHit( int damage, int armor );		// what passes, at least 1 / ARMOR_MIN_PASS of the hit
 int		BG_RobotShield( int type, int level );
 int		BG_RobotSpeed( int type, int level );		// km/h
 int		BG_WeaponDamage( int weapon, int level );
@@ -117,6 +118,9 @@ int		BG_PlayerLevelXP( int level );					// experience from level to level + 1
 // table units, separated by spaces, in the order of the enums; empty or missing values are
 // the stock ones. Game, cgame and ui read them (CVAR_SYSTEMINFO from the server); the ui
 // balance menu (ui_balance.c) writes them.
+#define ARMOR_MIN_PASS		5		// the armor stops at most 4/5 of a hit
+#define BALANCE_VERSION		"v2"	// first word of a balance cvar; older ones are dropped
+
 typedef enum {
 	RPARAM_STRUCTURE,
 	RPARAM_ARMOR,

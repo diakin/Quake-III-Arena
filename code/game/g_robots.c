@@ -10,8 +10,9 @@ against the human players are one level higher. Each new life takes the next
 robot.
 
 The characteristics come from bg_robots.c: the structure is the health (kept in
-tenths, ROBOT_HEALTH_SCALE), the armor takes its percent off every hit on the
-structure, the shield takes the damage first and recovers after SHIELD_DELAY
+tenths, ROBOT_HEALTH_SCALE), the armor takes a fixed amount off every hit on
+the structure (at most 4/5 of it, BG_ArmorHit), so small bullets do little to a
+heavy robot and big shells pass almost whole, the shield takes the damage first and recovers after SHIELD_DELAY
 without hits, the speed sets ps.speed (km/h * g_speed / 38). All weapons of the robot fire
 while the attack button is held, each at its own rate (G_RobotFire, the shot
 itself in g_weapon.c); pmove does not fire (STAT_FIRE_INTERVAL -1). The weapons
@@ -439,7 +440,8 @@ int G_RobotAbsorb( gentity_t *targ, int damage ) {
 	}
 	robot = G_RobotCurrent( client );
 	armor = BG_RobotArmor( robot->type, robot->level );
-	damage = damage * ( 100 - armor ) / 100;
+	// in real units (the armor is not scaled), back to tenths rounded
+	damage = ( BG_ArmorHit( damage * ROBOT_HEALTH_SCALE, armor ) + ROBOT_HEALTH_SCALE / 2 ) / ROBOT_HEALTH_SCALE;
 	return damage > 0 ? damage : 1;
 }
 

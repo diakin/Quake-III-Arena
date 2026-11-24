@@ -16,27 +16,27 @@ const char *bg_weaponClassNames[WCLASS_COUNT] = { "LIGHT", "MEDIUM", "HEAVY" };
 // height 26 above the origin); the shot starts at the mount + the weapon length forward
 robotInfo_t bg_robots[ROBOT_COUNT] = {
 	{ "k7", "K7", "Medium walker, two light mounts", "walker",
-		62000, 15, 4000, 38, 3000,
+		65000, 40, 6000, 40, 3000,
 		2, { WCLASS_LIGHT, WCLASS_LIGHT, 0 }, { RWEAPON_OSA, RWEAPON_OSA, -1 },
 		{ { -6, -19.5f, -10.5f }, { -6, 19.5f, -10.5f }, { 0, 0, 0 } } },
 	{ "strizh", "STRIZH", "Light scout, strong shield", "strizh",
-		42000, 5, 9000, 56, 6000,
+		38000, 0, 12000, 60, 6000,
 		2, { WCLASS_MEDIUM, WCLASS_LIGHT, 0 }, { RWEAPON_TOPOR, RWEAPON_OSA, -1 },
 		{ { 1.5f, -13, -11.5f }, { 1.5f, 12.2f, -11.5f }, { 0, 0, 0 } } },
 	{ "molot", "MOLOT", "Heavy assault, thick armor", "molot",
-		98000, 30, 0, 28, 9000,
+		125000, 150, 0, 26, 9000,
 		1, { WCLASS_HEAVY, 0, 0 }, { RWEAPON_TARAN, -1, -1 },
 		{ { 0, -16, -3.5f }, { 0, 0, 0 }, { 0, 0, 0 } } },
 };
 
 // damage and structure are real values: the game divides them by ROBOT_HEALTH_SCALE
 robotWeaponInfo_t bg_robotWeapons[RWEAPON_COUNT] = {
-	{ "osa",	"OSA",		"Light machine gun",	WCLASS_LIGHT,	WFIRE_BULLET,	120,	125,	500,	0,	0,		300,	1200,	16 },
-	{ "shmel",	"SHMEL",	"Light rocket pod",		WCLASS_LIGHT,	WFIRE_SHELL,	700,	1000,	500,	60,	1400,	0,		1800,	10 },
-	{ "topor",	"TOPOR",	"Medium autocannon",	WCLASS_MEDIUM,	WFIRE_BULLET,	300,	333,	800,	0,	0,		150,	2500,	22 },
-	{ "iskra",	"ISKRA",	"Medium plasma gun",	WCLASS_MEDIUM,	WFIRE_PLASMA,	650,	250,	800,	40,	1800,	0,		3000,	20 },
-	{ "taran",	"TARAN",	"Heavy cannon",			WCLASS_HEAVY,	WFIRE_SHELL,	7600,	2000,	800,	90,	2400,	0,		4500,	33 },
-	{ "kopyo",	"KOPYO",	"Heavy railgun",		WCLASS_HEAVY,	WFIRE_RAIL,		9000,	2200,	800,	0,	0,		0,		6000,	33 },
+	{ "osa",	"OSA",		"Light machine gun",	WCLASS_LIGHT,	WFIRE_BULLET,	290,	125,	450,	0,	0,		300,	1200,	16 },
+	{ "shmel",	"SHMEL",	"Light rocket pod",		WCLASS_LIGHT,	WFIRE_SHELL,	2600,	1000,	500,	60,	1400,	0,		1800,	10 },
+	{ "topor",	"TOPOR",	"Medium autocannon",	WCLASS_MEDIUM,	WFIRE_BULLET,	500,	333,	700,	0,	0,		150,	2500,	22 },
+	{ "iskra",	"ISKRA",	"Medium plasma gun",	WCLASS_MEDIUM,	WFIRE_PLASMA,	700,	400,	600,	50,	1800,	0,		3000,	20 },
+	{ "taran",	"TARAN",	"Heavy cannon",			WCLASS_HEAVY,	WFIRE_SHELL,	9000,	2000,	750,	90,	2400,	0,		4500,	33 },
+	{ "kopyo",	"KOPYO",	"Heavy railgun",		WCLASS_HEAVY,	WFIRE_RAIL,		13000,	3333,	1000,	0,	0,		0,		6000,	33 },
 };
 
 // seconds and development points from level to level + 1 (from 10 minutes to 24 hours)
@@ -97,7 +97,12 @@ int BG_RobotStructure( int type, int level ) {
 }
 
 int BG_RobotArmor( int type, int level ) {
-	return bg_robots[type].armor + ( ClampLevel( level, ROBOT_LEVELS ) - 1 );
+	return Grow( bg_robots[type].armor, ClampLevel( level, ROBOT_LEVELS ), 8 );
+}
+
+int BG_ArmorHit( int damage, int armor ) {
+	int		passed = damage - armor;
+	return passed > damage / ARMOR_MIN_PASS ? passed : damage / ARMOR_MIN_PASS;
 }
 
 int BG_RobotShield( int type, int level ) {
@@ -161,7 +166,7 @@ void	trap_Cvar_Update( vmCvar_t *vmCvar );
 
 const balanceParam_t bg_robotParams[RPARAM_COUNT] = {
 	{ "STRUCTURE",		100,	10000000 },
-	{ "ARMOR %",		0,		95 },
+	{ "ARMOR",			0,		100000 },
 	{ "SHIELD",			0,		10000000 },
 	{ "SPEED KM/H",		1,		500 },
 	{ "PRICE",			0,		100000000 },
@@ -268,7 +273,7 @@ void BG_BalanceString( qboolean weapon, int index, char *buffer, int size ) {
 		if ( value != stock ) {
 			changed = qtrue;
 		}
-		Q_strcat( buffer, size, va( param ? " %i" : "%i", value ) );
+		Q_strcat( buffer, size, va( param ? " %i" : BALANCE_VERSION " %i", value ) );
 	}
 	if ( !changed ) {
 		buffer[0] = 0;
@@ -286,6 +291,10 @@ static void BG_BalanceParse( qboolean weapon, int index, const char *text ) {
 	int		param, count = weapon ? WPARAM_COUNT : RPARAM_COUNT;
 	char	*token;
 
+	token = COM_ParseExt( (char **)&text, qfalse );
+	if ( strcmp( token, BALANCE_VERSION ) ) {
+		text = "";		// empty, or saved for an older stock balance: all stock
+	}
 	for ( param = 0; param < count; param++ ) {
 		int		value;
 

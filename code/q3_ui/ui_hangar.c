@@ -623,8 +623,8 @@ static void Hangar_DrawPanel( void ) {
 		showNext && next > level ? va( "+%s", Hangar_Number( BG_RobotStructure( type, next ) - value ) ) : "" );
 	y += LINE;
 	value = BG_RobotArmor( type, level );
-	Hangar_DrawLine( y, "ARMOR", va( "%i %%", value ),
-		showNext && next > level ? va( "+%i %%", BG_RobotArmor( type, next ) - value ) : "" );
+	Hangar_DrawLine( y, "ARMOR / HIT", value ? va( "%i", value ) : "-",
+		showNext && next > level && value ? va( "+%i", BG_RobotArmor( type, next ) - value ) : "" );
 	y += LINE;
 	value = BG_RobotShield( type, level );
 	Hangar_DrawLine( y, "SHIELD", value ? Hangar_Number( value ) : "-",
