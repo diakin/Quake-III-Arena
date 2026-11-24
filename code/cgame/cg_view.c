@@ -815,6 +815,7 @@ void CG_DrawActiveFrame( int serverTime, stereoFrame_t stereoView, qboolean demo
 	if ( !cg.hyperspace ) {
 		CG_AddPacketEntities();			// adter calcViewValues, so predicted player state is correct
 		CG_AddBarrier();				// WALKER: edge of the playing field
+		CG_AddBeaconRings();			// WALKER: after all beams, see cg_beacons.c
 		CG_AddMarks();
 		CG_AddParticles ();
 		CG_AddLocalEntities();

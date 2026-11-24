@@ -1612,8 +1612,10 @@ typedef enum {
 // these are sort of arbitrary limits.
 // the limits apply to the sum of all scenes in a frame --
 // the main view, all the 3D icons, etc
-#define	MAX_POLYS		600
-#define	MAX_POLYVERTS	3000
+// WALKER: 600 / 3000 were used up by the beacon rings on uneven ground (each ring is
+// clipped into up to 256 pieces by the terrain brushes), beams were dropped
+#define	MAX_POLYS		4096
+#define	MAX_POLYVERTS	20000
 
 // all of the information needed by the back end must be
 // contained in a backEndData_t.  This entire structure is

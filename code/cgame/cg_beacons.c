@@ -100,22 +100,186 @@ static void CG_BeamQuad( const vec3_t base, float width, const vec3_t color, flo
 
 /*
 =================
+Beacon rings
+
+The ring on the ground follows the relief: CM_MarkFragments clips it against the
+brushes under the beacon. On wk_islands the ground is made of small triangular
+brushes, one ring gave up to 256 fragments, and five rings every frame used up the
+renderer limit of polygons (r_maxpolys): the beams of the last beacons were
+dropped. The ground does not change, so the fragments are computed once per
+beacon and only coloured each frame; the rings are drawn after all beams
+(CG_AddBeaconRings, after the packet entities).
+=================
+*/
+#define MAX_RING_BEACONS	8
+#define MAX_RING_FRAGMENTS	256
+#define MAX_RING_POINTS		1536
+
+typedef struct {
+	int			entityNum;			// -1 free
+	vec3_t		origin;
+	float		radius;
+	int			numFragments;
+	int			fragmentFirst[MAX_RING_FRAGMENTS];
+	int			fragmentPoints[MAX_RING_FRAGMENTS];
+	int			numPoints;
+	vec3_t		points[MAX_RING_POINTS];
+	float		texture[MAX_RING_POINTS][2];
+} beaconRing_t;
+
+static beaconRing_t	beaconRings[MAX_RING_BEACONS];
+static qboolean		beaconRingsCleared;
+static centity_t	*beaconsThisFrame[MAX_RING_BEACONS];
+static int			numBeaconsThisFrame;
+
+static beaconRing_t *CG_BeaconRing( const centity_t *cent ) {
+	static markFragment_t	fragments[MAX_RING_FRAGMENTS];	// static: too large for the QVM stack
+	static vec3_t			markPoints[MAX_RING_POINTS];
+	beaconRing_t	*ring, *freeRing = NULL;
+	vec3_t			axis[3], corners[4], projection, delta;
+	float			radius = cent->currentState.origin2[0];
+	int				index, corner, point;
+
+	if ( !beaconRingsCleared ) {
+		for ( index = 0 ; index < MAX_RING_BEACONS ; index++ ) {
+			beaconRings[index].entityNum = -1;
+		}
+		beaconRingsCleared = qtrue;
+	}
+	for ( index = 0 ; index < MAX_RING_BEACONS ; index++ ) {
+		ring = &beaconRings[index];
+		if ( ring->entityNum == cent->currentState.number ) {
+			if ( VectorCompare( ring->origin, cent->lerpOrigin ) && ring->radius == radius ) {
+				return ring;
+			}
+			freeRing = ring;		// moved or resized (a new map): compute again
+			break;
+		}
+		if ( ring->entityNum < 0 && !freeRing ) {
+			freeRing = ring;
+		}
+	}
+	if ( !freeRing || radius <= 0 ) {
+		return NULL;
+	}
+	ring = freeRing;
+	ring->entityNum = cent->currentState.number;
+	VectorCopy( cent->lerpOrigin, ring->origin );
+	ring->radius = radius;
+
+	// the same square as CG_ImpactMark with the normal straight up
+	VectorSet( axis[0], 0, 0, 1 );
+	VectorSet( axis[1], 0, 1, 0 );
+	VectorSet( axis[2], -1, 0, 0 );
+	for ( index = 0 ; index < 3 ; index++ ) {
+		corners[0][index] = ring->origin[index] - radius * axis[1][index] - radius * axis[2][index];
+		corners[1][index] = ring->origin[index] + radius * axis[1][index] - radius * axis[2][index];
+		corners[2][index] = ring->origin[index] + radius * axis[1][index] + radius * axis[2][index];
+		corners[3][index] = ring->origin[index] - radius * axis[1][index] + radius * axis[2][index];
+	}
+	VectorSet( projection, 0, 0, -20 );
+	ring->numFragments = trap_CM_MarkFragments( 4, (void *)corners, projection, MAX_RING_POINTS, markPoints[0],
+		MAX_RING_FRAGMENTS, fragments );
+	ring->numPoints = 0;
+	for ( index = 0 ; index < ring->numFragments ; index++ ) {
+		int		count = fragments[index].numPoints;
+
+		if ( count > MAX_VERTS_ON_POLY ) {
+			count = MAX_VERTS_ON_POLY;
+		}
+		ring->fragmentFirst[index] = ring->numPoints;
+		ring->fragmentPoints[index] = count;
+		for ( corner = 0 ; corner < count ; corner++ ) {
+			point = ring->numPoints++;
+			VectorCopy( markPoints[fragments[index].firstPoint + corner], ring->points[point] );
+			VectorSubtract( ring->points[point], ring->origin, delta );
+			ring->texture[point][0] = 0.5f + DotProduct( delta, axis[1] ) * 0.5f / radius;
+			ring->texture[point][1] = 0.5f + DotProduct( delta, axis[2] ) * 0.5f / radius;
+		}
+	}
+	return ring;
+}
+
+static void CG_DrawBeaconRing( centity_t *cent, const vec3_t color ) {
+	beaconRing_t	*ring = CG_BeaconRing( cent );
+	polyVert_t		verts[MAX_VERTS_ON_POLY];
+	byte			red, green, blue;
+	int				fragment, corner, point;
+
+	if ( !ring ) {
+		return;
+	}
+	red = (byte)( Com_Clamp( 0, 1, color[0] ) * 255 );
+	green = (byte)( Com_Clamp( 0, 1, color[1] ) * 255 );
+	blue = (byte)( Com_Clamp( 0, 1, color[2] ) * 255 );
+	for ( fragment = 0 ; fragment < ring->numFragments ; fragment++ ) {
+		for ( corner = 0 ; corner < ring->fragmentPoints[fragment] ; corner++ ) {
+			point = ring->fragmentFirst[fragment] + corner;
+			VectorCopy( ring->points[point], verts[corner].xyz );
+			verts[corner].st[0] = ring->texture[point][0];
+			verts[corner].st[1] = ring->texture[point][1];
+			verts[corner].modulate[0] = red;
+			verts[corner].modulate[1] = green;
+			verts[corner].modulate[2] = blue;
+			verts[corner].modulate[3] = 255;
+		}
+		trap_R_AddPolyToScene( cgs.media.beaconRingShader, ring->fragmentPoints[fragment], verts );
+	}
+}
+
+/*
+=================
+CG_BeaconPulse
+=================
+*/
+static float CG_BeaconPulse( const entityState_t *state ) {
+	// a beacon being fought for flickers a little
+	return ( state->generic1 == 3 ) ? 0.75f + 0.25f * sin( cg.time * 0.02f ) : 1.0f;
+}
+
+/*
+=================
 CG_Beacon
+
+the beam; the ring follows in CG_AddBeaconRings
 =================
 */
 void CG_Beacon( centity_t *cent ) {
 	const entityState_t	*state = &cent->currentState;
-	vec3_t				color, up = { 0, 0, 1 };
-	float				pulse;
+	vec3_t				color;
+	float				pulse = CG_BeaconPulse( state );
 
 	CG_BeaconColor( CG_BeaconRelative( state ), color );
-	// a beacon being fought for flickers a little
-	pulse = ( state->generic1 == 3 ) ? 0.75f + 0.25f * sin( cg.time * 0.02f ) : 1.0f;
 	CG_BeamQuad( cent->lerpOrigin, BEAM_GLOW_WIDTH, color, 0.45f * pulse );
 	CG_BeamQuad( cent->lerpOrigin, BEAM_CORE_WIDTH, color, 1.0f * pulse );
-	// ring on the ground along the edge of the beacon
-	CG_ImpactMark( cgs.media.beaconRingShader, cent->lerpOrigin, up, 0,
-		color[0] * pulse, color[1] * pulse, color[2] * pulse, 1, qfalse, state->origin2[0], qtrue );
+	if ( numBeaconsThisFrame < MAX_RING_BEACONS ) {
+		beaconsThisFrame[numBeaconsThisFrame++] = cent;
+	}
+}
+
+/*
+=================
+CG_AddBeaconRings
+
+after CG_AddPacketEntities: rings of the beacons drawn this frame
+=================
+*/
+void CG_AddBeaconRings( void ) {
+	int		index;
+	vec3_t	color;
+	float	pulse;
+
+	for ( index = 0 ; index < numBeaconsThisFrame ; index++ ) {
+		centity_t	*cent = beaconsThisFrame[index];
+
+		pulse = CG_BeaconPulse( &cent->currentState );
+		CG_BeaconColor( CG_BeaconRelative( &cent->currentState ), color );
+		VectorScale( color, pulse, color );
+		if ( cg_addMarks.integer ) {
+			CG_DrawBeaconRing( cent, color );
+		}
+	}
+	numBeaconsThisFrame = 0;
 }
 
 /*

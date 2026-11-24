@@ -1404,6 +1404,7 @@ void	CG_Beacon( centity_t *cent );
 void	CG_DrawBeacons( void );
 void	CG_DrawHealthBars( void );
 void	CG_AddBarrier( void );
+void	CG_AddBeaconRings( void );
 
 //
 // cg_localents.c
