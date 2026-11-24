@@ -16,11 +16,11 @@ const char *bg_weaponClassNames[WCLASS_COUNT] = { "LIGHT", "MEDIUM", "HEAVY" };
 // height 26 above the origin); the shot starts at the mount + the weapon length forward
 const robotInfo_t bg_robots[ROBOT_COUNT] = {
 	{ "k7", "K7", "Medium walker, two light mounts", "walker",
-		62000, 15, 8000, 38, 3000,
+		62000, 15, 4000, 38, 3000,
 		2, { WCLASS_LIGHT, WCLASS_LIGHT, 0 }, { RWEAPON_OSA, RWEAPON_OSA, -1 },
 		{ { -6, -19.5f, -10.5f }, { -6, 19.5f, -10.5f }, { 0, 0, 0 } } },
 	{ "strizh", "STRIZH", "Light scout, strong shield", "strizh",
-		42000, 5, 18000, 56, 6000,
+		42000, 5, 9000, 56, 6000,
 		2, { WCLASS_MEDIUM, WCLASS_LIGHT, 0 }, { RWEAPON_TOPOR, RWEAPON_OSA, -1 },
 		{ { 1.5f, -13, -11.5f }, { 1.5f, 12.2f, -11.5f }, { 0, 0, 0 } } },
 	{ "molot", "MOLOT", "Heavy assault, thick armor", "molot",
@@ -35,7 +35,7 @@ const robotWeaponInfo_t bg_robotWeapons[RWEAPON_COUNT] = {
 	{ "shmel",	"SHMEL",	"Light rocket pod",		WCLASS_LIGHT,	WFIRE_SHELL,	700,	1000,	500,	60,	1400,	0,		1800,	10 },
 	{ "topor",	"TOPOR",	"Medium autocannon",	WCLASS_MEDIUM,	WFIRE_BULLET,	300,	333,	800,	0,	0,		150,	2500,	22 },
 	{ "iskra",	"ISKRA",	"Medium plasma gun",	WCLASS_MEDIUM,	WFIRE_PLASMA,	650,	250,	800,	40,	1800,	0,		3000,	20 },
-	{ "taran",	"TARAN",	"Heavy cannon",			WCLASS_HEAVY,	WFIRE_SHELL,	3800,	3000,	800,	90,	2400,	0,		4500,	33 },
+	{ "taran",	"TARAN",	"Heavy cannon",			WCLASS_HEAVY,	WFIRE_SHELL,	7600,	2000,	800,	90,	2400,	0,		4500,	33 },
 	{ "kopyo",	"KOPYO",	"Heavy railgun",		WCLASS_HEAVY,	WFIRE_RAIL,		9000,	2200,	800,	0,	0,		0,		6000,	33 },
 };
 

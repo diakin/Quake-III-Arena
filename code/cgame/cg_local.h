@@ -391,6 +391,7 @@ typedef struct {
 	sfxHandle_t		sounds[MAX_CUSTOM_SOUNDS];
 
 	int				slotWeapons[ROBOT_MAX_SLOTS];	// WALKER: robotWeapon_t by slot, -1 empty ("rw")
+	int				slotLevels[ROBOT_MAX_SLOTS];
 } clientInfo_t;
 
 
@@ -1393,6 +1394,14 @@ void CG_GrappleTrail( centity_t *ent, const weaponInfo_t *wi );
 void CG_AddViewWeapon (playerState_t *ps);
 void CG_AddPlayerWeapon( refEntity_t *parent, playerState_t *ps, centity_t *cent, int team );
 void CG_AddRobotWeapons( refEntity_t *parent, centity_t *cent );
+
+// cg_target.c (WALKER)
+void CG_TargetDamage( int clientNum, int total );
+void CG_TargetUpdate( void );
+void CG_TargetNext_f( void );
+void CG_DrawTarget( void );
+void CG_PlaceWeaponLabel( int slot, const vec3_t origin );
+void CG_DrawWeaponLabels( void );
 void CG_RobotFire( entityState_t *es );
 void CG_DrawWeaponSelect( void );
 

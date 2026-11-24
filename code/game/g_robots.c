@@ -258,6 +258,21 @@ void G_RobotSpawn( gentity_t *ent ) {
 	client->ps.stats[STAT_MAX_SHIELD] = BG_RobotShield( robot->type, robot->level ) / ROBOT_HEALTH_SCALE;
 	client->ps.stats[STAT_SHIELD] = client->ps.stats[STAT_MAX_SHIELD];
 	client->ps.stats[STAT_FIRE_INTERVAL] = -1;		// pmove does not fire: G_RobotFire
+
+	// a new robot: the damage the others did to the previous one is forgotten
+	{
+		int		other;
+
+		for ( other = 0; other < level.maxclients; other++ ) {
+			gclient_t	*attacker = &level.clients[other];
+			if ( attacker->pers.connected == CON_CONNECTED && attacker->damageTo[ent->s.number] ) {
+				attacker->damageTo[ent->s.number] = 0;
+				if ( !( g_entities[other].r.svFlags & SVF_BOT ) ) {
+					trap_SendServerCommand( other, va( "dmg %i 0", ent->s.number ) );
+				}
+			}
+		}
+	}
 	client->shieldHitTime = 0;
 	client->shieldResidual = 0;
 	memset( client->slotTime, 0, sizeof( client->slotTime ) );
@@ -332,7 +347,8 @@ void G_RobotFire( gentity_t *ent, int msec ) {
 =================
 G_RobotWeaponList
 
-"osa,osa" - the weapons of the current robot by slot, for the player configstring
+"osa.2,osa.1" - the weapons of the current robot by slot with their levels, for the
+player configstring
 =================
 */
 const char *G_RobotWeaponList( gclient_t *client ) {
@@ -343,7 +359,11 @@ const char *G_RobotWeaponList( gclient_t *client ) {
 	list[0] = 0;
 	for ( slot = 0; slot < bg_robots[robot->type].numSlots; slot++ ) {
 		int		type = robot->weapons[slot].type;
-		Q_strcat( list, sizeof( list ), va( "%s%s", slot ? "," : "", type >= 0 ? bg_robotWeapons[type].id : "-" ) );
+		if ( type >= 0 ) {
+			Q_strcat( list, sizeof( list ), va( "%s%s.%i", slot ? "," : "", bg_robotWeapons[type].id, robot->weapons[slot].level ) );
+		} else {
+			Q_strcat( list, sizeof( list ), slot ? ",-" : "-" );
+		}
 	}
 	return list;
 }

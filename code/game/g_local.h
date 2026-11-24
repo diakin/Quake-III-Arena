@@ -291,6 +291,7 @@ struct gclient_s {
 	int			shieldHitTime;		// WALKER: last hit, the shield recovers some time after it
 	int			shieldResidual;
 	int			slotTime[ROBOT_MAX_SLOTS];	// WALKER: msec until each slot may fire again
+	int			damageTo[MAX_CLIENTS];		// WALKER: damage done to the current robot of each player
 
 	qboolean	noclip;
 

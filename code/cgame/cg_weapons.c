@@ -1238,6 +1238,12 @@ void CG_AddRobotWeapons( refEntity_t *parent, centity_t *cent ) {
 		gun.hModel = cgs.media.robotWeaponModels[type];
 		CG_PositionEntityOnTag( &gun, parent, parent->hModel, va( "tag_weapon%i", slot + 1 ) );
 		CG_AddWeaponWithPowerups( &gun, cent->currentState.powerups );
+		if ( cent->currentState.clientNum == cg.snap->ps.clientNum ) {
+			vec3_t	rear;
+			VectorMA( gun.origin, -4, gun.axis[0], rear );		// the label is drawn behind the weapon
+			rear[2] += 6;
+			CG_PlaceWeaponLabel( slot, rear );
+		}
 
 		if ( cg.time - cent->pe.slotFlashTime[slot] > MUZZLE_FLASH_TIME || bg_robotWeapons[type].fire == WFIRE_RAIL ) {
 			continue;

@@ -84,7 +84,7 @@ GAME_SRC = g_main bg_misc bg_lib bg_pmove bg_slidemove q_math q_shared \
 
 CGAME_SRC = cg_main cg_consolecmds cg_draw cg_drawtools cg_effects cg_ents cg_event cg_info \
 	cg_localents cg_marks cg_players cg_playerstate cg_predict cg_scoreboard cg_servercmds \
-	cg_snapshot cg_view cg_weapons cg_beacons bg_slidemove bg_pmove bg_lib bg_misc bg_robots q_math q_shared
+	cg_snapshot cg_view cg_weapons cg_beacons cg_target bg_slidemove bg_pmove bg_lib bg_misc bg_robots q_math q_shared
 
 UI_SRC = ui_main ui_gameinfo ui_atoms ui_cinematics ui_connect ui_controls2 ui_demo2 ui_mfield \
 	ui_credits ui_menu ui_ingame ui_confirm ui_setup ui_options ui_display ui_sound ui_network \

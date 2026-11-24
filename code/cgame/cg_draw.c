@@ -2564,6 +2564,9 @@ static void CG_Draw2D( void ) {
 	CG_DrawVote();
 	CG_DrawTeamVote();
 	CG_DrawHealthBars();	// WALKER: bars over the robots
+	CG_TargetUpdate();		// WALKER: target frame and weapon labels (cg_target.c)
+	CG_DrawTarget();
+	CG_DrawWeaponLabels();
 	CG_DrawBeacons();		// WALKER: beacon capture
 
 	CG_DrawLagometer();

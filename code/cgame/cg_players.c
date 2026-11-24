@@ -955,7 +955,7 @@ void CG_NewClientInfo( int clientNum ) {
 	v = Info_ValueForKey( configstring, "hc" );
 	newInfo.handicap = atoi( v );
 
-	// WALKER: weapons in the slots of the robot, "osa,osa"
+	// WALKER: weapons in the slots of the robot with their levels, "osa.2,osa.1"
 	{
 		char	list[64];
 		char	*cursor, *comma;
@@ -971,6 +971,14 @@ void CG_NewClientInfo( int clientNum ) {
 			comma = strchr( cursor, ',' );
 			if ( comma ) {
 				*comma = 0;
+			}
+			{
+				char	*dot = strchr( cursor, '.' );
+				newInfo.slotLevels[slot] = 1;
+				if ( dot ) {
+					*dot = 0;
+					newInfo.slotLevels[slot] = atoi( dot + 1 );
+				}
 			}
 			newInfo.slotWeapons[slot] = BG_WeaponByName( cursor );
 			cursor = comma ? comma + 1 : NULL;

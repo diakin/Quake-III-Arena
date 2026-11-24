@@ -1009,6 +1009,14 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 		if ( attacker && attacker->client && attacker != targ && !OnSameTeam( targ, attacker ) ) {
 			int		dealt = shieldBefore - client->ps.stats[STAT_SHIELD] + ( take < targ->health ? take : targ->health );
 			attacker->client->pers.damageDealt += dealt * ROBOT_HEALTH_SCALE;
+			// WALKER: the damage done to this robot, for the target frame of the attacker (cg_target.c)
+			if ( dealt > 0 && targ->s.number < MAX_CLIENTS ) {
+				attacker->client->damageTo[targ->s.number] += dealt * ROBOT_HEALTH_SCALE;
+				if ( !( attacker->r.svFlags & SVF_BOT ) ) {
+					trap_SendServerCommand( attacker - g_entities,
+						va( "dmg %i %i", targ->s.number, attacker->client->damageTo[targ->s.number] ) );
+				}
+			}
 		}
 	}
 

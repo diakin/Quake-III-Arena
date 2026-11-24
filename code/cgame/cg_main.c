@@ -118,6 +118,7 @@ vmCvar_t	cg_draw2D;
 vmCvar_t	cg_drawStatus;
 vmCvar_t	cg_animSpeed;
 vmCvar_t	cg_strideSpeed;
+vmCvar_t	cg_walkerBinds;
 vmCvar_t	cg_debugAnim;
 vmCvar_t	cg_debugPosition;
 vmCvar_t	cg_debugEvents;
@@ -253,6 +254,7 @@ static cvarTable_t cvarTable[] = { // bk001129
 	{ &cg_animSpeed, "cg_animspeed", "1", CVAR_CHEAT },
 	// WALKER: speed at which the walk animation plays at its own rate (steps match the ground)
 	{ &cg_strideSpeed, "cg_strideSpeed", "110", CVAR_ARCHIVE },
+	{ &cg_walkerBinds, "cg_walkerBinds", "0", CVAR_ARCHIVE },	// WALKER: binds of new commands given once
 	{ &cg_debugAnim, "cg_debuganim", "0", CVAR_CHEAT },
 	{ &cg_debugPosition, "cg_debugposition", "0", CVAR_CHEAT },
 	{ &cg_debugEvents, "cg_debugevents", "0", CVAR_CHEAT },
@@ -1906,6 +1908,12 @@ void CG_Init( int serverMessageNum, int serverCommandSequence, int clientNum ) {
 	cgs.media.charsetPropB		= trap_R_RegisterShaderNoMip( "menu/art/font2_prop.tga" );
 
 	CG_RegisterCvars();
+
+	// WALKER: TAB takes the next target (cg_target.c), the scores move to Q; once, the
+	// player may bind them differently afterwards
+	if ( cg_walkerBinds.integer < 1 ) {
+		trap_SendConsoleCommand( "bind TAB locknext\nbind q +scores\nseta cg_walkerBinds 1\n" );
+	}
 
 	CG_InitConsoleCommands();
 

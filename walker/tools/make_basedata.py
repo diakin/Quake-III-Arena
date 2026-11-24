@@ -43,7 +43,9 @@ def write(path, text):
 # ---------------------------------------------------------------- default.cfg
 DEFAULT_CFG = r"""// WALKER default settings (read by the engine at startup)
 unbindall
-bind TAB "+scores"
+bind TAB "locknext"
+bind q "+scores"
+seta cg_walkerBinds "1"
 bind ENTER "+button2"
 bind ESCAPE "togglemenu"
 bind SPACE "+moveup"

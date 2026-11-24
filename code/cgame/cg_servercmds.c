@@ -987,6 +987,12 @@ static void CG_ServerCommand( void ) {
 	}
 
 	// WALKER: reward of the battle for the pilot account (the ui adds it, ui_account.c)
+	// WALKER: damage done to a robot so far (target frame, cg_target.c)
+	if ( !strcmp( cmd, "dmg" ) ) {
+		CG_TargetDamage( atoi( CG_Argv( 1 ) ), atoi( CG_Argv( 2 ) ) );
+		return;
+	}
+
 	if ( !strcmp( cmd, "reward" ) ) {
 		char	text[256];
 		int		index;

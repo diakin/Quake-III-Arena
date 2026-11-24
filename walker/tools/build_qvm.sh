@@ -36,7 +36,7 @@ GAME="game/g_main.c game/bg_misc.c game/bg_lib.c game/bg_pmove.c game/bg_slidemo
 CGAME="cgame/cg_main.c cgame/cg_consolecmds.c cgame/cg_draw.c cgame/cg_drawtools.c cgame/cg_effects.c cgame/cg_ents.c
  cgame/cg_event.c cgame/cg_info.c cgame/cg_localents.c cgame/cg_marks.c cgame/cg_players.c cgame/cg_playerstate.c
  cgame/cg_predict.c cgame/cg_scoreboard.c cgame/cg_servercmds.c cgame/cg_snapshot.c cgame/cg_view.c cgame/cg_weapons.c
- cgame/cg_beacons.c game/bg_slidemove.c game/bg_pmove.c game/bg_lib.c game/bg_misc.c game/bg_robots.c game/q_math.c game/q_shared.c"
+ cgame/cg_beacons.c cgame/cg_target.c game/bg_slidemove.c game/bg_pmove.c game/bg_lib.c game/bg_misc.c game/bg_robots.c game/q_math.c game/q_shared.c"
 UI="q3_ui/ui_main.c q3_ui/ui_gameinfo.c q3_ui/ui_atoms.c q3_ui/ui_cinematics.c q3_ui/ui_connect.c q3_ui/ui_controls2.c
  q3_ui/ui_demo2.c q3_ui/ui_mfield.c q3_ui/ui_credits.c q3_ui/ui_menu.c q3_ui/ui_ingame.c q3_ui/ui_confirm.c q3_ui/ui_setup.c
  q3_ui/ui_options.c q3_ui/ui_display.c q3_ui/ui_sound.c q3_ui/ui_network.c q3_ui/ui_playermodel.c q3_ui/ui_players.c
