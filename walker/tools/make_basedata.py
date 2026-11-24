@@ -868,6 +868,28 @@ def beacon_ring(size=256):
     return Image.fromarray(image, 'RGBA')
 
 
+def barrier_grid(size=128):
+    """граница поля: сотовая сетка (тонкие светлые линии) и лёгкое мерцание внутри; повторяется
+    без шва; белая — цвет и силу даёт игра (rgbGen vertex)."""
+    from scipy.spatial import cKDTree
+    columns, rows = 4, 4
+    centers = []
+    for row in range(-1, rows + 1):
+        for column in range(-1, columns + 1):
+            centers.append(((column + 0.5 * (row % 2)) * size / columns, row * size / rows))
+    tree = cKDTree(centers)
+    y, x = np.mgrid[0:size, 0:size].astype(float)
+    distances, _ = tree.query(np.stack([x.ravel(), y.ravel()], axis=1), k=2)
+    edge = (distances[:, 1] - distances[:, 0]).reshape(size, size)
+    lines = np.exp(-(edge / 1.4) ** 2)
+    shimmer = 0.10 + 0.06 * np.sin(x / size * 2 * math.pi * 3) * np.sin(y / size * 2 * math.pi * 2)
+    level = np.clip(lines * 0.9 + shimmer, 0, 1)
+    image = np.zeros((size, size, 4), dtype=np.uint8)
+    image[..., :3] = (level[..., None] * 255).astype(np.uint8)
+    image[..., 3] = 255
+    return Image.fromarray(image, 'RGBA')
+
+
 def premultiply(image):
     """для аддитивного смешивания (GL_ONE GL_ONE) движок не смотрит на альфу: умножаем цвет на неё."""
     pixels = np.array(image.convert('RGBA')).astype(float)
@@ -902,6 +924,7 @@ def effects():
     save('gfx/misc/bubble.tga', premultiply(radial(16, 0.5, 1.0, (220, 235, 255), 1.0)))
     save('gfx/misc/beacon_beam.tga', beacon_beam())
     save('gfx/misc/beacon_ring.tga', beacon_ring())
+    save('gfx/misc/barrier.tga', barrier_grid())
     explosion_frames('models/weaphits/rlboom/rlboom_', 8)
     explosion_frames('models/weaphits/bullet', 3, 64)
     write('scripts/walker_fx.shader', """// weapon and impact effects (names expected by cgame)
@@ -1069,6 +1092,16 @@ beaconBeam
 		clampmap gfx/misc/beacon_beam.tga
 		blendFunc GL_ONE GL_ONE
 		rgbGen vertex
+	}
+}
+barrierGrid
+{
+	cull none
+	{
+		map gfx/misc/barrier.tga
+		blendFunc GL_ONE GL_ONE
+		rgbGen vertex
+		tcMod scroll 0 0.04
 	}
 }
 beaconRing

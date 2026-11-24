@@ -318,6 +318,85 @@ static int BotWalkerRoamGoal(bot_state_t *bs, bot_goal_t *goal) {
 
 /*
 ==================
+BotBeaconGoal
+
+WALKER: beacon capture. The bot picks the beacon that needs its team most
+(an enemy one, a free one, an own one being taken), nearer is better, fewer
+team mates already on it is better, and goes there; standing on a beacon that
+is not fully its team's yet it stays, moving about inside the circle.
+==================
+*/
+static int BotBeaconGoal(bot_state_t *bs, bot_goal_t *goal) {
+	int i, j, count, team, best, friends, areanum;
+	float score, bestscore, control, need, distance, radius;
+	gentity_t *beacon;
+	gclient_t *client;
+	vec3_t point, delta;
+	qboolean enemyon;
+
+	count = G_NumBeacons();
+	if (!count) return qfalse;
+	team = BotTeam(bs);
+	best = -1;
+	bestscore = 0;
+	for (i = 0; i < count; i++) {
+		beacon = G_Beacon(i);
+		control = beacon->s.angles2[0];
+		if (team == TEAM_RED) control = -control;
+		need = 1 - control;						// 0 own beacon .. 2 enemy beacon
+		enemyon = (beacon->s.generic1 & (team == TEAM_RED ? 2 : 1)) != 0;
+		radius = beacon->s.origin2[0];
+		friends = 0;
+		for (j = 0; j < level.maxclients; j++) {
+			client = &level.clients[j];
+			if (j == bs->client || client->pers.connected != CON_CONNECTED || client->sess.sessionTeam != team
+				|| client->ps.stats[STAT_HEALTH] <= 0) continue;
+			VectorSubtract(client->ps.origin, beacon->s.origin, delta);
+			delta[2] = 0;
+			if (VectorLength(delta) < radius) friends++;
+		}
+		distance = Distance(bs->origin, beacon->s.origin);
+		score = (need > 0.02f ? 1 + need : 0.15f) * (enemyon ? 1.3f : 1.0f) / (1 + distance / 700);
+		if (friends >= 2 && !enemyon && need < 1) score *= 0.4f;
+		score *= 0.85f + 0.3f * random();
+		if (score > bestscore) {
+			bestscore = score;
+			best = i;
+		}
+	}
+	if (best < 0) return qfalse;
+	beacon = G_Beacon(best);
+	radius = beacon->s.origin2[0];
+	VectorCopy(beacon->s.origin, point);
+	// on the beacon: stay inside, a little moving about
+	VectorSubtract(bs->origin, beacon->s.origin, delta);
+	delta[2] = 0;
+	if (VectorLength(delta) < radius * 0.8f) {
+		float angle = random() * 2 * M_PI, reach = random() * radius * 0.55f;
+		point[0] += cos(angle) * reach;
+		point[1] += sin(angle) * reach;
+	}
+	point[2] += 24;
+	areanum = BotPointAreaNum(point);
+	if (!areanum || !trap_AAS_AreaReachability(areanum)) {
+		VectorCopy(beacon->s.origin, point);
+		point[2] += 24;
+		areanum = BotPointAreaNum(point);
+		if (!areanum) return qfalse;
+	}
+	memset(goal, 0, sizeof(bot_goal_t));
+	VectorCopy(point, goal->origin);
+	goal->areanum = areanum;
+	VectorSet(goal->mins, -32, -32, -32);
+	VectorSet(goal->maxs, 32, 32, 32);
+	goal->entitynum = -1;
+	goal->flags = GFL_ROAM;
+	trap_BotPushGoal(bs->gs, goal);
+	return qtrue;
+}
+
+/*
+==================
 BotGetItemLongTermGoal
 ==================
 */
@@ -339,7 +418,10 @@ int BotGetItemLongTermGoal(bot_state_t *bs, int tfl, bot_goal_t *goal) {
 		//BotAI_Print(PRT_MESSAGE, "%s: choosing new ltg\n", ClientName(bs->client, netname, sizeof(netname)));
 		//choose a new goal
 		//BotAI_Print(PRT_MESSAGE, "%6.1f client %d: BotChooseLTGItem\n", FloatTime(), bs->client);
-		if (trap_BotChooseLTGItem(bs->gs, bs->origin, bs->inventory, tfl)) {
+		if (g_gametype.integer == GT_BEACONS && BotBeaconGoal(bs, goal)) {	// WALKER: beacon capture
+			bs->ltg_time = FloatTime() + 3;
+		}
+		else if (trap_BotChooseLTGItem(bs->gs, bs->origin, bs->inventory, tfl)) {
 			/*
 			char buf[128];
 			//get the goal at the top of the stack

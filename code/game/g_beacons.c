@@ -30,6 +30,7 @@ This file is part of WALKER, based on the Quake III Arena source code
 
 static gentity_t	*beacons[MAX_BEACONS];
 static int			numBeacons;
+static qboolean		explicitBeacons;	// the map has team_beacon entities (target_location only names them)
 static float		drainRed, drainBlue;	// fractions of points not yet taken away
 static int			drainTime;
 
@@ -64,6 +65,7 @@ void SP_team_beacon( gentity_t *ent ) {
 	float	radius;
 	char	*letter;
 
+	explicitBeacons = qtrue;
 	G_SpawnFloat( "radius", va( "%i", BEACON_RADIUS ), &radius );
 	G_SpawnString( "letter", "", &letter );
 	G_BeaconSetup( ent, radius, letter[0] >= 'A' && letter[0] <= 'H' ? letter[0] - 'A' : -1 );
@@ -82,7 +84,7 @@ void G_BeaconFromLocation( gentity_t *location ) {
 	trace_t		trace;
 	vec3_t		end;
 
-	if ( g_gametype.integer != GT_BEACONS || !location->message
+	if ( g_gametype.integer != GT_BEACONS || explicitBeacons || !location->message
 		|| Q_stricmpn( location->message, "Beacon", 6 ) ) {
 		return;
 	}
@@ -103,6 +105,7 @@ G_BeaconsInit
 */
 void G_BeaconsInit( void ) {
 	numBeacons = 0;
+	explicitBeacons = qfalse;
 	drainRed = drainBlue = 0;
 	drainTime = 0;
 	if ( g_gametype.integer != GT_BEACONS ) {
@@ -324,4 +327,19 @@ gentity_t *G_BeaconsSpawnPoint( team_t team, vec3_t origin, vec3_t angles ) {
 	origin[2] += 9;
 	VectorCopy( spot->s.angles, angles );
 	return spot;
+}
+
+/*
+=================
+G_NumBeacons / G_Beacon
+
+For the bots (ai_dmnet.c).
+=================
+*/
+int G_NumBeacons( void ) {
+	return g_gametype.integer == GT_BEACONS ? numBeacons : 0;
+}
+
+gentity_t *G_Beacon( int index ) {
+	return index >= 0 && index < numBeacons ? beacons[index] : NULL;
 }

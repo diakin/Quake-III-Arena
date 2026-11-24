@@ -319,3 +319,101 @@ void CG_DrawHealthBars( void ) {
 		}
 	}
 }
+
+/*
+=================
+CG_AddBarrier
+
+WALKER: the edge of the playing field (worldspawn "barrier": half its size,
+square around the centre) is a wall of player clip. When the player comes
+closer than BARRIER_FADE to it, a shimmering grid shows on the wall around him,
+brighter as he comes closer.
+=================
+*/
+#define BARRIER_FADE		180
+#define BARRIER_SPAN		360		// half width of the shown patch
+#define BARRIER_COLUMNS		9
+#define BARRIER_ROWS		5
+
+static float	barrierHalf = -1;
+
+static void CG_ParseBarrier( void ) {
+	char	key[MAX_TOKEN_CHARS], value[MAX_TOKEN_CHARS];
+
+	barrierHalf = 0;
+	if ( !trap_GetEntityToken( key, sizeof( key ) ) || key[0] != '{' ) {
+		return;
+	}
+	while ( trap_GetEntityToken( key, sizeof( key ) ) && key[0] != '}' ) {
+		if ( !trap_GetEntityToken( value, sizeof( value ) ) ) {
+			return;
+		}
+		if ( !Q_stricmp( key, "barrier" ) ) {
+			barrierHalf = atof( value );
+		}
+	}
+}
+
+void CG_AddBarrier( void ) {
+	int			side, column, row, index;
+	float		distance, closeness, along, height;
+	vec3_t		eye, corner;
+	polyVert_t	grid[BARRIER_ROWS][BARRIER_COLUMNS], quad[4];
+
+	if ( barrierHalf < 0 ) {
+		CG_ParseBarrier();
+	}
+	if ( barrierHalf <= 0 || !cg.snap ) {
+		return;
+	}
+	VectorCopy( cg.refdef.vieworg, eye );
+	for ( side = 0 ; side < 4 ; side++ ) {
+		int		axis = side < 2 ? 0 : 1;			// the wall is across this axis
+		float	sign = ( side & 1 ) ? -1.0f : 1.0f;
+		float	wall = sign * barrierHalf;
+
+		distance = fabs( wall - eye[axis] );
+		if ( distance > BARRIER_FADE || fabs( eye[axis] ) > barrierHalf + 8 ) {
+			continue;
+		}
+		closeness = 1.0f - distance / BARRIER_FADE;
+		for ( row = 0 ; row < BARRIER_ROWS ; row++ ) {
+			for ( column = 0 ; column < BARRIER_COLUMNS ; column++ ) {
+				polyVert_t	*vert = &grid[row][column];
+				float		strength, reach;
+
+				along = eye[!axis] + ( (float)column / ( BARRIER_COLUMNS - 1 ) * 2 - 1 ) * BARRIER_SPAN;
+				height = eye[2] - 120 + (float)row / ( BARRIER_ROWS - 1 ) * 360;
+				corner[axis] = wall;
+				corner[!axis] = along;
+				corner[2] = height;
+				VectorCopy( corner, vert->xyz );
+				vert->st[0] = along / 64.0f;
+				vert->st[1] = height / 64.0f;
+				// brightest in front of the player, fading out around
+				reach = Distance( corner, eye ) / BARRIER_SPAN;
+				strength = closeness * Com_Clamp( 0, 1, 1.2f - reach );
+				vert->modulate[0] = (byte)( 90 * strength );
+				vert->modulate[1] = (byte)( 190 * strength );
+				vert->modulate[2] = (byte)( 255 * strength );
+				vert->modulate[3] = 255;
+			}
+		}
+		for ( row = 0 ; row < BARRIER_ROWS - 1 ; row++ ) {
+			for ( column = 0 ; column < BARRIER_COLUMNS - 1 ; column++ ) {
+				quad[0] = grid[row][column];
+				quad[1] = grid[row][column + 1];
+				quad[2] = grid[row + 1][column + 1];
+				quad[3] = grid[row + 1][column];
+				for ( index = 0 ; index < 4 ; index++ ) {
+					if ( quad[index].modulate[0] || quad[index].modulate[1] || quad[index].modulate[2] ) {
+						break;
+					}
+				}
+				if ( index < 4 ) {
+					trap_R_AddPolyToScene( cgs.media.barrierShader, 4, quad );
+				}
+			}
+		}
+	}
+}

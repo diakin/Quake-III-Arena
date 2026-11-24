@@ -597,6 +597,8 @@ void G_BeaconsInit( void );
 void G_BeaconsFrame( void );
 qboolean G_BeaconsCheckExit( void );
 gentity_t *G_BeaconsSpawnPoint( team_t team, vec3_t origin, vec3_t angles );
+int G_NumBeacons( void );
+gentity_t *G_Beacon( int index );
 void LogExit( const char *string );
 
 //

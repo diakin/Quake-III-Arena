@@ -522,6 +522,93 @@ REBAR_SHARE = 0.4            # доля мест, где из излома вы�
 WALL_MESH_ERROR = 0.3        # допуск упрощения сетки стены (единицы)
 
 
+def concrete_block(start, end, base_z, height, thickness, seed, chips=None, material='concrete'):
+    """целый бетонный блок-укрытие со скруглёнными рёбрами и небольшими выбоинами (сколы на
+    рёбрах и гранях, дно скола — текстура излома). Два уровня детализации, как у стен
+    (mesh.far). Тень — одна выпуклая форма."""
+    local = np.random.default_rng(seed)
+    start = np.array([start[0], start[1], 0.0]); end = np.array([end[0], end[1], 0.0])
+    along = end - start
+    length = np.linalg.norm(along)
+    along /= length
+    across = np.array([-along[1], along[0], 0.0])
+    half = thickness / 2
+    bottom, top = base_z - 16, base_z + height
+    caster([start + along * u + across * side * half + np.array([0, 0, z])
+            for u in (0, length) for side in (-1, 1) for z in (bottom, top)], CASTER_BOTH)
+    step, pad = 1.0, 6.0
+    us = np.arange(-pad, length + pad + step, step)
+    vs = np.arange(-half - pad, half + pad + step, step)
+    zs = np.arange(bottom - pad, top + pad + step, step)
+    grid_u, grid_v, grid_z = np.meshgrid(us, vs, zs, indexing='ij')
+    inside = (grid_u >= 0) & (grid_u <= length) & (np.abs(grid_v) <= half) & (grid_z >= bottom) & (grid_z <= top)
+    # выбоины: чаще на рёбрах (торцы, верх), реже на гранях
+    count = chips if chips is not None else int(local.integers(5, 10))
+    chip_weight = np.zeros(inside.shape)
+    for _ in range(count):
+        kind = local.random()
+        side = half * (1 if local.random() < 0.5 else -1)
+        if kind < 0.35:                      # вертикальное ребро торца
+            chip_u, chip_v, chip_z = (0.0 if local.random() < 0.5 else length), side, local.uniform(base_z + 10, top - 6)
+        elif kind < 0.7:                     # верхнее ребро
+            chip_u, chip_v, chip_z = local.uniform(4, length - 4), side, top
+        else:                                # грань
+            chip_u, chip_v, chip_z = local.uniform(8, length - 8), side, local.uniform(base_z + 12, top - 12)
+        radius = local.uniform(3.0, 7.0) if kind < 0.7 else local.uniform(2.5, 5.0)
+        reach = np.sqrt((grid_u - chip_u) ** 2 + ((grid_v - chip_v) * 1.4) ** 2 + ((grid_z - chip_z) * 0.9) ** 2)
+        inside &= ~(reach < radius)
+        chip_weight = np.maximum(chip_weight, np.clip(1 - (reach - radius) / 3, 0, 1))
+    displacement = faceted_break(np.stack([grid_u, grid_v, grid_z], axis=-1), chip_weight, local)
+    field = rounded_field(inside, step, WALL_EDGE_RADIUS, WALL_CORNER_RADIUS, displacement)
+    mesh = Mesh()
+    origin = np.array([us[0], vs[0], zs[0]])
+
+    def place(points_local, normals_local):
+        points = start + np.outer(points_local[:, 0], along) + np.outer(points_local[:, 1], across) + np.outer(points_local[:, 2], [0, 0, 1])
+        normals = np.outer(normals_local[:, 0], along) + np.outer(normals_local[:, 1], across) + np.outer(normals_local[:, 2], [0, 0, 1])
+        return points, normals
+
+    def broken_faces(points_local, faces):
+        cell = np.clip(np.round((points_local[faces].mean(axis=1) - origin) / step).astype(int), 0, np.array(inside.shape) - 1)
+        return chip_weight[cell[:, 0], cell[:, 1], cell[:, 2]] > 0.35
+
+    local_points, local_normals, faces = rounded_surface(inside, step, WALL_EDGE_RADIUS, WALL_CORNER_RADIUS,
+                                                          error=WALL_MESH_ERROR, field=field)
+    local_points += origin
+    points, normals = place(local_points, local_normals)
+    broken = broken_faces(local_points, faces)
+    for part_material, selected in ((material, ~broken), ('concrete_broken', broken)):
+        if not np.any(selected):
+            continue
+        chosen = faces[selected]
+        if part_material == 'concrete_broken':
+            corners = points[chosen]
+            face_normal = np.cross(corners[:, 1] - corners[:, 0], corners[:, 2] - corners[:, 0])
+            face_normal /= np.linalg.norm(face_normal, axis=1, keepdims=True) + 1e-9
+            mesh.add(part_material, corners.reshape(-1, 3), np.repeat(face_normal, 3, axis=0), np.arange(len(chosen) * 3).reshape(-1, 3))
+        else:
+            used = np.unique(chosen)
+            remap = np.full(len(points), -1)
+            remap[used] = np.arange(len(used))
+            mesh.add(part_material, points[used], normals[used], remap[chosen])
+    # простой уровень — из того же поля, через точку (как у стен)
+    from scipy.ndimage import gaussian_filter
+    far_points, far_normals, far_faces = rounded_surface(None, step * 2, 0, 0, error=0.8, max_edge=48,
+                                                         field=gaussian_filter(field, 1.0)[::2, ::2, ::2])
+    far_points += origin
+    world, world_normals = place(far_points, far_normals)
+    far_broken = broken_faces(far_points, far_faces)
+    mesh.far = Mesh()
+    for part_material, selected in ((material, ~far_broken), ('concrete_broken', far_broken)):
+        if np.any(selected):
+            chosen = far_faces[selected]
+            used = np.unique(chosen)
+            remap = np.full(len(world), -1)
+            remap[used] = np.arange(len(used))
+            mesh.far.add(part_material, world[used], world_normals[used], remap[chosen])
+    return mesh
+
+
 def ruined_wall(start, end, base_z, height, thickness, seed, windows=True, material='concrete'):
     """стена из колонн шириной ~12 единиц: верх рваный (ломаная линия), окна — пропуски в колоннах
     между подоконником и перемычкой.

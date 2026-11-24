@@ -755,6 +755,7 @@ typedef struct {
 	qhandle_t	shadowMarkShader;
 	qhandle_t	beaconBeamShader;		// WALKER: beacon capture (cg_beacons.c)
 	qhandle_t	beaconRingShader;
+	qhandle_t	barrierShader;
 
 	qhandle_t	botSkillShaders[5];
 
@@ -1392,6 +1393,7 @@ void	CG_ImpactMark( qhandle_t markShader,
 void	CG_Beacon( centity_t *cent );
 void	CG_DrawBeacons( void );
 void	CG_DrawHealthBars( void );
+void	CG_AddBarrier( void );
 
 //
 // cg_localents.c

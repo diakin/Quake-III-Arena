@@ -16,6 +16,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 DATA = sys.argv[1]
 COMPILE = sys.argv[2]
 MAP_NAME = 'wk_islands'
+TERRAIN_SHADER = 'terrain'     # у каждой карты свой: у шейдера рельефа своя цветовая карта
 rng = np.random.default_rng(1977)
 FONT_TITLE = '/usr/share/fonts/truetype/google-fonts/ofl/anton/Anton-Regular.ttf'
 if not os.path.exists(FONT_TITLE):
@@ -582,7 +583,7 @@ SHADER_SCALE = {}      # масштаб текстуры по умолчанию
 
 def texture_scale(shader):
     name = shader.split('/')[-1]
-    if name in ('grass', 'grass2', 'rock', 'rockmoss', 'shore', 'seabed', 'terrain'):
+    if name in ('grass', 'grass2', 'rock', 'rockmoss', 'shore', 'seabed') or name.startswith('terrain'):
         return 0.5
     if name.startswith('beacon_') or name == 'helipad':
         return 0.75
@@ -893,7 +894,7 @@ def terrain_shader(points):
     normal /= np.linalg.norm(normal)
     if abs(normal[2]) < 0.72:
         return 'rock' if (a[2] + b[2] + c[2]) / 3 > 90 else 'rockmoss'
-    return 'terrain'
+    return TERRAIN_SHADER
 
 
 def terrain_height_at(world_x, world_y):
@@ -1073,7 +1074,7 @@ def add_terrain():
             used[row:row + height, col:col + width] = True
             x0, x1 = int(XS[col]), int(XS[col + width])
             y0, y1 = int(YS[row]), int(YS[row + height])
-            add_prism([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], TERRAIN_BOTTOM, float(level), 'terrain', CAULK, CAULK, True)
+            add_prism([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], TERRAIN_BOTTOM, float(level), TERRAIN_SHADER, CAULK, CAULK, True)
             counts['terrain (flat)'] = counts.get('terrain (flat)', 0) + 1
     for row in range(rows):
         for col in range(cols):
@@ -2039,4 +2040,5 @@ def main():
     Image.fromarray(image[::-1].astype(np.uint8)).resize((len(XS) * 6, len(YS) * 6), Image.NEAREST).save('/tmp/islands_height.png')
 
 
-main()
+if __name__ == '__main__':
+    main()

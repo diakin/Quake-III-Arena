@@ -42,6 +42,7 @@ mingw32-make -f Makefile.mingw clean    # удалить результаты с
 walker/dist/Walker.exe
 walker/dist/basewalker/pak0.pk3        (данные, в репозитории)
 walker/dist/basewalker/wk_islands.pk3  (карта, в репозитории)
+walker/dist/basewalker/wk_beacons.pk3  (карта для захвата маяков, в репозитории)
 walker/dist/basewalker/vm/*.qvm        (только что собранные модули)
 ```
 
@@ -53,6 +54,20 @@ walker/dist/basewalker/vm/*.qvm        (только что собранные �
 
 ```
 Walker.exe +set bot_minplayers 6 +map wk_islands
+```
+
+Захват маяков (5 на 5 с ботами удобнее запускать из меню START SERVER -> Beacon Capture):
+
+```
+Walker.exe +set g_gametype 8 +set timelimit 10 +map wk_beacons
+```
+
+Карта «Маяки» собирается так (q3map и bspc — как для Islands):
+
+```
+python3 walker/tools/make_map_beacons.py <данные> <.../quake3/basewalker>
+q3map wk_beacons.map; q3map -vis wk_beacons.map; q3map -light -skylight 24 48 wk_beacons.map
+bspc -cfg walker/maps/aas_walker.cfg -bsp2aas wk_beacons.bsp
 ```
 
 Без параметров открывается меню.
