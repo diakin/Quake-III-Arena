@@ -92,8 +92,9 @@ typedef struct {
 	int			length;			// from the mount to the muzzle (tag_flash of the model), units
 } robotWeaponInfo_t;
 
-extern const robotInfo_t		bg_robots[ROBOT_COUNT];
-extern const robotWeaponInfo_t	bg_robotWeapons[RWEAPON_COUNT];
+// changeable by the balance cvars (see below), the stock values stay in bg_robots.c
+extern robotInfo_t			bg_robots[ROBOT_COUNT];
+extern robotWeaponInfo_t	bg_robotWeapons[RWEAPON_COUNT];
 extern const char				*bg_weaponClassNames[WCLASS_COUNT];
 
 int		BG_RobotByName( const char *id );		// -1: unknown
@@ -111,5 +112,48 @@ int		BG_WeaponUpgradeCost( int weapon, int level );
 int		BG_UpgradeTime( int level );					// seconds from level to level + 1
 int		BG_SpeedUpCost( int secondsLeft );				// currency to finish an upgrade at once
 int		BG_PlayerLevelXP( int level );					// experience from level to level + 1
+
+// WALKER: balance for tests. Cvar "bal_<id>" of a robot or a weapon holds its parameters in
+// table units, separated by spaces, in the order of the enums; empty or missing values are
+// the stock ones. Game, cgame and ui read them (CVAR_SYSTEMINFO from the server); the ui
+// balance menu (ui_balance.c) writes them.
+typedef enum {
+	RPARAM_STRUCTURE,
+	RPARAM_ARMOR,
+	RPARAM_SHIELD,
+	RPARAM_SPEED,
+	RPARAM_PRICE,
+	RPARAM_COUNT
+} robotParam_t;
+
+typedef enum {
+	WPARAM_DAMAGE,
+	WPARAM_INTERVAL,
+	WPARAM_RANGE,
+	WPARAM_SPLASH,
+	WPARAM_PROJECTILE_SPEED,
+	WPARAM_SPREAD,
+	WPARAM_PRICE,
+	WPARAM_COUNT
+} weaponParam_t;
+
+typedef struct {
+	const char	*name;
+	int			minimum;
+	int			maximum;
+} balanceParam_t;
+
+extern const balanceParam_t	bg_robotParams[RPARAM_COUNT];
+extern const balanceParam_t	bg_weaponParams[WPARAM_COUNT];
+
+int		BG_RobotParam( int robot, int param, qboolean stock );
+int		BG_WeaponParam( int weapon, int param, qboolean stock );
+qboolean BG_WeaponHasParam( int weapon, int param );		// splash only for shells, spread for bullets...
+void	BG_SetRobotParam( int robot, int param, int value );	// clamped
+void	BG_SetWeaponParam( int weapon, int param, int value );
+const char *BG_BalanceCvarName( qboolean weapon, int index );
+void	BG_BalanceString( qboolean weapon, int index, char *buffer, int size );	// "" when all stock
+void	BG_BalanceRegister( int flags );		// once at the module start
+void	BG_BalanceUpdate( void );				// every frame: takes changed cvars
 
 #endif

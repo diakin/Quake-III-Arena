@@ -774,6 +774,9 @@ void		UI_AccountEnsure( void );
 void UI_Hangar_Cache( void );
 void UI_HangarMenu( void );
 
+// ui_balance.c (WALKER)
+void UI_BalanceMenu( void );
+
 //
 // ui_teamorders.c
 //

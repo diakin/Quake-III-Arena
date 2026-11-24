@@ -14,7 +14,7 @@ const char *bg_weaponClassNames[WCLASS_COUNT] = { "LIGHT", "MEDIUM", "HEAVY" };
 
 // slot mounts (tag_weapon1.. of the models): forward, left, up from the eye (the view
 // height 26 above the origin); the shot starts at the mount + the weapon length forward
-const robotInfo_t bg_robots[ROBOT_COUNT] = {
+robotInfo_t bg_robots[ROBOT_COUNT] = {
 	{ "k7", "K7", "Medium walker, two light mounts", "walker",
 		62000, 15, 4000, 38, 3000,
 		2, { WCLASS_LIGHT, WCLASS_LIGHT, 0 }, { RWEAPON_OSA, RWEAPON_OSA, -1 },
@@ -30,7 +30,7 @@ const robotInfo_t bg_robots[ROBOT_COUNT] = {
 };
 
 // damage and structure are real values: the game divides them by ROBOT_HEALTH_SCALE
-const robotWeaponInfo_t bg_robotWeapons[RWEAPON_COUNT] = {
+robotWeaponInfo_t bg_robotWeapons[RWEAPON_COUNT] = {
 	{ "osa",	"OSA",		"Light machine gun",	WCLASS_LIGHT,	WFIRE_BULLET,	120,	125,	500,	0,	0,		300,	1200,	16 },
 	{ "shmel",	"SHMEL",	"Light rocket pod",		WCLASS_LIGHT,	WFIRE_SHELL,	700,	1000,	500,	60,	1400,	0,		1800,	10 },
 	{ "topor",	"TOPOR",	"Medium autocannon",	WCLASS_MEDIUM,	WFIRE_BULLET,	300,	333,	800,	0,	0,		150,	2500,	22 },
@@ -146,4 +146,178 @@ int BG_SpeedUpCost( int secondsLeft ) {
 
 int BG_PlayerLevelXP( int level ) {
 	return 400 * ( level < 1 ? 1 : level );
+}
+
+
+/*
+===========================================================================
+WALKER: balance for tests (see bg_robots.h)
+===========================================================================
+*/
+
+// the syscalls of the module this file is built into (game, cgame and ui have the same ones)
+void	trap_Cvar_Register( vmCvar_t *vmCvar, const char *varName, const char *defaultValue, int flags );
+void	trap_Cvar_Update( vmCvar_t *vmCvar );
+
+const balanceParam_t bg_robotParams[RPARAM_COUNT] = {
+	{ "STRUCTURE",		100,	10000000 },
+	{ "ARMOR %",		0,		95 },
+	{ "SHIELD",			0,		10000000 },
+	{ "SPEED KM/H",		1,		500 },
+	{ "PRICE",			0,		100000000 },
+};
+
+const balanceParam_t bg_weaponParams[WPARAM_COUNT] = {
+	{ "DAMAGE",			0,		10000000 },
+	{ "INTERVAL MS",	10,		60000 },		// the menu shows shots per second
+	{ "RANGE M",		10,		20000 },
+	{ "SPLASH",			0,		5000 },
+	{ "SHELL SPEED",	50,		50000 },
+	{ "SPREAD",			0,		10000 },
+	{ "PRICE",			0,		100000000 },
+};
+
+static robotInfo_t			stockRobots[ROBOT_COUNT];
+static robotWeaponInfo_t	stockWeapons[RWEAPON_COUNT];
+static qboolean				stockSaved;
+static vmCvar_t				balanceCvars[ROBOT_COUNT + RWEAPON_COUNT];
+static int					balanceCounts[ROBOT_COUNT + RWEAPON_COUNT];
+
+static void BG_SaveStock( void ) {
+	if ( !stockSaved ) {
+		memcpy( stockRobots, bg_robots, sizeof( stockRobots ) );
+		memcpy( stockWeapons, bg_robotWeapons, sizeof( stockWeapons ) );
+		stockSaved = qtrue;
+	}
+}
+
+static int *BG_RobotField( robotInfo_t *info, int param ) {
+	switch ( param ) {
+	case RPARAM_STRUCTURE:	return &info->structure;
+	case RPARAM_ARMOR:		return &info->armor;
+	case RPARAM_SHIELD:		return &info->shield;
+	case RPARAM_SPEED:		return &info->speed;
+	default:				return &info->price;
+	}
+}
+
+static int *BG_WeaponField( robotWeaponInfo_t *info, int param ) {
+	switch ( param ) {
+	case WPARAM_DAMAGE:				return &info->damage;
+	case WPARAM_INTERVAL:			return &info->interval;
+	case WPARAM_RANGE:				return &info->range;
+	case WPARAM_SPLASH:				return &info->splashRadius;
+	case WPARAM_PROJECTILE_SPEED:	return &info->projectileSpeed;
+	case WPARAM_SPREAD:				return &info->spread;
+	default:						return &info->price;
+	}
+}
+
+static int BG_ClampParam( const balanceParam_t *param, int value ) {
+	return value < param->minimum ? param->minimum : ( value > param->maximum ? param->maximum : value );
+}
+
+int BG_RobotParam( int robot, int param, qboolean stock ) {
+	BG_SaveStock();
+	return *BG_RobotField( stock ? &stockRobots[robot] : &bg_robots[robot], param );
+}
+
+int BG_WeaponParam( int weapon, int param, qboolean stock ) {
+	BG_SaveStock();
+	return *BG_WeaponField( stock ? &stockWeapons[weapon] : &bg_robotWeapons[weapon], param );
+}
+
+qboolean BG_WeaponHasParam( int weapon, int param ) {
+	int		fire = bg_robotWeapons[weapon].fire;
+
+	switch ( param ) {
+	case WPARAM_SPLASH:
+	case WPARAM_PROJECTILE_SPEED:
+		return fire == WFIRE_SHELL || fire == WFIRE_PLASMA;
+	case WPARAM_SPREAD:
+		return fire == WFIRE_BULLET;
+	default:
+		return qtrue;
+	}
+}
+
+void BG_SetRobotParam( int robot, int param, int value ) {
+	BG_SaveStock();
+	*BG_RobotField( &bg_robots[robot], param ) = BG_ClampParam( &bg_robotParams[param], value );
+}
+
+void BG_SetWeaponParam( int weapon, int param, int value ) {
+	BG_SaveStock();
+	*BG_WeaponField( &bg_robotWeapons[weapon], param ) = BG_ClampParam( &bg_weaponParams[param], value );
+}
+
+const char *BG_BalanceCvarName( qboolean weapon, int index ) {
+	return va( "bal_%s", weapon ? bg_robotWeapons[index].id : bg_robots[index].id );
+}
+
+void BG_BalanceString( qboolean weapon, int index, char *buffer, int size ) {
+	int		param, count = weapon ? WPARAM_COUNT : RPARAM_COUNT;
+	qboolean changed = qfalse;
+
+	buffer[0] = 0;
+	for ( param = 0; param < count; param++ ) {
+		int		value = weapon ? BG_WeaponParam( index, param, qfalse ) : BG_RobotParam( index, param, qfalse );
+		int		stock = weapon ? BG_WeaponParam( index, param, qtrue ) : BG_RobotParam( index, param, qtrue );
+		if ( value != stock ) {
+			changed = qtrue;
+		}
+		Q_strcat( buffer, size, va( param ? " %i" : "%i", value ) );
+	}
+	if ( !changed ) {
+		buffer[0] = 0;
+	}
+}
+
+/*
+=================
+BG_BalanceParse
+
+values of a robot or a weapon from its cvar, the stock ones for the missing
+=================
+*/
+static void BG_BalanceParse( qboolean weapon, int index, const char *text ) {
+	int		param, count = weapon ? WPARAM_COUNT : RPARAM_COUNT;
+	char	*token;
+
+	for ( param = 0; param < count; param++ ) {
+		int		value;
+
+		token = COM_ParseExt( (char **)&text, qfalse );
+		value = token[0] ? atoi( token ) : ( weapon ? BG_WeaponParam( index, param, qtrue ) : BG_RobotParam( index, param, qtrue ) );
+		if ( weapon ) {
+			BG_SetWeaponParam( index, param, value );
+		} else {
+			BG_SetRobotParam( index, param, value );
+		}
+	}
+}
+
+void BG_BalanceRegister( int flags ) {
+	int		index;
+
+	BG_SaveStock();
+	for ( index = 0; index < ROBOT_COUNT + RWEAPON_COUNT; index++ ) {
+		qboolean	weapon = index >= ROBOT_COUNT;
+		trap_Cvar_Register( &balanceCvars[index], BG_BalanceCvarName( weapon, weapon ? index - ROBOT_COUNT : index ), "", flags );
+		balanceCounts[index] = -1;
+	}
+	BG_BalanceUpdate();
+}
+
+void BG_BalanceUpdate( void ) {
+	int		index;
+
+	for ( index = 0; index < ROBOT_COUNT + RWEAPON_COUNT; index++ ) {
+		qboolean	weapon = index >= ROBOT_COUNT;
+		trap_Cvar_Update( &balanceCvars[index] );
+		if ( balanceCvars[index].modificationCount != balanceCounts[index] ) {
+			balanceCounts[index] = balanceCvars[index].modificationCount;
+			BG_BalanceParse( weapon, weapon ? index - ROBOT_COUNT : index, balanceCvars[index].string );
+		}
+	}
 }

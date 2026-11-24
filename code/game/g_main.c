@@ -373,6 +373,8 @@ void G_RegisterCvars( void ) {
 	}
 
 	level.warmupModificationCount = g_warmup.modificationCount;
+
+	BG_BalanceRegister( CVAR_ARCHIVE | CVAR_SYSTEMINFO );	// WALKER: test balance, sent to the clients
 }
 
 /*
@@ -384,6 +386,8 @@ void G_UpdateCvars( void ) {
 	int			i;
 	cvarTable_t	*cv;
 	qboolean remapped = qfalse;
+
+	BG_BalanceUpdate();		// WALKER
 
 	for ( i = 0, cv = gameCvarTable ; i < gameCvarTableSize ; i++, cv++ ) {
 		if ( cv->vmCvar ) {

@@ -240,6 +240,7 @@ void UI_RegisterCvars( void ) {
 	for ( i = 0, cv = cvarTable ; i < cvarTableSize ; i++, cv++ ) {
 		trap_Cvar_Register( cv->vmCvar, cv->cvarName, cv->defaultString, cv->cvarFlags );
 	}
+	BG_BalanceRegister( CVAR_ARCHIVE );		// WALKER: test balance (ui_balance.c)
 }
 
 /*
@@ -250,6 +251,8 @@ UI_UpdateCvars
 void UI_UpdateCvars( void ) {
 	int			i;
 	cvarTable_t	*cv;
+
+	BG_BalanceUpdate();		// WALKER
 
 	for ( i = 0, cv = cvarTable ; i < cvarTableSize ; i++, cv++ ) {
 		if ( cv->vmCvar ) {		// WALKER: entries that only create a cvar

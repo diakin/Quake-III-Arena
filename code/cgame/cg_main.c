@@ -344,6 +344,8 @@ void CG_RegisterCvars( void ) {
 			cv->defaultString, cv->cvarFlags );
 	}
 
+	BG_BalanceRegister( CVAR_ARCHIVE );		// WALKER: test balance
+
 	// see if we are also running the server on this machine
 	trap_Cvar_VariableStringBuffer( "sv_running", var, sizeof( var ) );
 	cgs.localServer = atoi( var );
@@ -383,6 +385,8 @@ CG_UpdateCvars
 void CG_UpdateCvars( void ) {
 	int			i;
 	cvarTable_t	*cv;
+
+	BG_BalanceUpdate();		// WALKER
 
 	for ( i = 0, cv = cvarTable ; i < cvarTableSize ; i++, cv++ ) {
 		trap_Cvar_Update( cv->vmCvar );
