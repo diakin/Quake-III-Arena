@@ -98,11 +98,13 @@ static const char *gametype_items[] = {
 	"Team Deathmatch",
 	"Tournament",
 	"Capture the Flag",
+	"Beacon Capture",	// WALKER
 	0
 };
 
-static int gametype_remap[] = {GT_FFA, GT_TEAM, GT_TOURNAMENT, GT_CTF};
-static int gametype_remap2[] = {0, 2, 0, 1, 3};
+static int gametype_remap[] = {GT_FFA, GT_TEAM, GT_TOURNAMENT, GT_CTF, GT_BEACONS};
+// item for each g_gametype value (GT_FFA .. GT_BEACONS)
+static int gametype_remap2[] = {0, 2, 0, 1, 3, 0, 0, 0, 4};
 
 // use ui_servers2.c definition
 extern const char* punkbuster_items[];
@@ -150,6 +152,11 @@ static int GametypeBits( char *string ) {
 
 		if( Q_stricmp( token, "ctf" ) == 0 ) {
 			bits |= 1 << GT_CTF;
+			continue;
+		}
+
+		if( Q_stricmp( token, "beacons" ) == 0 ) {
+			bits |= 1 << GT_BEACONS;
 			continue;
 		}
 	}
@@ -776,6 +783,11 @@ static void ServerOptions_Start( void ) {
 		trap_Cvar_SetValue( "ui_ctf_timelimit", timelimit );
 		trap_Cvar_SetValue( "ui_ctf_friendlt", friendlyfire );
 		break;
+
+	case GT_BEACONS:
+		trap_Cvar_SetValue( "ui_beacons_timelimit", timelimit );
+		trap_Cvar_SetValue( "ui_beacons_friendly", friendlyfire );
+		break;
 	}
 
 	trap_Cvar_SetValue( "sv_maxclients", Com_Clamp( 0, 12, maxclients ) );
@@ -1040,6 +1052,19 @@ static void ServerOptions_InitBotNames( void ) {
 	char		*bot;
 	char		bots[MAX_INFO_STRING];
 
+	if( s_serveroptions.gametype == GT_BEACONS ) {	// WALKER: five against five
+		static const char	*names[9] = { "Anvil", "Bastion", "Cinder", "Drake", "Ember", "Flint", "Granite", "Hornet", "Jackal" };
+		for( n = 0; n < 4; n++ ) {
+			Q_strncpyz( s_serveroptions.playerNameBuffers[1 + n], names[n], 16 );
+		}
+		s_serveroptions.playerType[5].curvalue = 2;
+		for( n = 0; n < 5; n++ ) {
+			Q_strncpyz( s_serveroptions.playerNameBuffers[6 + n], names[4 + n], 16 );
+		}
+		s_serveroptions.playerType[11].curvalue = 2;
+		return;
+	}
+
 	if( s_serveroptions.gametype >= GT_TEAM ) {	// WALKER: our bot names
 		Q_strncpyz( s_serveroptions.playerNameBuffers[1], "Anvil", 16 );
 		Q_strncpyz( s_serveroptions.playerNameBuffers[2], "Bastion", 16 );
@@ -1151,6 +1176,13 @@ static void ServerOptions_SetMenuItems( void ) {
 		Com_sprintf( s_serveroptions.flaglimit.field.buffer, 4, "%i", (int)Com_Clamp( 0, 100, trap_Cvar_VariableValue( "ui_ctf_capturelimit" ) ) );
 		Com_sprintf( s_serveroptions.timelimit.field.buffer, 4, "%i", (int)Com_Clamp( 0, 999, trap_Cvar_VariableValue( "ui_ctf_timelimit" ) ) );
 		s_serveroptions.friendlyfire.curvalue = (int)Com_Clamp( 0, 1, trap_Cvar_VariableValue( "ui_ctf_friendly" ) );
+		break;
+
+	case GT_BEACONS:		// WALKER: 10 minutes unless set otherwise
+		Com_sprintf( s_serveroptions.fraglimit.field.buffer, 4, "0" );
+		Com_sprintf( s_serveroptions.timelimit.field.buffer, 4, "%i",
+			trap_Cvar_VariableValue( "ui_beacons_timelimit" ) > 0 ? (int)Com_Clamp( 1, 999, trap_Cvar_VariableValue( "ui_beacons_timelimit" ) ) : 10 );
+		s_serveroptions.friendlyfire.curvalue = (int)Com_Clamp( 0, 1, trap_Cvar_VariableValue( "ui_beacons_friendly" ) );
 		break;
 	}
 

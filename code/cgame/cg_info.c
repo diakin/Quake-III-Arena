@@ -261,6 +261,9 @@ void CG_DrawInformation( void ) {
 		s = "Harvester";
 		break;
 #endif
+	case GT_BEACONS:		// WALKER
+		s = "Beacon Capture";
+		break;
 	default:
 		s = "Unknown Gametype";
 		break;

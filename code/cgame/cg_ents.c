@@ -979,6 +979,9 @@ static void CG_AddCEntity( centity_t *cent ) {
 	case ET_TEAM:
 		CG_TeamBase( cent );
 		break;
+	case ET_BEACON:
+		CG_Beacon( cent );
+		break;
 	}
 }
 

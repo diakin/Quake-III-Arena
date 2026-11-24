@@ -1866,7 +1866,7 @@ def write_shaders():
             file.write(SHADERS)
     with open(os.path.join(COMPILE, 'scripts', 'shaderlist.txt'), 'w', encoding='ascii', newline='\n') as file:
         file.write('walker_islands\n')
-    arena = '{\nmap "wk_islands"\nlongname "Islands"\nfraglimit "20"\ntimelimit "10"\ntype "ffa tourney team"\nbots "Anvil Bastion Cinder Drake Ember"\n}\n'
+    arena = '{\nmap "wk_islands"\nlongname "Islands"\nfraglimit "20"\ntimelimit "10"\ntype "ffa tourney team beacons"\nbots "Anvil Bastion Cinder Drake Ember"\n}\n'
     with open(os.path.join(DATA, 'scripts', 'arenas.txt'), 'w', encoding='ascii', newline='\n') as file:
         file.write(arena)
 

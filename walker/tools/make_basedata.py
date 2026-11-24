@@ -841,6 +841,33 @@ def wake_ring():
     return Image.fromarray(image.astype(np.uint8), 'RGBA')
 
 
+def beacon_beam(width=64, height=256):
+    """луч маяка: яркая середина по ширине, книзу ярче, кверху гаснет; белый — цвет даёт
+    игра (rgbGen vertex); для сложения GL_ONE GL_ONE."""
+    x = (np.arange(width) + 0.5) / width * 2 - 1
+    across = np.exp(-(x / 0.42) ** 2) * 0.85 + np.exp(-(x / 0.12) ** 2) * 0.6
+    t = (np.arange(height) + 0.5) / height          # 0 — верх текстуры, 1 — низ (у земли)
+    along = t ** 1.4 * 0.9 + 0.1 * t
+    level = np.clip(along[:, None] * across[None, :], 0, 1)
+    image = np.zeros((height, width, 4), dtype=np.uint8)
+    image[..., :3] = (level[..., None] * 255).astype(np.uint8)
+    image[..., 3] = 255
+    return Image.fromarray(image, 'RGBA')
+
+
+def beacon_ring(size=256):
+    """кольцо по краю маяка на земле: тонкая яркая линия и слабое свечение внутрь."""
+    y, x = np.mgrid[0:size, 0:size]
+    distance = np.hypot(x - size / 2 + 0.5, y - size / 2 + 0.5) / (size / 2)
+    line = np.exp(-((distance - 0.94) / 0.025) ** 2)
+    glow = np.clip((distance - 0.55) / 0.39, 0, 1) ** 2 * 0.25 * (distance < 0.94)
+    level = np.clip(line + glow, 0, 1)
+    image = np.zeros((size, size, 4), dtype=np.uint8)
+    image[..., :3] = (level[..., None] * 255).astype(np.uint8)
+    image[..., 3] = 255
+    return Image.fromarray(image, 'RGBA')
+
+
 def premultiply(image):
     """для аддитивного смешивания (GL_ONE GL_ONE) движок не смотрит на альфу: умножаем цвет на неё."""
     pixels = np.array(image.convert('RGBA')).astype(float)
@@ -873,6 +900,8 @@ def effects():
     save('gfx/misc/flare.tga', premultiply(radial(64, 0.0, 1.0, (255, 230, 190), 2.0)))
     save('gfx/misc/wake.tga', premultiply(wake_ring()))
     save('gfx/misc/bubble.tga', premultiply(radial(16, 0.5, 1.0, (220, 235, 255), 1.0)))
+    save('gfx/misc/beacon_beam.tga', beacon_beam())
+    save('gfx/misc/beacon_ring.tga', beacon_ring())
     explosion_frames('models/weaphits/rlboom/rlboom_', 8)
     explosion_frames('models/weaphits/bullet', 3, 64)
     write('scripts/walker_fx.shader', """// weapon and impact effects (names expected by cgame)
@@ -1030,6 +1059,25 @@ gfx/damage/plasma_mrk
 		blendFunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA
 		rgbGen vertex
 		alphaGen vertex
+	}
+}
+beaconBeam
+{
+	cull none
+	nomipmaps
+	{
+		clampmap gfx/misc/beacon_beam.tga
+		blendFunc GL_ONE GL_ONE
+		rgbGen vertex
+	}
+}
+beaconRing
+{
+	polygonOffset
+	{
+		clampmap gfx/misc/beacon_ring.tga
+		blendFunc GL_ONE GL_ONE
+		rgbGen vertex
 	}
 }
 markShadow

@@ -51,6 +51,10 @@ GAME OPTIONS MENU
 #define ID_DRAWTEAMOVERLAY		136
 #define ID_ALLOWDOWNLOAD			137
 #define ID_BACK					138
+#define ID_ROBOTSPEED			139
+
+// WALKER: robot speed for testing, in percent of the normal g_speed
+#define ROBOT_SPEED_NORMAL		55
 
 #define	NUM_CROSSHAIRS			10
 
@@ -73,6 +77,7 @@ typedef struct {
 	menuradiobutton_s	forcemodel;
 	menulist_s			drawteamoverlay;
 	menuradiobutton_s	allowdownload;
+	menulist_s			robotspeed;
 	menubitmap_s		back;
 
 	qhandle_t			crosshairShader[NUM_CROSSHAIRS];
@@ -89,7 +94,25 @@ static const char *teamoverlay_names[] =
 	0
 };
 
+static const char *robotspeed_names[] = { "25%", "50%", "75%", "100%", "125%", "150%", "200%", 0 };
+static const int robotspeed_percent[] = { 25, 50, 75, 100, 125, 150, 200 };
+
 static void Preferences_SetMenuItems( void ) {
+	{
+		float	speed = trap_Cvar_VariableValue( "g_speed" );
+		int		index, best = 3;
+
+		if ( speed <= 0 ) {
+			speed = ROBOT_SPEED_NORMAL;
+		}
+		for ( index = 0 ; index < 7 ; index++ ) {
+			if ( fabs( robotspeed_percent[index] * ROBOT_SPEED_NORMAL / 100.0f - speed )
+				< fabs( robotspeed_percent[best] * ROBOT_SPEED_NORMAL / 100.0f - speed ) ) {
+				best = index;
+			}
+		}
+		s_preferences.robotspeed.curvalue = best;
+	}
 	s_preferences.crosshair.curvalue		= (int)trap_Cvar_VariableValue( "cg_drawCrosshair" ) % NUM_CROSSHAIRS;
 	s_preferences.simpleitems.curvalue		= trap_Cvar_VariableValue( "cg_simpleItems" ) != 0;
 	s_preferences.brass.curvalue			= trap_Cvar_VariableValue( "cg_brassTime" ) != 0;
@@ -160,6 +183,10 @@ static void Preferences_Event( void* ptr, int notification ) {
 	case ID_ALLOWDOWNLOAD:
 		trap_Cvar_SetValue( "cl_allowDownload", s_preferences.allowdownload.curvalue );
 		trap_Cvar_SetValue( "sv_allowDownload", s_preferences.allowdownload.curvalue );
+		break;
+
+	case ID_ROBOTSPEED:
+		trap_Cvar_SetValue( "g_speed", robotspeed_percent[s_preferences.robotspeed.curvalue] * ROBOT_SPEED_NORMAL / 100.0f );
 		break;
 
 	case ID_BACK:
@@ -357,6 +384,16 @@ static void Preferences_MenuInit( void ) {
 	s_preferences.allowdownload.generic.y	       = y;
 
 	y += BIGCHAR_HEIGHT+2;
+	s_preferences.robotspeed.generic.type		= MTYPE_SPINCONTROL;
+	s_preferences.robotspeed.generic.name		= "Robot Speed (test):";
+	s_preferences.robotspeed.generic.flags		= QMF_PULSEIFFOCUS|QMF_SMALLFONT;
+	s_preferences.robotspeed.generic.callback	= Preferences_Event;
+	s_preferences.robotspeed.generic.id			= ID_ROBOTSPEED;
+	s_preferences.robotspeed.generic.x			= PREFERENCES_X_POS;
+	s_preferences.robotspeed.generic.y			= y;
+	s_preferences.robotspeed.itemnames			= robotspeed_names;
+
+	y += BIGCHAR_HEIGHT+2;
 	s_preferences.back.generic.type	    = MTYPE_BITMAP;
 	s_preferences.back.generic.name     = ART_BACK0;
 	s_preferences.back.generic.flags    = QMF_LEFT_JUSTIFY|QMF_PULSEIFFOCUS;
@@ -383,6 +420,7 @@ static void Preferences_MenuInit( void ) {
 	Menu_AddItem( &s_preferences.menu, &s_preferences.forcemodel );
 	Menu_AddItem( &s_preferences.menu, &s_preferences.drawteamoverlay );
 	Menu_AddItem( &s_preferences.menu, &s_preferences.allowdownload );
+	Menu_AddItem( &s_preferences.menu, &s_preferences.robotspeed );
 
 	Menu_AddItem( &s_preferences.menu, &s_preferences.back );
 

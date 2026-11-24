@@ -131,7 +131,7 @@ static char* gamenames[] = {
 	"One Flag CTF",		// one flag ctf
 	"OverLoad",				// Overload
 	"Harvester",			// Harvester
-	"Rocket Arena 3",	// Rocket Arena 3
+	"Beacons",			// WALKER: beacon capture (g_gametype 8; was Rocket Arena 3)
 	"Q3F",						// Q3F
 	"Urban Terror",		// Urban Terror
 	"OSP",						// Orange Smoothie Productions

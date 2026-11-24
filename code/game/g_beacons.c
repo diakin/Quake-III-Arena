@@ -1,0 +1,308 @@
+/*
+===========================================================================
+WALKER: beacon capture (g_gametype 8, GT_BEACONS).
+
+Two teams fight for beacons: circles of BEACON_RADIUS with a beam of light
+going up from the middle. The state of a beacon is one number, control, from
+-1 (red) through 0 (nobody) to +1 (blue):
+- robots of one team alone on a beacon move control toward their side by
+  1 per BEACON_CAPTURE_TIME (8 s): a free beacon is taken in 8 s, an enemy
+  one in 16 s (8 s to make it free, 8 s more to take it);
+- with robots of both teams on it nothing changes;
+- with nobody on it control slowly returns to the state of the owner (a
+  capture left unfinished fades back, BEACON_DECAY_TIME per unit).
+The owner changes at -1 / +1 (taken) and at 0 (made free).
+
+Score as in War Robots: each team starts with g_beaconPoints points; every
+second the team that holds fewer beacons loses g_beaconDrain points per
+beacon of difference. A team with no points left loses; at the time limit
+the team with more points wins.
+
+This file is part of WALKER, based on the Quake III Arena source code
+(GPL v2, see COPYING.txt).
+===========================================================================
+*/
+#include "g_local.h"
+
+#define MAX_BEACONS			8
+#define BEACON_DECAY_TIME	24000		// ms per unit of control when nobody is on the beacon
+#define BEACON_HEIGHT		120			// a robot counts if its origin is this close in height
+
+static gentity_t	*beacons[MAX_BEACONS];
+static int			numBeacons;
+static float		drainRed, drainBlue;	// fractions of points not yet taken away
+static int			drainTime;
+
+/*
+=================
+G_BeaconSetup
+=================
+*/
+static void G_BeaconSetup( gentity_t *ent, float radius, int letter ) {
+	if ( g_gametype.integer != GT_BEACONS || numBeacons >= MAX_BEACONS ) {
+		G_FreeEntity( ent );
+		return;
+	}
+	ent->classname = "team_beacon";
+	ent->s.eType = ET_BEACON;
+	ent->s.modelindex = TEAM_FREE;			// owner
+	ent->s.modelindex2 = letter >= 0 ? letter : numBeacons;		// letter: 0 - A, 1 - B...
+	ent->s.origin2[0] = radius;
+	ent->s.angles2[0] = 0;					// control
+	ent->s.generic1 = 0;					// bit 0: red on it, bit 1: blue on it
+	ent->r.svFlags |= SVF_BROADCAST;		// the beams are seen from everywhere
+	G_SetOrigin( ent, ent->s.origin );
+	trap_LinkEntity( ent );
+	beacons[numBeacons++] = ent;
+}
+
+/*QUAKED team_beacon (0 .5 1) (-16 -16 0) (16 16 8)
+A beacon for the beacon capture game: origin on the ground in the middle.
+"radius" of the circle (default 150), "letter" A..H (default: in the order of the map).
+*/
+void SP_team_beacon( gentity_t *ent ) {
+	float	radius;
+	char	*letter;
+
+	G_SpawnFloat( "radius", va( "%i", BEACON_RADIUS ), &radius );
+	G_SpawnString( "letter", "", &letter );
+	G_BeaconSetup( ent, radius, letter[0] >= 'A' && letter[0] <= 'H' ? letter[0] - 'A' : -1 );
+}
+
+/*
+=================
+G_BeaconFromLocation
+
+Maps made before the beacon game (wk_islands) mark their beacons with
+target_location "Beacon X" above the ground: a beacon goes on the ground under it.
+=================
+*/
+void G_BeaconFromLocation( gentity_t *location ) {
+	gentity_t	*ent;
+	trace_t		trace;
+	vec3_t		end;
+
+	if ( g_gametype.integer != GT_BEACONS || !location->message
+		|| Q_stricmpn( location->message, "Beacon", 6 ) ) {
+		return;
+	}
+	VectorCopy( location->s.origin, end );
+	end[2] -= 400;
+	trap_Trace( &trace, location->s.origin, NULL, NULL, end, ENTITYNUM_NONE, MASK_SOLID );
+	ent = G_Spawn();
+	VectorCopy( trace.endpos, ent->s.origin );
+	// the letter after "Beacon "
+	G_BeaconSetup( ent, BEACON_RADIUS, strlen( location->message ) > 7 && location->message[7] >= 'A'
+		&& location->message[7] <= 'H' ? location->message[7] - 'A' : -1 );
+}
+
+/*
+=================
+G_BeaconsInit
+=================
+*/
+void G_BeaconsInit( void ) {
+	numBeacons = 0;
+	drainRed = drainBlue = 0;
+	drainTime = 0;
+	if ( g_gametype.integer != GT_BEACONS ) {
+		return;
+	}
+	level.teamScores[TEAM_RED] = g_beaconPoints.integer;
+	level.teamScores[TEAM_BLUE] = g_beaconPoints.integer;
+	trap_SetConfigstring( CS_SCORES1, va( "%i", level.teamScores[TEAM_RED] ) );
+	trap_SetConfigstring( CS_SCORES2, va( "%i", level.teamScores[TEAM_BLUE] ) );
+}
+
+/*
+=================
+G_BeaconAnnounce
+=================
+*/
+static void G_BeaconAnnounce( gentity_t *beacon, int team ) {
+	int		letter = 'A' + beacon->s.modelindex2;
+
+	if ( team == TEAM_RED ) {
+		trap_SendServerCommand( -1, va( "cp \"" S_COLOR_RED "Red" S_COLOR_WHITE " captured beacon %c\n\"", letter ) );
+	} else if ( team == TEAM_BLUE ) {
+		trap_SendServerCommand( -1, va( "cp \"" S_COLOR_BLUE "Blue" S_COLOR_WHITE " captured beacon %c\n\"", letter ) );
+	} else {
+		trap_SendServerCommand( -1, va( "print \"Beacon %c is free\n\"", letter ) );
+	}
+}
+
+/*
+=================
+G_BeaconCount
+
+Robots of each team standing on the beacon.
+=================
+*/
+static void G_BeaconCount( gentity_t *beacon, int *red, int *blue ) {
+	int			index;
+	gclient_t	*client;
+	float		radius = beacon->s.origin2[0];
+	vec3_t		delta;
+
+	*red = *blue = 0;
+	for ( index = 0 ; index < level.maxclients ; index++ ) {
+		client = &level.clients[index];
+		if ( client->pers.connected != CON_CONNECTED || client->ps.stats[STAT_HEALTH] <= 0
+			|| client->ps.pm_type == PM_DEAD || client->ps.pm_type == PM_SPECTATOR ) {
+			continue;
+		}
+		VectorSubtract( client->ps.origin, beacon->s.origin, delta );
+		if ( fabs( delta[2] ) > BEACON_HEIGHT || delta[0] * delta[0] + delta[1] * delta[1] > radius * radius ) {
+			continue;
+		}
+		if ( client->sess.sessionTeam == TEAM_RED ) {
+			(*red)++;
+		} else if ( client->sess.sessionTeam == TEAM_BLUE ) {
+			(*blue)++;
+		}
+	}
+}
+
+/*
+=================
+G_BeaconsFrame
+=================
+*/
+void G_BeaconsFrame( void ) {
+	int			index, red, blue, owner, held[TEAM_NUM_TEAMS];
+	int			elapsed = level.time - level.previousTime;
+	float		control, target, step;
+	gentity_t	*beacon;
+
+	if ( g_gametype.integer != GT_BEACONS || level.intermissiontime || level.intermissionQueued
+		|| level.warmupTime || elapsed <= 0 ) {
+		return;
+	}
+
+	held[TEAM_RED] = held[TEAM_BLUE] = 0;
+	for ( index = 0 ; index < numBeacons ; index++ ) {
+		beacon = beacons[index];
+		G_BeaconCount( beacon, &red, &blue );
+		control = beacon->s.angles2[0];
+		owner = beacon->s.modelindex;
+
+		if ( red && !blue ) {
+			control -= (float)elapsed / BEACON_CAPTURE_TIME;
+		} else if ( blue && !red ) {
+			control += (float)elapsed / BEACON_CAPTURE_TIME;
+		} else if ( !red && !blue ) {
+			target = owner == TEAM_BLUE ? 1 : ( owner == TEAM_RED ? -1 : 0 );
+			step = (float)elapsed / BEACON_DECAY_TIME;
+			if ( control < target ) {
+				control = control + step > target ? target : control + step;
+			} else if ( control > target ) {
+				control = control - step < target ? target : control - step;
+			}
+		}
+		if ( control > 1 ) {
+			control = 1;
+		} else if ( control < -1 ) {
+			control = -1;
+		}
+
+		// owner: taken at the ends, made free on crossing the middle
+		if ( control >= 1 && owner != TEAM_BLUE ) {
+			owner = TEAM_BLUE;
+			G_BeaconAnnounce( beacon, owner );
+		} else if ( control <= -1 && owner != TEAM_RED ) {
+			owner = TEAM_RED;
+			G_BeaconAnnounce( beacon, owner );
+		} else if ( ( owner == TEAM_BLUE && control <= 0 ) || ( owner == TEAM_RED && control >= 0 ) ) {
+			owner = TEAM_FREE;
+			G_BeaconAnnounce( beacon, owner );
+		}
+
+		beacon->s.angles2[0] = control;
+		beacon->s.modelindex = owner;
+		beacon->s.generic1 = ( red ? 1 : 0 ) | ( blue ? 2 : 0 );
+		if ( owner == TEAM_RED || owner == TEAM_BLUE ) {
+			held[owner]++;
+		}
+	}
+
+	// points: the team with fewer beacons loses points every second
+	drainTime += elapsed;
+	if ( held[TEAM_RED] > held[TEAM_BLUE] ) {
+		drainBlue += g_beaconDrain.value * ( held[TEAM_RED] - held[TEAM_BLUE] ) * elapsed / 1000.0f;
+	} else if ( held[TEAM_BLUE] > held[TEAM_RED] ) {
+		drainRed += g_beaconDrain.value * ( held[TEAM_BLUE] - held[TEAM_RED] ) * elapsed / 1000.0f;
+	}
+	if ( drainTime >= 1000 ) {
+		drainTime = 0;
+		if ( drainRed >= 1 || drainBlue >= 1 ) {
+			level.teamScores[TEAM_RED] -= (int)drainRed;
+			level.teamScores[TEAM_BLUE] -= (int)drainBlue;
+			drainRed -= (int)drainRed;
+			drainBlue -= (int)drainBlue;
+			if ( level.teamScores[TEAM_RED] < 0 ) {
+				level.teamScores[TEAM_RED] = 0;
+			}
+			if ( level.teamScores[TEAM_BLUE] < 0 ) {
+				level.teamScores[TEAM_BLUE] = 0;
+			}
+			trap_SetConfigstring( CS_SCORES1, va( "%i", level.teamScores[TEAM_RED] ) );
+			trap_SetConfigstring( CS_SCORES2, va( "%i", level.teamScores[TEAM_BLUE] ) );
+		}
+	}
+}
+
+/*
+=================
+G_BeaconsCheckExit
+
+qtrue when the match is over by points.
+=================
+*/
+qboolean G_BeaconsCheckExit( void ) {
+	if ( g_gametype.integer != GT_BEACONS ) {
+		return qfalse;
+	}
+	if ( level.teamScores[TEAM_RED] <= 0 ) {
+		trap_SendServerCommand( -1, "print \"Red has no points left.\n\"" );
+		LogExit( "Points depleted." );
+		return qtrue;
+	}
+	if ( level.teamScores[TEAM_BLUE] <= 0 ) {
+		trap_SendServerCommand( -1, "print \"Blue has no points left.\n\"" );
+		LogExit( "Points depleted." );
+		return qtrue;
+	}
+	return qfalse;
+}
+
+/*
+=================
+G_BeaconsSpawnPoint
+
+Maps without team spawn points (wk_islands): a deathmatch spawn point on the
+team's half of the map, red in the south (y < 0), blue in the north.
+=================
+*/
+gentity_t *G_BeaconsSpawnPoint( team_t team, vec3_t origin, vec3_t angles ) {
+	gentity_t	*spot = NULL;
+	gentity_t	*spots[64];
+	int			count = 0;
+
+	while ( ( spot = G_Find( spot, FOFS( classname ), "info_player_deathmatch" ) ) != NULL && count < 64 ) {
+		if ( ( team == TEAM_RED ) != ( spot->s.origin[1] < 0 ) ) {
+			continue;
+		}
+		if ( SpotWouldTelefrag( spot ) ) {
+			continue;
+		}
+		spots[count++] = spot;
+	}
+	if ( !count ) {
+		return NULL;
+	}
+	spot = spots[rand() % count];
+	VectorCopy( spot->s.origin, origin );
+	origin[2] += 9;
+	VectorCopy( spot->s.angles, angles );
+	return spot;
+}

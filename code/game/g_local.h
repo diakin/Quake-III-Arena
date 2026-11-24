@@ -588,6 +588,17 @@ void CalculateRanks( void );
 qboolean SpotWouldTelefrag( gentity_t *spot );
 
 //
+// g_beacons.c (WALKER)
+//
+void SP_team_beacon( gentity_t *ent );
+void G_BeaconFromLocation( gentity_t *location );
+void G_BeaconsInit( void );
+void G_BeaconsFrame( void );
+qboolean G_BeaconsCheckExit( void );
+gentity_t *G_BeaconsSpawnPoint( team_t team, vec3_t origin, vec3_t angles );
+void LogExit( const char *string );
+
+//
 // g_svcmds.c
 //
 qboolean	ConsoleCommand( void );
@@ -732,6 +743,8 @@ extern	vmCvar_t	g_password;
 extern	vmCvar_t	g_needpass;
 extern	vmCvar_t	g_gravity;
 extern	vmCvar_t	g_speed;
+extern	vmCvar_t	g_beaconPoints;
+extern	vmCvar_t	g_beaconDrain;
 extern	vmCvar_t	g_knockback;
 extern	vmCvar_t	g_quadfactor;
 extern	vmCvar_t	g_forcerespawn;

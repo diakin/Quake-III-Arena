@@ -239,6 +239,7 @@ spawn_t	spawns[] = {
 	{"target_kill", SP_target_kill},
 	{"target_position", SP_target_position},
 	{"target_location", SP_target_location},
+	{"team_beacon", SP_team_beacon},
 	{"target_push", SP_target_push},
 
 	{"light", SP_light},
@@ -409,7 +410,7 @@ void G_SpawnGEntityFromSpawnVars( void ) {
 	int			i;
 	gentity_t	*ent;
 	char		*s, *value, *gametypeName;
-	static char *gametypeNames[] = {"ffa", "tournament", "single", "team", "ctf", "oneflag", "obelisk", "harvester", "teamtournament"};
+	static char *gametypeNames[] = {"ffa", "tournament", "single", "team", "ctf", "oneflag", "obelisk", "harvester", "beacons"};
 
 	// get the next free entity
 	ent = G_Spawn();

@@ -1035,6 +1035,13 @@ gentity_t *SelectCTFSpawnPoint ( team_t team, int teamstate, vec3_t origin, vec3
 
 	spot = SelectRandomTeamSpawnPoint ( teamstate, team );
 
+	// WALKER: beacon capture on a map without team spawn points: own half of the map
+	if ( !spot && g_gametype.integer == GT_BEACONS ) {
+		spot = G_BeaconsSpawnPoint( team, origin, angles );
+		if ( spot ) {
+			return spot;
+		}
+	}
 	if (!spot) {
 		return SelectSpawnPoint( vec3_origin, origin, angles );
 	}

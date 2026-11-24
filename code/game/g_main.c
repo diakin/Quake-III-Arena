@@ -50,6 +50,8 @@ vmCvar_t	g_maxclients;
 vmCvar_t	g_maxGameClients;
 vmCvar_t	g_dedicated;
 vmCvar_t	g_speed;
+vmCvar_t	g_beaconPoints;		// WALKER: beacon capture, points of each team at the start
+vmCvar_t	g_beaconDrain;		// points per second per beacon of difference
 vmCvar_t	g_gravity;
 vmCvar_t	g_cheats;
 vmCvar_t	g_knockback;
@@ -139,7 +141,9 @@ static cvarTable_t		gameCvarTable[] = {
 
 	{ &g_dedicated, "dedicated", "0", 0, 0, qfalse  },
 
-	{ &g_speed, "g_speed", "110", 0, 0, qtrue  },	// WALKER: heavy robot speed
+	{ &g_speed, "g_speed", "55", 0, 0, qtrue  },
+	{ &g_beaconPoints, "g_beaconPoints", "1000", CVAR_SERVERINFO, 0, qfalse },
+	{ &g_beaconDrain, "g_beaconDrain", "2", 0, 0, qfalse },	// WALKER: heavy robot speed (was 110); menu GAME OPTIONS -> Robot Speed
 	{ &g_gravity, "g_gravity", "800", 0, 0, qtrue  },
 	{ &g_knockback, "g_knockback", "1000", 0, 0, qtrue  },
 	{ &g_quadfactor, "g_quadfactor", "3", 0, 0, qtrue  },
@@ -476,6 +480,9 @@ void G_InitGame( int levelTime, int randomSeed, int restart ) {
 	InitBodyQue();
 
 	ClearRegisteredItems();
+
+	// WALKER: beacon capture: points of the teams, list of beacons (filled while spawning)
+	G_BeaconsInit();
 
 	// parse the key/value pairs and spawn gentities
 	G_SpawnEntitiesFromString();
@@ -1270,6 +1277,10 @@ qboolean ScoreIsTied( void ) {
 		return qfalse;
 	}
 	
+	// WALKER: beacon capture ends at the time limit even with equal points (a draw)
+	if ( g_gametype.integer == GT_BEACONS ) {
+		return qfalse;
+	}
 	if ( g_gametype.integer >= GT_TEAM ) {
 		return level.teamScores[TEAM_RED] == level.teamScores[TEAM_BLUE];
 	}
@@ -1333,6 +1344,10 @@ void CheckExitRules( void ) {
 		return;
 	}
 
+	if ( G_BeaconsCheckExit() ) {
+		return;
+	}
+
 	if ( g_gametype.integer < GT_CTF && g_fraglimit.integer ) {
 		if ( level.teamScores[TEAM_RED] >= g_fraglimit.integer ) {
 			trap_SendServerCommand( -1, "print \"Red hit the fraglimit.\n\"" );
@@ -1364,7 +1379,7 @@ void CheckExitRules( void ) {
 		}
 	}
 
-	if ( g_gametype.integer >= GT_CTF && g_capturelimit.integer ) {
+	if ( g_gametype.integer >= GT_CTF && g_gametype.integer != GT_BEACONS && g_capturelimit.integer ) {
 
 		if ( level.teamScores[TEAM_RED] >= g_capturelimit.integer ) {
 			trap_SendServerCommand( -1, "print \"Red hit the capturelimit.\n\"" );
@@ -1806,6 +1821,9 @@ end = trap_Milliseconds();
 
 	// see if it is time to do a tournement restart
 	CheckTournament();
+
+	// WALKER: beacon capture: who holds which beacon, points
+	G_BeaconsFrame();
 
 	// see if it is time to end the level
 	CheckExitRules();

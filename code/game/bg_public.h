@@ -112,10 +112,15 @@ typedef enum {
 	GT_1FCTF,
 	GT_OBELISK,
 	GT_HARVESTER,
+	GT_BEACONS,			// WALKER: beacon capture (g_beacons.c)
 	GT_MAX_GAME_TYPE
 } gametype_t;
 
 typedef enum { GENDER_MALE, GENDER_FEMALE, GENDER_NEUTER } gender_t;
+
+// WALKER: beacon capture (game/g_beacons.c, cgame/cg_beacons.c)
+#define	BEACON_RADIUS			150
+#define	BEACON_CAPTURE_TIME		8000	// ms from free to taken (from enemy: twice)
 
 /*
 ===================================================================================
@@ -691,6 +696,7 @@ typedef enum {
 	ET_INVISIBLE,
 	ET_GRAPPLE,				// grapple hooked on wall
 	ET_TEAM,
+	ET_BEACON,				// WALKER: g_beacons.c; modelindex owner, angles2[0] control
 
 	ET_EVENTS				// any of the EV_* events can be added freestanding
 							// by setting eType to ET_EVENTS + eventNum

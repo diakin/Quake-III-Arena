@@ -1038,6 +1038,8 @@ static void CG_RegisterGraphics( void ) {
 	cgs.media.holeMarkShader = trap_R_RegisterShader( "gfx/damage/hole_lg_mrk" );
 	cgs.media.energyMarkShader = trap_R_RegisterShader( "gfx/damage/plasma_mrk" );
 	cgs.media.shadowMarkShader = trap_R_RegisterShader( "markShadow" );
+	cgs.media.beaconBeamShader = trap_R_RegisterShader( "beaconBeam" );
+	cgs.media.beaconRingShader = trap_R_RegisterShader( "beaconRing" );
 	cgs.media.wakeMarkShader = trap_R_RegisterShader( "wake" );
 	cgs.media.bloodMarkShader = trap_R_RegisterShader( "bloodMark" );
 
