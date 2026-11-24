@@ -2036,7 +2036,8 @@ static void CG_PlayerSprites( centity_t *cent ) {
 	if ( !(cent->currentState.eFlags & EF_DEAD) && 
 		cg.snap->ps.persistant[PERS_TEAM] == team &&
 		cgs.gametype >= GT_TEAM) {
-		if (cg_drawFriend.integer) {
+		// WALKER: teammates have a green health bar over them instead (cg_beacons.c)
+		if (cg_drawFriend.integer && !cg_drawHealthBars.integer) {
 			CG_PlayerFloatSprite( cent, cgs.media.friendShader );
 		}
 		return;

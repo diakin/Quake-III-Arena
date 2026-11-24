@@ -243,6 +243,7 @@ typedef struct {
 	usercmd_t	cmd;				// we would lose angles if not persistant
 	qboolean	localClient;		// true if "ip" info key is "localhost"
 	qboolean	initialSpawn;		// the first spawn should be at a cool location
+	int			robotsLost;			// WALKER: beacon capture, robots destroyed this match
 	qboolean	predictItemPickup;	// based on cg_predictItems userinfo
 	qboolean	pmoveFixed;			//
 	char		netname[MAX_NETNAME];
@@ -745,6 +746,7 @@ extern	vmCvar_t	g_gravity;
 extern	vmCvar_t	g_speed;
 extern	vmCvar_t	g_beaconPoints;
 extern	vmCvar_t	g_beaconDrain;
+extern	vmCvar_t	g_robots;
 extern	vmCvar_t	g_knockback;
 extern	vmCvar_t	g_quadfactor;
 extern	vmCvar_t	g_forcerespawn;

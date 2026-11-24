@@ -259,8 +259,27 @@ qtrue when the match is over by points.
 =================
 */
 qboolean G_BeaconsCheckExit( void ) {
+	static int	seen[TEAM_NUM_TEAMS];
+	int			team;
+
 	if ( g_gametype.integer != GT_BEACONS ) {
 		return qfalse;
+	}
+	// a team whose players all lost their robots (they became spectators) loses;
+	// "seen": the team had players this match (no loss while the teams gather)
+	if ( level.time - level.startTime < 1000 ) {
+		seen[TEAM_RED] = seen[TEAM_BLUE] = 0;
+	}
+	for ( team = TEAM_RED ; team <= TEAM_BLUE ; team++ ) {
+		if ( TeamCount( -1, team ) > 0 ) {
+			seen[team] = 1;
+		} else if ( seen[team] ) {
+			trap_SendServerCommand( -1, va( "print \"%s has no robots left.\n\"", team == TEAM_RED ? "Red" : "Blue" ) );
+			level.teamScores[team] = 0;
+			trap_SetConfigstring( team == TEAM_RED ? CS_SCORES1 : CS_SCORES2, "0" );
+			LogExit( "Team destroyed." );
+			return qtrue;
+		}
 	}
 	if ( level.teamScores[TEAM_RED] <= 0 ) {
 		trap_SendServerCommand( -1, "print \"Red has no points left.\n\"" );

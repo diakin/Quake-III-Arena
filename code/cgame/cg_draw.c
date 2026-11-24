@@ -2557,6 +2557,7 @@ static void CG_Draw2D( void ) {
 
 	CG_DrawVote();
 	CG_DrawTeamVote();
+	CG_DrawHealthBars();	// WALKER: bars over the robots
 	CG_DrawBeacons();		// WALKER: beacon capture
 
 	CG_DrawLagometer();

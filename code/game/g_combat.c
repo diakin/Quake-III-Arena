@@ -626,6 +626,11 @@ void player_die( gentity_t *self, gentity_t *inflictor, gentity_t *attacker, int
 	// don't allow respawn until the death anim is done
 	// g_forcerespawn may force spawning at some later time
 	self->client->respawnTime = level.time + 1700;
+	// WALKER: beacon capture: the next robot of the hangar comes after BEACON_RESPAWN_TIME
+	if ( g_gametype.integer == GT_BEACONS && !level.warmupTime ) {
+		self->client->pers.robotsLost++;
+		self->client->respawnTime = level.time + BEACON_RESPAWN_TIME;
+	}
 
 	// remove powerups
 	memset( self->client->ps.powerups, 0, sizeof(self->client->ps.powerups) );

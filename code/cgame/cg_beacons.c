@@ -240,3 +240,82 @@ void CG_DrawBeacons( void ) {
 		CG_DrawStringExt( 320 - CG_DrawStrlen( label ) * 4, y + height + 6, label, text, qtrue, qtrue, 8, 12, 0 );
 	}
 }
+
+/*
+=================
+CG_DrawHealthBars
+
+WALKER: a bar of health over every robot in sight: green over the own team,
+red over the others (in a game without teams all are others). The game sends
+health in percent in entityState generic1 (g_active.c, ClientEndFrame).
+=================
+*/
+#define HEALTH_BAR_HEIGHT		108		// over the robot's origin
+#define HEALTH_BAR_DISTANCE		3000
+#define HEALTH_BAR_WIDTH		40
+#define SET_COLOR( c, r, g, b, a )	( (c)[0] = (r), (c)[1] = (g), (c)[2] = (b), (c)[3] = (a) )
+
+void CG_DrawHealthBars( void ) {
+	int				index, myTeam, team;
+	const entityState_t	*state;
+	centity_t		*cent;
+	vec3_t			point, delta;
+	float			forward, across, upward, screenX, screenY, scaleX, scaleY, distance, width;
+	vec4_t			back = { 0, 0, 0, 0.6f }, fill;
+	trace_t			trace;
+
+	if ( !cg_drawHealthBars.integer || !cg.snap ) {
+		return;
+	}
+	myTeam = cg.snap->ps.persistant[PERS_TEAM];
+	scaleX = 320.0f / tan( cg.refdef.fov_x / 360.0f * M_PI );
+	scaleY = 240.0f / tan( cg.refdef.fov_y / 360.0f * M_PI );
+	for ( index = 0 ; index < cg.snap->numEntities ; index++ ) {
+		state = &cg.snap->entities[index];
+		if ( state->eType != ET_PLAYER || ( state->eFlags & EF_DEAD ) || state->clientNum == cg.snap->ps.clientNum ) {
+			continue;
+		}
+		cent = &cg_entities[state->number];
+		VectorCopy( cent->lerpOrigin, point );
+		point[2] += HEALTH_BAR_HEIGHT;
+		VectorSubtract( point, cg.refdef.vieworg, delta );
+		distance = VectorLength( delta );
+		forward = DotProduct( delta, cg.refdef.viewaxis[0] );
+		if ( forward < 16 || distance > HEALTH_BAR_DISTANCE ) {
+			continue;
+		}
+		// hidden behind the world
+		CG_Trace( &trace, cg.refdef.vieworg, NULL, NULL, point, cg.snap->ps.clientNum, MASK_SOLID );
+		if ( trace.fraction < 0.99f ) {
+			continue;
+		}
+		across = DotProduct( delta, cg.refdef.viewaxis[1] );
+		upward = DotProduct( delta, cg.refdef.viewaxis[2] );
+		screenX = 320 - across / forward * scaleX;
+		screenY = 240 - upward / forward * scaleY;
+		// a little smaller far away, never smaller than half
+		width = HEALTH_BAR_WIDTH * ( distance < 600 ? 1.0f : ( distance > 2400 ? 0.5f : 1.0f - ( distance - 600 ) / 3600 ) );
+
+		team = cgs.clientinfo[state->clientNum].team;
+		if ( cgs.gametype >= GT_TEAM && myTeam == TEAM_SPECTATOR ) {
+			SET_COLOR( fill, team == TEAM_BLUE ? 0.3f : 1.0f, 0.3f, team == TEAM_BLUE ? 1.0f : 0.25f, 0.95f );
+		} else if ( cgs.gametype >= GT_TEAM && team == myTeam ) {
+			SET_COLOR( fill, 0.25f, 0.95f, 0.3f, 0.95f );
+		} else {
+			SET_COLOR( fill, 1.0f, 0.25f, 0.2f, 0.95f );
+		}
+		CG_FillRect( screenX - width * 0.5f - 1, screenY - 1, width + 2, 6, back );
+		CG_FillRect( screenX - width * 0.5f, screenY, width * Com_Clamp( 0, 100, state->generic1 ) / 100.0f, 4, fill );
+	}
+
+	// robots left in the hangar (beacon capture)
+	if ( cgs.gametype == GT_BEACONS && myTeam != TEAM_SPECTATOR ) {
+		const char	*label = va( "ROBOTS %i/%i", cg.snap->ps.stats[STAT_ROBOTS] > 0 ? cg.snap->ps.stats[STAT_ROBOTS] : 0,
+			atoi( Info_ValueForKey( CG_ConfigString( CS_SERVERINFO ), "g_robots" ) ) );
+		vec4_t		color = { 1, 1, 1, 0.9f };
+		CG_DrawStringExt( 8, 420, label, color, qtrue, qtrue, 10, 14, 0 );
+		if ( cg.snap->ps.stats[STAT_HEALTH] <= 0 && cg.snap->ps.stats[STAT_ROBOTS] > 1 ) {
+			CG_DrawStringExt( 320 - 13 * 6, 200, "NEXT ROBOT...", color, qtrue, qtrue, 12, 16, 0 );
+		}
+	}
+}

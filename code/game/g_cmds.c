@@ -532,6 +532,10 @@ void SetTeam( gentity_t *ent, char *s ) {
 	} else if ( !Q_stricmp( s, "spectator" ) || !Q_stricmp( s, "s" ) ) {
 		team = TEAM_SPECTATOR;
 		specState = SPECTATOR_FREE;
+	} else if ( g_gametype.integer == GT_BEACONS && client->pers.robotsLost >= g_robots.integer ) {
+		// WALKER: beacon capture: no robots left, only watching
+		trap_SendServerCommand( clientNum, "cp \"No robots left in your hangar\n\"" );
+		return;
 	} else if ( g_gametype.integer >= GT_TEAM ) {
 		// if running a team game, assign player to one of the teams
 		specState = SPECTATOR_NOT;

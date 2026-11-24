@@ -121,6 +121,7 @@ typedef enum { GENDER_MALE, GENDER_FEMALE, GENDER_NEUTER } gender_t;
 // WALKER: beacon capture (game/g_beacons.c, cgame/cg_beacons.c)
 #define	BEACON_RADIUS			150
 #define	BEACON_CAPTURE_TIME		8000	// ms from free to taken (from enemy: twice)
+#define	BEACON_RESPAWN_TIME		5000	// ms from the loss of a robot to the next one
 
 /*
 ===================================================================================
@@ -221,7 +222,8 @@ typedef enum {
 	STAT_ARMOR,				
 	STAT_DEAD_YAW,					// look this direction when dead (FIXME: get rid of?)
 	STAT_CLIENTS_READY,				// bit mask of clients wishing to exit the intermission (FIXME: configstring?)
-	STAT_MAX_HEALTH					// health / armor limit, changable by handicap
+	STAT_MAX_HEALTH,				// health / armor limit, changable by handicap
+	STAT_ROBOTS						// WALKER: beacon capture, robots left in the hangar (this one included)
 } statIndex_t;
 
 

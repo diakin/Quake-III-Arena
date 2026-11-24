@@ -996,6 +996,19 @@ void ClientThink_real( gentity_t *ent ) {
 
 	// check for respawning
 	if ( client->ps.stats[STAT_HEALTH] <= 0 ) {
+		// WALKER: beacon capture: the next robot comes by itself; with the hangar empty
+		// the player watches the match
+		if ( g_gametype.integer == GT_BEACONS ) {
+			if ( level.time > client->respawnTime ) {
+				if ( client->pers.robotsLost >= g_robots.integer ) {
+					trap_SendServerCommand( ent - g_entities, "cp \"All your robots are lost\n\"" );
+					SetTeam( ent, "spectator" );
+				} else {
+					respawn( ent );
+				}
+			}
+			return;
+		}
 		// wait for the attack button to be pressed
 		if ( level.time > client->respawnTime ) {
 			// forcerespawn is to prevent users from waiting out powerups
@@ -1171,6 +1184,16 @@ void ClientEndFrame( gentity_t *ent ) {
 	}
 
 	ent->client->ps.stats[STAT_HEALTH] = ent->health;	// FIXME: get rid of ent->health...
+
+	// WALKER: health in percent for the bars over the robots (entityState generic1),
+	// robots left in the hangar
+	{
+		int		maximum = ent->client->ps.stats[STAT_MAX_HEALTH] > 0 ? ent->client->ps.stats[STAT_MAX_HEALTH] : 100;
+		int		percent = ent->health * 100 / maximum;
+		ent->client->ps.generic1 = percent < 0 ? 0 : ( percent > 100 ? 100 : percent );
+	}
+	ent->client->ps.stats[STAT_ROBOTS] = g_gametype.integer == GT_BEACONS
+		? g_robots.integer - ent->client->pers.robotsLost : 0;
 
 	G_SetClientSound (ent);
 

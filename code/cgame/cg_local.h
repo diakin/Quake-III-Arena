@@ -1094,6 +1094,7 @@ extern	vmCvar_t		cg_bobroll;
 extern	vmCvar_t		cg_swingSpeed;
 extern	vmCvar_t		cg_shadows;
 extern	vmCvar_t		r_sunDirection;
+extern	vmCvar_t		cg_drawHealthBars;
 extern	vmCvar_t		cg_gibs;
 extern	vmCvar_t		cg_drawTimer;
 extern	vmCvar_t		cg_drawFPS;
@@ -1390,6 +1391,7 @@ void	CG_ImpactMark( qhandle_t markShader,
 //
 void	CG_Beacon( centity_t *cent );
 void	CG_DrawBeacons( void );
+void	CG_DrawHealthBars( void );
 
 //
 // cg_localents.c

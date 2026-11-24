@@ -36,6 +36,23 @@ AO_RAYS = 40
 AO_DISTANCE = 0.55          # единицы модели (1 единица = 14 единиц Quake)
 SUPERSAMPLE = 2             # цвет считается в 2x2 точках на тексель
 
+# окраски команд ярче: краска (насыщенные пиксели нужного оттенка) насыщеннее и светлее,
+# металл и стекло (серые) не меняются; (диапазон оттенка 0..1, насыщенность x, яркость x)
+TEAM_PAINT = {'red': ((0.93, 0.06), 1.9, 1.35), 'blue': ((0.50, 0.70), 2.6, 1.45)}
+
+
+def team_paint(image, scheme):
+    (hue_low, hue_high), saturation_gain, value_gain = TEAM_PAINT[scheme]
+    hsv = np.array(image.convert('HSV')).astype(float) / 255
+    hue, saturation, value = hsv[..., 0], hsv[..., 1], hsv[..., 2]
+    in_range = (hue >= hue_low) | (hue <= hue_high) if hue_low > hue_high else (hue >= hue_low) & (hue <= hue_high)
+    # плавно: чем насыщеннее пиксель, тем сильнее
+    weight = in_range * np.clip((saturation - 0.12) / 0.15, 0, 1)
+    hsv[..., 1] = np.clip(saturation * (1 + (saturation_gain - 1) * weight), 0, 1)
+    hsv[..., 2] = np.clip(value * (1 + (value_gain - 1) * weight), 0, 1)
+    return Image.fromarray((hsv * 255).astype(np.uint8), 'HSV').convert('RGB')
+
+
 PAINTED = {'camo_green', 'camo_dark', 'panel_light', 'marking', 'trim_yellow', 'orange'}
 METAL = {'metal_gray', 'metal_dark', 'chrome', 'black'}
 GLOWING = {'engine_glow', 'light_cyan', 'sensor_purple'}
@@ -493,6 +510,8 @@ class Part:
         _, (near_rows, near_cols) = ndimage.distance_transform_edt(~covered, return_indices=True)
         image = image[near_rows, near_cols]
         result = Image.fromarray(image.astype(np.uint8)).resize((self.resolution, self.resolution), Image.LANCZOS)
+        if scheme in TEAM_PAINT:
+            result = team_paint(result, scheme)
         result.save(os.path.join(MODEL_DIR, f'{self.name}_{scheme}.jpg'), quality=88, optimize=True)
 
     def rewrite_glb(self):
