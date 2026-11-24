@@ -241,6 +241,7 @@ void UI_RegisterCvars( void ) {
 		trap_Cvar_Register( cv->vmCvar, cv->cvarName, cv->defaultString, cv->cvarFlags );
 	}
 	BG_BalanceRegister( CVAR_ARCHIVE );		// WALKER: test balance (ui_balance.c)
+	UI_BalanceLoadFile();
 }
 
 /*

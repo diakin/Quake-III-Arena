@@ -15,6 +15,8 @@ This file is part of WALKER, based on the Quake III Arena source code
 */
 #include "ui_local.h"
 
+#define BALANCE_FILE	"balance.cfg"	// in basewalker; written on every change, read at start
+
 #define ID_APPLY		10
 #define ID_RESET		11
 #define ID_BACK			12
@@ -281,6 +283,80 @@ static void Balance_WriteCvars( void ) {
 
 /*
 =================
+Balance_SaveFile
+
+all values to balance.cfg: a readable table in comments (new, stock, * changed) and
+the cvars, which the game reads from it at start
+=================
+*/
+static void Balance_SaveFile( void ) {
+	fileHandle_t	file;
+	balanceRow_t	row;
+	qtime_t			now;
+	char			buffer[MAX_CVAR_VALUE_STRING];
+	char			value[TEXT_SIZE], stock[TEXT_SIZE];
+	int				index, param;
+
+	trap_FS_FOpenFile( BALANCE_FILE, &file, FS_WRITE );
+	if ( !file ) {
+		Balance_SetStatus( "could not write " BALANCE_FILE );
+		return;
+	}
+#define BALANCE_PUT( text ) trap_FS_Write( text, strlen( text ), file )
+	trap_RealTime( &now );
+	BALANCE_PUT( va( "// WALKER balance from the BALANCE (TEST) menu, %04i-%02i-%02i %02i:%02i\n",
+		now.tm_year + 1900, now.tm_mon + 1, now.tm_mday, now.tm_hour, now.tm_min ) );
+	BALANCE_PUT( "// read at start; the values are for level 1, * - differs from the stock one\n//\n" );
+	memset( &row, 0, sizeof( row ) );
+	for ( index = 0; index < ROBOT_COUNT + RWEAPON_COUNT; index++ ) {
+		row.weapon = index >= ROBOT_COUNT;
+		row.index = row.weapon ? index - ROBOT_COUNT : index;
+		BALANCE_PUT( va( "// %s\n", row.weapon ? bg_robotWeapons[row.index].title : bg_robots[row.index].title ) );
+		for ( param = 0; param < ( row.weapon ? WPARAM_COUNT : RPARAM_COUNT ); param++ ) {
+			row.param = param;
+			if ( row.weapon && !BG_WeaponHasParam( row.index, param ) ) {
+				continue;
+			}
+			Balance_Format( &row, Balance_Value( &row, qfalse ), value, sizeof( value ) );
+			Balance_Format( &row, Balance_Value( &row, qtrue ), stock, sizeof( stock ) );
+			BALANCE_PUT( va( "//   %-14s %-10s stock %-10s%s\n",
+				( row.weapon && param == WPARAM_INTERVAL ) ? "SHOTS/S" : ( row.weapon ? bg_weaponParams[param].name : bg_robotParams[param].name ),
+				value, stock, strcmp( value, stock ) ? " *" : "" ) );
+		}
+	}
+	BALANCE_PUT( "\n" );
+	for ( index = 0; index < ROBOT_COUNT + RWEAPON_COUNT; index++ ) {
+		qboolean	weapon = index >= ROBOT_COUNT;
+		BG_BalanceString( weapon, weapon ? index - ROBOT_COUNT : index, buffer, sizeof( buffer ) );
+		BALANCE_PUT( va( "seta %s \"%s\"\n", BG_BalanceCvarName( weapon, weapon ? index - ROBOT_COUNT : index ), buffer ) );
+	}
+#undef BALANCE_PUT
+	trap_FS_FCloseFile( file );
+}
+
+
+/*
+=================
+UI_BalanceLoadFile
+
+at the ui start: the values saved by the menu
+=================
+*/
+void UI_BalanceLoadFile( void ) {
+	fileHandle_t	file;
+	int				length = trap_FS_FOpenFile( BALANCE_FILE, &file, FS_READ );
+
+	if ( file ) {
+		trap_FS_FCloseFile( file );
+	}
+	if ( length > 0 ) {
+		trap_Cmd_ExecuteText( EXEC_APPEND, "exec " BALANCE_FILE "\n" );
+	}
+}
+
+
+/*
+=================
 Balance_Apply
 
 the changed fields into the tables and the cvars
@@ -307,7 +383,8 @@ static void Balance_Apply( void ) {
 	}
 	if ( changed ) {
 		Balance_WriteCvars();
-		Balance_SetStatus( va( "applied: %i", changed ) );
+		Balance_SaveFile();
+		Balance_SetStatus( va( "applied: %i, saved to " BALANCE_FILE, changed ) );
 	}
 	Balance_Load();
 }
@@ -331,7 +408,8 @@ static void Balance_Reset( void ) {
 	}
 	BG_BalanceUpdate();
 	Balance_Load();
-	Balance_SetStatus( "all values are stock" );
+	Balance_SaveFile();
+	Balance_SetStatus( "all values are stock, saved to " BALANCE_FILE );
 }
 
 

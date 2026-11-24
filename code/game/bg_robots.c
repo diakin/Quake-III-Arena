@@ -248,7 +248,9 @@ void BG_SetRobotParam( int robot, int param, int value ) {
 
 void BG_SetWeaponParam( int weapon, int param, int value ) {
 	BG_SaveStock();
-	*BG_WeaponField( &bg_robotWeapons[weapon], param ) = BG_ClampParam( &bg_weaponParams[param], value );
+	// a parameter this weapon does not use (shell speed of a machine gun) keeps its 0
+	*BG_WeaponField( &bg_robotWeapons[weapon], param ) = BG_WeaponHasParam( weapon, param )
+		? BG_ClampParam( &bg_weaponParams[param], value ) : value;
 }
 
 const char *BG_BalanceCvarName( qboolean weapon, int index ) {
