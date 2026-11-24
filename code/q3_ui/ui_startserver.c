@@ -315,6 +315,7 @@ static void StartServer_MenuEvent( void* ptr, int event ) {
 
 	case ID_STARTSERVERNEXT:
 		trap_Cvar_SetValue( "g_gameType", gametype_remap[s_startserver.gametype.curvalue] );
+		trap_Cvar_SetValue( "ui_gameType", gametype_remap[s_startserver.gametype.curvalue] );	// WALKER: remembered
 		UI_ServerOptionsMenu( s_startserver.multiplayer );
 		break;
 
@@ -533,6 +534,11 @@ static void StartServer_MenuInit( void ) {
 	Menu_AddItem( &s_startserver.menu, &s_startserver.framel );
 	Menu_AddItem( &s_startserver.menu, &s_startserver.framer );
 
+	// WALKER: the game type chosen last time (ui_gameType, beacon capture at first)
+	{
+		int		last = (int)Com_Clamp( 0, GT_BEACONS, trap_Cvar_VariableValue( "ui_gameType" ) );
+		s_startserver.gametype.curvalue = gametype_remap2[last];
+	}
 	Menu_AddItem( &s_startserver.menu, &s_startserver.gametype );
 	for (i=0; i<MAX_MAPSPERPAGE; i++)
 	{
@@ -1275,7 +1281,8 @@ static void ServerOptions_MenuInit( qboolean multiplayer ) {
 
 	memset( &s_serveroptions, 0 ,sizeof(serveroptions_t) );
 	s_serveroptions.multiplayer = multiplayer;
-	s_serveroptions.gametype = (int)Com_Clamp( 0, 5, trap_Cvar_VariableValue( "g_gameType" ) );
+	// WALKER: up to GT_BEACONS (the clamp to 5 turned beacon capture into "Free For All" here)
+	s_serveroptions.gametype = (int)Com_Clamp( 0, GT_BEACONS, trap_Cvar_VariableValue( "g_gameType" ) );
 	s_serveroptions.punkbuster.curvalue = Com_Clamp( 0, 1, trap_Cvar_VariableValue( "sv_punkbuster" ) );
 
 	ServerOptions_Cache();

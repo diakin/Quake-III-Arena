@@ -215,6 +215,7 @@ static cvarTable_t		cvarTable[] = {
 	{ &ui_server16, "server16", "", CVAR_ARCHIVE },
 	{ &ui_hangarAutoRotate, "ui_hangarAutoRotate", "1", CVAR_ARCHIVE },	// WALKER: hangar robot turns by itself
 	{ NULL, "ui_account", "", CVAR_ARCHIVE },			// WALKER: last pilot account
+	{ NULL, "ui_gameType", "8", CVAR_ARCHIVE },		// WALKER: game type of the start server menu (GT_BEACONS)
 	{ NULL, "ui_testHangar", "1", CVAR_ARCHIVE },		// WALKER: fill the hangar with free robots (testing)
 	{ NULL, "walker_robots", "", CVAR_USERINFO },		// WALKER: robots of the account the player takes into a battle
 	{ NULL, "walker_level", "1", CVAR_USERINFO },		// WALKER: level of the pilot
