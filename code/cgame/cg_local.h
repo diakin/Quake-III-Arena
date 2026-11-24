@@ -162,6 +162,12 @@ typedef struct {
 	// WALKER: footsteps follow the leg animation (see CG_PlayerFootsteps)
 	int				footstepAnim;
 	int				footstepFrame;
+
+	// WALKER: the leg animation runs on its own clock, faster or slower with the robot
+	// speed: a slower robot takes the same steps less often (CG_PlayerAnimation)
+	int				legsClock;
+	int				legsClockReal;
+	float			legsClockFraction;
 } playerEntity_t;
 
 //=================================================
@@ -1115,6 +1121,7 @@ extern	vmCvar_t		cg_crosshairHealth;
 extern	vmCvar_t		cg_drawStatus;
 extern	vmCvar_t		cg_draw2D;
 extern	vmCvar_t		cg_animSpeed;
+extern	vmCvar_t		cg_strideSpeed;
 extern	vmCvar_t		cg_debugAnim;
 extern	vmCvar_t		cg_debugPosition;
 extern	vmCvar_t		cg_debugEvents;

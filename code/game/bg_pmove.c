@@ -197,7 +197,15 @@ static void PM_Friction( void ) {
 		if ( pml.walking && !(pml.groundTrace.surfaceFlags & SURF_SLICK) ) {
 			// if getting knocked back, no friction
 			if ( ! (pm->ps->pm_flags & PMF_TIME_KNOCKBACK) ) {
-				control = speed < pm_stopspeed ? pm_stopspeed : speed;
+				// WALKER: the threshold below which friction is constant is set for the
+				// normal speed (WALKER_REFERENCE_SPEED) and scales with the robot speed:
+				// with the fixed 100 a robot slower than 60 never gathered speed (friction
+				// took more each frame than acceleration gave) and only stepped in place
+				float	stopspeed = pm_stopspeed;
+				if ( pm->ps->speed > 0 ) {
+					stopspeed = pm_stopspeed * pm->ps->speed / WALKER_REFERENCE_SPEED;
+				}
+				control = speed < stopspeed ? stopspeed : speed;
 				drop += control*pm_friction*pml.frametime;
 			}
 		}

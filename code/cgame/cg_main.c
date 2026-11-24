@@ -117,6 +117,7 @@ vmCvar_t	cg_crosshairHealth;
 vmCvar_t	cg_draw2D;
 vmCvar_t	cg_drawStatus;
 vmCvar_t	cg_animSpeed;
+vmCvar_t	cg_strideSpeed;
 vmCvar_t	cg_debugAnim;
 vmCvar_t	cg_debugPosition;
 vmCvar_t	cg_debugEvents;
@@ -250,6 +251,8 @@ static cvarTable_t cvarTable[] = { // bk001129
 	{ &cg_bobroll, "cg_bobroll", "0.002", CVAR_ARCHIVE },
 	{ &cg_swingSpeed, "cg_swingSpeed", "0.3", CVAR_CHEAT },
 	{ &cg_animSpeed, "cg_animspeed", "1", CVAR_CHEAT },
+	// WALKER: speed at which the walk animation plays at its own rate (steps match the ground)
+	{ &cg_strideSpeed, "cg_strideSpeed", "110", CVAR_ARCHIVE },
 	{ &cg_debugAnim, "cg_debuganim", "0", CVAR_CHEAT },
 	{ &cg_debugPosition, "cg_debugposition", "0", CVAR_CHEAT },
 	{ &cg_debugEvents, "cg_debugevents", "0", CVAR_CHEAT },

@@ -1308,11 +1308,44 @@ static void CG_PlayerAnimation( centity_t *cent, int *legsOld, int *legs, float 
 
 	ci = &cgs.clientinfo[ clientNum ];
 
-	// do the shuffle turn frames locally
-	if ( cent->pe.legs.yawing && ( cent->currentState.legsAnim & ~ANIM_TOGGLEBIT ) == LEGS_IDLE ) {
-		CG_RunLerpFrame( ci, &cent->pe.legs, LEGS_TURN, speedScale );
-	} else {
-		CG_RunLerpFrame( ci, &cent->pe.legs, cent->currentState.legsAnim, speedScale );
+	// WALKER: the legs run on their own clock. Walking, it goes at the real horizontal
+	// speed divided by cg_strideSpeed: the step length stays the same, a slower robot
+	// steps less often (the footsteps follow the animation). Standing and turning: real time.
+	{
+		int		legsAnim = cent->currentState.legsAnim & ~ANIM_TOGGLEBIT;
+		int		realTime = cg.time;
+		int		elapsed = cg.time - cent->pe.legsClockReal;
+		float	rate = 1;
+
+		if ( legsAnim == LEGS_WALK || legsAnim == LEGS_RUN || legsAnim == LEGS_BACK
+			|| legsAnim == LEGS_BACKWALK || legsAnim == LEGS_WALKCR || legsAnim == LEGS_BACKCR ) {
+			float	*velocity = cent->currentState.pos.trDelta;
+			float	speed = sqrt( velocity[0] * velocity[0] + velocity[1] * velocity[1] );
+			float	stride = cg_strideSpeed.value > 1 ? cg_strideSpeed.value : WALKER_REFERENCE_SPEED;
+
+			rate = speed / stride;
+			if ( rate > 2 ) {
+				rate = 2;
+			}
+		}
+		if ( cent->pe.legsClockReal == 0 || elapsed < 0 || elapsed > 1000 ) {
+			// first frame, or the entity was not drawn for a while
+			cent->pe.legsClock = cg.time;
+			cent->pe.legsClockFraction = 0;
+			elapsed = 0;
+		}
+		cent->pe.legsClockReal = cg.time;
+		cent->pe.legsClockFraction += elapsed * rate;
+		cent->pe.legsClock += (int)cent->pe.legsClockFraction;
+		cent->pe.legsClockFraction -= (int)cent->pe.legsClockFraction;
+
+		cg.time = cent->pe.legsClock;
+		if ( cent->pe.legs.yawing && legsAnim == LEGS_IDLE ) {
+			CG_RunLerpFrame( ci, &cent->pe.legs, LEGS_TURN, speedScale );
+		} else {
+			CG_RunLerpFrame( ci, &cent->pe.legs, cent->currentState.legsAnim, speedScale );
+		}
+		cg.time = realTime;
 	}
 
 	*legsOld = cent->pe.legs.oldFrame;
