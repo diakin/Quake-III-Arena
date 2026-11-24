@@ -379,20 +379,25 @@ void CG_DrawBeacons( void ) {
 		vec3_t	color;
 		float	width = 200, height = 10, amount;
 
+		vec4_t	track = { 0.25f, 0.28f, 0.30f, 0.6f };
+
 		relative = CG_BeaconRelative( standing );
-		CG_BeaconColor( relative, color );
+		if ( relative >= 0 ) {
+			VectorCopy( colorAlly, color );
+		} else {
+			VectorCopy( colorEnemy, color );
+		}
 		VectorCopy( color, fill );
 		fill[3] = 0.9f;
 		amount = fabs( relative );
 		x = 320 - width * 0.5f;
 		y = 300;
+		// one bar filled from the left by the control of the side that holds the
+		// beacon now: blue for the own team, red for the other (it shrinks while
+		// the beacon is being taken from them, then the blue part grows)
 		CG_FillRect( x - 2, y - 2, width + 4, height + 4, frame );
-		if ( relative >= 0 ) {
-			CG_FillRect( 320, y, width * 0.5f * amount, height, fill );
-		} else {
-			CG_FillRect( 320 - width * 0.5f * amount, y, width * 0.5f * amount, height, fill );
-		}
-		CG_FillRect( 319, y - 2, 2, height + 4, colorWhite );
+		CG_FillRect( x, y, width, height, track );
+		CG_FillRect( x, y, width * amount, height, fill );
 		letter = 'A' + standing->modelindex2;
 		if ( standing->generic1 == 3 ) {
 			label = va( "BEACON %c: CONTESTED", letter );

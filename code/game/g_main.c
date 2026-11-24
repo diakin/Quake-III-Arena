@@ -1347,11 +1347,13 @@ void CheckExitRules( void ) {
 		}
 	}
 
-	if ( level.numPlayingClients < 2 ) {
+	// WALKER: before the player count: when one team is gone (its robots lost) only
+	// one player may be left on the field, and the match did not end at 0 points
+	if ( G_BeaconsCheckExit() ) {
 		return;
 	}
 
-	if ( G_BeaconsCheckExit() ) {
+	if ( level.numPlayingClients < 2 ) {
 		return;
 	}
 
