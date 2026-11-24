@@ -1103,6 +1103,17 @@ void UI_Init( void ) {
 
 	uis.activemenu = NULL;
 	uis.menusp     = 0;
+
+	// WALKER: the pilot of the last time, so that a battle started from the command line
+	// (+map, the .bat files) also gets his robots (walker_robots); no menu here
+	{
+		char	nick[64];
+
+		trap_Cvar_VariableStringBuffer( "ui_account", nick, sizeof( nick ) );
+		if ( nick[0] ) {
+			UI_AccountLoad( nick );
+		}
+	}
 }
 
 /*
