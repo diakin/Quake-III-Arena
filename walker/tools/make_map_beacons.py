@@ -182,7 +182,7 @@ def write_shaders(text):
         file.write('walker_beacons\n')
     arena = ('{\nmap "wk_beacons"\nlongname "Beacons"\nfraglimit "0"\ntimelimit "10"\ntype "beacons team ffa"\n'
              'bots "Anvil Bastion Cinder Drake Ember"\n}\n')
-    with open(os.path.join(isl.DATA, 'scripts', 'arenas.txt'), 'w', encoding='ascii', newline='\n') as file:
+    with open(os.path.join(isl.DATA, 'scripts', 'wk_beacons.arena'), 'w', encoding='ascii', newline='\n') as file:
         file.write(arena)
 
 

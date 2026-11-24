@@ -2,7 +2,7 @@
 
 python3 walker/tools/make_map_islands.py <данные игры> <папка компиляции>
 
-<данные игры>      — сюда пишутся текстуры .jpg, небо, шейдеры, scripts/arenas.txt
+<данные игры>      — сюда пишутся текстуры .jpg, небо, шейдеры, scripts/wk_islands.arena (своё имя у каждой карты)
 <папка компиляции> — путь вида .../quake*/basewalker: туда кладутся maps/wk_islands.map,
                      копии текстур в .tga (id q3map под Linux читает только TGA) и шейдеры.
 Масштаб: робот 56 единиц ~ 10 м, то есть 1 м ~ 5.6 единицы.
@@ -1868,7 +1868,7 @@ def write_shaders():
     with open(os.path.join(COMPILE, 'scripts', 'shaderlist.txt'), 'w', encoding='ascii', newline='\n') as file:
         file.write('walker_islands\n')
     arena = '{\nmap "wk_islands"\nlongname "Islands"\nfraglimit "20"\ntimelimit "10"\ntype "ffa tourney team beacons"\nbots "Anvil Bastion Cinder Drake Ember"\n}\n'
-    with open(os.path.join(DATA, 'scripts', 'arenas.txt'), 'w', encoding='ascii', newline='\n') as file:
+    with open(os.path.join(DATA, 'scripts', 'wk_islands.arena'), 'w', encoding='ascii', newline='\n') as file:
         file.write(arena)
 
 
