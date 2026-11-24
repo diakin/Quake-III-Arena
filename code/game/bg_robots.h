@@ -84,7 +84,7 @@ typedef struct {
 	int			fire;			// weaponFire_t
 	int			damage;			// level 1, per hit (a shell: at the point of impact)
 	int			interval;		// level 1, msec between shots
-	int			range;			// units, the same on every level
+	int			range;			// units, shown as metres (1 unit = 1 m), the same on every level
 	int			splashRadius;	// shells
 	int			projectileSpeed;// shells, units per second
 	int			spread;			// bullets, Quake spread (the machine gun has 200)

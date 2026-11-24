@@ -31,12 +31,12 @@ const robotInfo_t bg_robots[ROBOT_COUNT] = {
 
 // damage and structure are real values: the game divides them by ROBOT_HEALTH_SCALE
 const robotWeaponInfo_t bg_robotWeapons[RWEAPON_COUNT] = {
-	{ "osa",	"OSA",		"Light machine gun",	WCLASS_LIGHT,	WFIRE_BULLET,	120,	70,		1300,	0,	0,		300,	1200,	16 },
-	{ "shmel",	"SHMEL",	"Light rocket pod",		WCLASS_LIGHT,	WFIRE_SHELL,	700,	500,	1200,	60,	1400,	0,		1800,	10 },
-	{ "topor",	"TOPOR",	"Medium autocannon",	WCLASS_MEDIUM,	WFIRE_BULLET,	300,	100,	1600,	0,	0,		150,	2500,	22 },
-	{ "iskra",	"ISKRA",	"Medium plasma gun",	WCLASS_MEDIUM,	WFIRE_PLASMA,	650,	250,	1400,	40,	1800,	0,		3000,	20 },
-	{ "taran",	"TARAN",	"Heavy cannon",			WCLASS_HEAVY,	WFIRE_SHELL,	3800,	1000,	2000,	90,	2400,	0,		4500,	33 },
-	{ "kopyo",	"KOPYO",	"Heavy railgun",		WCLASS_HEAVY,	WFIRE_RAIL,		9000,	2200,	2400,	0,	0,		0,		6000,	33 },
+	{ "osa",	"OSA",		"Light machine gun",	WCLASS_LIGHT,	WFIRE_BULLET,	120,	125,	500,	0,	0,		300,	1200,	16 },
+	{ "shmel",	"SHMEL",	"Light rocket pod",		WCLASS_LIGHT,	WFIRE_SHELL,	700,	1000,	500,	60,	1400,	0,		1800,	10 },
+	{ "topor",	"TOPOR",	"Medium autocannon",	WCLASS_MEDIUM,	WFIRE_BULLET,	300,	333,	800,	0,	0,		150,	2500,	22 },
+	{ "iskra",	"ISKRA",	"Medium plasma gun",	WCLASS_MEDIUM,	WFIRE_PLASMA,	650,	250,	800,	40,	1800,	0,		3000,	20 },
+	{ "taran",	"TARAN",	"Heavy cannon",			WCLASS_HEAVY,	WFIRE_SHELL,	3800,	3000,	800,	90,	2400,	0,		4500,	33 },
+	{ "kopyo",	"KOPYO",	"Heavy railgun",		WCLASS_HEAVY,	WFIRE_RAIL,		9000,	2200,	800,	0,	0,		0,		6000,	33 },
 };
 
 // seconds and development points from level to level + 1 (from 10 minutes to 24 hours)

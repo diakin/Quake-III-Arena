@@ -579,7 +579,7 @@ static void Hangar_DrawWeaponLines( int y, int type, int level, qboolean showNex
 	Hangar_DrawLine( y, "RATE", va( "%i.%i /s", 1000 / value, ( 10000 / value ) % 10 ),
 		showNext ? va( "%i.%i /s", 1000 / BG_WeaponInterval( type, next ), ( 10000 / BG_WeaponInterval( type, next ) ) % 10 ) : "" );
 	y += LINE;
-	Hangar_DrawLine( y, "RANGE", va( "%i", bg_robotWeapons[type].range ), "" );
+	Hangar_DrawLine( y, "RANGE", va( "%i m", bg_robotWeapons[type].range ), "" );
 }
 
 

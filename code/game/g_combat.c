@@ -874,17 +874,10 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 		return;
 	}
 #endif
-	// reduce damage by the attacker's handicap value
-	// unless they are rocket jumping
-	if ( attacker->client && attacker != targ ) {
-		max = attacker->client->ps.stats[STAT_MAX_HEALTH];
-#ifdef MISSIONPACK
-		if( bg_itemlist[attacker->client->ps.stats[STAT_PERSISTANT_POWERUP]].giTag == PW_GUARD ) {
-			max /= 2;
-		}
-#endif
-		damage = damage * max / 100;
-	}
+	// WALKER: no handicap scaling. Quake reduced damage by the attacker's maximum health
+	// (100 = no handicap); a robot has its structure there (6200 for K7, 9800 for MOLOT in
+	// tenths), and every hit was multiplied by 62..98: a cannon shell killed at once.
+	(void)max;
 
 	client = targ->client;
 
@@ -1020,8 +1013,8 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 	}
 
 	if ( g_debugDamage.integer ) {
-		G_Printf( "%i: client:%i health:%i damage:%i armor:%i\n", level.time, targ->s.number,
-			targ->health, take, asave );
+		G_Printf( "%i: client:%i health:%i damage:%i armor:%i mod:%i inflictor:%s attacker:%i\n", level.time, targ->s.number,
+			targ->health, take, asave, mod, inflictor ? inflictor->classname : "-", attacker ? attacker->s.number : -1 );
 	}
 
 	// add to the damage inflicted on a player this frame
