@@ -676,6 +676,8 @@ static qboolean GLW_InitDriver( const char *drivername, int colorbits )
 ** Responsible for creating the Win32 window and initializing the OpenGL driver.
 */
 #define	WINDOW_STYLE	(WS_OVERLAPPED|WS_BORDER|WS_CAPTION|WS_VISIBLE)
+static void GLW_WorkArea( RECT *area );
+
 static qboolean GLW_CreateWindow( const char *drivername, int width, int height, int colorbits, qboolean cdsFullscreen )
 {
 	RECT			r;
@@ -754,18 +756,19 @@ static qboolean GLW_CreateWindow( const char *drivername, int width, int height,
 
 			// adjust window coordinates if necessary 
 			// so that the window is completely on screen
-			if ( x < 0 )
-				x = 0;
-			if ( y < 0 )
-				y = 0;
-
-			if ( w < glw_state.desktopWidth &&
-				 h < glw_state.desktopHeight )
+			// WALKER: inside the work area (without the taskbar), title bar always visible
 			{
-				if ( x + w > glw_state.desktopWidth )
-					x = ( glw_state.desktopWidth - w );
-				if ( y + h > glw_state.desktopHeight )
-					y = ( glw_state.desktopHeight - h );
+				RECT	area;
+
+				GLW_WorkArea( &area );
+				if ( x + w > area.right )
+					x = area.right - w;
+				if ( y + h > area.bottom )
+					y = area.bottom - h;
+				if ( x < area.left )
+					x = area.left;
+				if ( y < area.top )
+					y = area.top;
 			}
 		}
 
@@ -840,6 +843,60 @@ static void PrintCDSError( int value )
 /*
 ** GLW_SetMode
 */
+/*
+** GLW_WorkArea
+**
+** WALKER: the part of the desktop not covered by the taskbar
+*/
+static void GLW_WorkArea( RECT *area )
+{
+	if ( !SystemParametersInfo( SPI_GETWORKAREA, 0, area, 0 ) )
+	{
+		area->left = 0;
+		area->top = 0;
+		area->right = glw_state.desktopWidth;
+		area->bottom = glw_state.desktopHeight;
+	}
+}
+
+/*
+** GLW_FitWindow
+**
+** WALKER: a window with its frame and title must fit into the work area, otherwise
+** its bottom went under the taskbar or off the screen (the mode 1600x1200 on a
+** 1080 desktop). The picture is scaled down with the same aspect ratio.
+*/
+static void GLW_FitWindow( int *width, int *height )
+{
+	RECT	area, frame;
+	int		frameWidth, frameHeight, roomWidth, roomHeight;
+	float	scale;
+
+	GLW_WorkArea( &area );
+	frame.left = 0;
+	frame.top = 0;
+	frame.right = 100;
+	frame.bottom = 100;
+	AdjustWindowRect( &frame, WINDOW_STYLE|WS_SYSMENU, FALSE );
+	frameWidth = ( frame.right - frame.left ) - 100;
+	frameHeight = ( frame.bottom - frame.top ) - 100;
+	roomWidth = ( area.right - area.left ) - frameWidth;
+	roomHeight = ( area.bottom - area.top ) - frameHeight;
+	if ( roomWidth < 320 || roomHeight < 240 || ( *width <= roomWidth && *height <= roomHeight ) )
+	{
+		return;
+	}
+	scale = (float)roomWidth / *width;
+	if ( (float)roomHeight / *height < scale )
+	{
+		scale = (float)roomHeight / *height;
+	}
+	ri.Printf( PRINT_ALL, "...window %dx%d does not fit the desktop, using %dx%d\n",
+		*width, *height, (int)( *width * scale ) & ~1, (int)( *height * scale ) & ~1 );
+	*width = (int)( *width * scale ) & ~1;
+	*height = (int)( *height * scale ) & ~1;
+}
+
 static rserr_t GLW_SetMode( const char *drivername, 
 						    int mode, 
 							int colorbits, 
@@ -1018,6 +1075,7 @@ static rserr_t GLW_SetMode( const char *drivername,
 					
 					glw_state.cdsFullscreen = qfalse;
 					glConfig.isFullscreen = qfalse;
+					GLW_FitWindow( &glConfig.vidWidth, &glConfig.vidHeight );
 					if ( !GLW_CreateWindow( drivername, glConfig.vidWidth, glConfig.vidHeight, colorbits, qfalse) )
 					{
 						return RSERR_INVALID_MODE;
@@ -1035,6 +1093,7 @@ static rserr_t GLW_SetMode( const char *drivername,
 		}
 
 		glw_state.cdsFullscreen = qfalse;
+		GLW_FitWindow( &glConfig.vidWidth, &glConfig.vidHeight );
 		if ( !GLW_CreateWindow( drivername, glConfig.vidWidth, glConfig.vidHeight, colorbits, qfalse ) )
 		{
 			return RSERR_INVALID_MODE;

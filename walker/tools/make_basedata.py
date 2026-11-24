@@ -308,58 +308,43 @@ def framed_panel(width, height, fill_alpha):
 
 
 def hangar_art():
-    """фон ангара: зал в перспективе, светильники под потолком, поворотный круг в центре."""
+    """фон ангара: спокойный зал в перспективе, мягкий свет сверху, поворотный круг под роботом
+    (робот слева, справа панель характеристик: ui_hangar.c)."""
     width, height = 1024, 512
-    vanish_x, vanish_y = width / 2, height * 0.42
+    vanish_x, vanish_y = width * 0.36, height * 0.38
     y, x = np.mgrid[0:height, 0:width].astype(float)
     base = np.zeros((height, width, 3))
     # стены и потолок: тёмная сталь, светлее к центру
     distance = np.hypot((x - vanish_x) / width, (y - vanish_y) / height)
     base[:] = np.array([34, 42, 50])[None, None, :] * (1.15 - 0.6 * distance[..., None])
-    noise = (fft_like_noise(height, width, 3) * 10)[..., None]
+    noise = (fft_like_noise(height, width, 3) * 8)[..., None]
     image = Image.fromarray(np.clip(base + noise, 0, 255).astype(np.uint8))
     draw = ImageDraw.Draw(image, 'RGBA')
-    back = (300, 70, 724, 300)                       # дальняя стена
-    draw.rectangle(back, fill=(44, 54, 62, 255), outline=(70, 84, 92, 255), width=3)
-    for panel_x in range(back[0], back[2], 53):
-        draw.line([(panel_x, back[1]), (panel_x, back[3])], fill=(30, 36, 42, 255), width=2)
-    draw.rectangle((back[0], 200, back[2], 214), fill=(200, 160, 40, 255))
-    for stripe in range(back[0], back[2], 28):
-        draw.polygon([(stripe, 214), (stripe + 14, 214), (stripe + 28, 200), (stripe + 14, 200)], fill=(30, 28, 24, 255))
+    back = (110, 40, 640, 252)                       # дальняя стена за роботом
+    draw.rectangle(back, fill=(42, 50, 58, 255), outline=(62, 74, 82, 255), width=2)
+    for panel_x in range(back[0] + 50, back[2], 50):
+        draw.line([(panel_x, back[1]), (panel_x, back[3])], fill=(34, 40, 46, 255), width=2)
     # пол: решётка к точке схода
     floor_top = back[3]
-    draw.polygon([(back[0], floor_top), (back[2], floor_top), (width, height), (0, height)], fill=(40, 46, 50, 255))
-    for step in range(-12, 13):
-        draw.line([(vanish_x + step * 35, floor_top), (vanish_x + step * 120, height)], fill=(56, 64, 70, 255), width=2)
+    draw.polygon([(back[0], floor_top), (back[2], floor_top), (width, height), (0, height)], fill=(38, 44, 48, 255))
+    for step in range(-14, 15):
+        draw.line([(vanish_x + step * 36, floor_top), (vanish_x + step * 130, height)], fill=(50, 58, 64, 255), width=1)
     row = floor_top
     gap = 8
     while row < height:
-        draw.line([(0, row), (width, row)], fill=(56, 64, 70, 255), width=2)
+        draw.line([(0, row), (width, row)], fill=(50, 58, 64, 255), width=1)
         gap *= 1.35
         row += gap
-    # потолочные балки и светильники
-    for beam in range(4):
-        top = 10 + beam * 16
-        draw.line([(back[0] - 120 + beam * 30, top + 40), (back[2] + 120 - beam * 30, top + 40)], fill=(26, 30, 34, 255), width=8)
-        for lamp in range(5):
-            lamp_x = back[0] + 30 + lamp * 90
-            draw.rectangle((lamp_x - 22, top + 30, lamp_x + 22, top + 36), fill=(255, 236, 190, 255))
+    # мягкий свет сверху над роботом
     glow = Image.new('L', (width, height), 0)
-    glow_draw = ImageDraw.Draw(glow)
-    for lamp in range(5):
-        glow_draw.ellipse((back[0] + 30 + lamp * 90 - 70, 20, back[0] + 30 + lamp * 90 + 70, 120), fill=90)
-    glow = glow.filter(ImageFilter.GaussianBlur(30))
-    image = Image.composite(Image.new('RGB', (width, height), (255, 230, 180)), image, glow.point(lambda value: value // 2))
+    ImageDraw.Draw(glow).ellipse((vanish_x - 260, -80, vanish_x + 260, 200), fill=70)
+    glow = glow.filter(ImageFilter.GaussianBlur(50))
+    image = Image.composite(Image.new('RGB', (width, height), (220, 210, 190)), image, glow)
     draw = ImageDraw.Draw(image, 'RGBA')
-    # поворотный круг под роботом
-    center_x, center_y = width / 2, 318
-    draw.ellipse((center_x - 250, center_y - 42, center_x + 250, center_y + 42), fill=(30, 34, 38, 255), outline=ACCENT + (255,), width=4)
-    draw.ellipse((center_x - 200, center_y - 32, center_x + 200, center_y + 32), outline=(90, 104, 112, 255), width=2)
-    # боковые колонны
-    for column_x in (90, 934):
-        draw.rectangle((column_x - 26, 0, column_x + 26, height), fill=(28, 32, 36, 255), outline=(70, 84, 92, 255), width=2)
-        for mark in range(40, height, 70):
-            draw.rectangle((column_x - 26, mark, column_x + 26, mark + 10), fill=(200, 160, 40, 230))
+    # поворотный круг под роботом (центр окна просмотра)
+    center_x, center_y = 300, 274
+    draw.ellipse((center_x - 175, center_y - 30, center_x + 175, center_y + 30), fill=(30, 34, 38, 255), outline=ACCENT + (200,), width=3)
+    draw.ellipse((center_x - 138, center_y - 23, center_x + 138, center_y + 23), outline=(80, 92, 100, 255), width=1)
     save('menu/art/hangar.jpg', image)
 
 

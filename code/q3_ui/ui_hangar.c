@@ -14,6 +14,10 @@ the first levels to 24 hours on the last) and finishing an upgrade at once for
 currency. Robots being upgraded do not go into battles. All the others do, in
 the order of the bays (ui_account.c, walker_robots).
 
+Layout (virtual 640x480): top bar with the pilot and his money, preview on the
+left, characteristics panel on the right, bays, bottom bar with BACK. Texts use
+the small 6x12 font (UI_TINYFONT); buttons are drawn by Hangar_DrawButton.
+
 This file is part of WALKER, based on the Quake III Arena source code
 (GPL v2, see COPYING.txt).
 ===========================================================================
@@ -22,8 +26,6 @@ This file is part of WALKER, based on the Quake III Arena source code
 #include "ui_local.h"
 
 #define ART_BACKGROUND		"menu/art/hangar"
-#define ART_BACK0			"menu/art/back_0"
-#define ART_BACK1			"menu/art/back_1"
 #define ART_BAY				"menu/art/maps_select"
 #define ART_BAY_SELECTED	"menu/art/maps_selected"
 
@@ -47,38 +49,53 @@ This file is part of WALKER, based on the Quake III Arena source code
 #define TURN_SPEED			20.0f	// degrees per second of the automatic turn
 #define KEY_STEP			10.0f
 
+#define TOPBAR_H			22
+
 // big preview
 #define PREVIEW_X			8
-#define PREVIEW_Y			44
-#define PREVIEW_W			330
-#define PREVIEW_H			282
+#define PREVIEW_Y			26
+#define PREVIEW_W			384
+#define PREVIEW_H			304
 
 // characteristics
-#define PANEL_X				346
-#define PANEL_Y				48
-#define PANEL_W				286
-#define LINE				18
+#define PANEL_X				400
+#define PANEL_Y				30
+#define PANEL_W				232
+#define PANEL_H				250
+#define PANEL_PAD			8
+#define LINE				14
+#define BUTTON_H			18
+#define ROW_FIRST			( PANEL_Y + 176 )	// first line under the characteristics
 
 // bays
-#define BAY_Y				334
+#define BAY_Y				338
 #define BAY_W				104
 #define BAY_H				80
 #define BAY_GAP				8
 
+// bottom bar
+#define BOTTOM_Y			430
+
+typedef struct {
+	menubitmap_s	item;			// first: the menu code sees a bitmap item
+	char			label[48];
+	char			detail[48];		// right-aligned part (cost, time), may be empty
+	qboolean		enabled;		// enough points / credits: bright, otherwise dim
+} hangarButton_t;
+
 typedef struct {
 	menuframework_s	menu;
-	menutext_s		banner;
 	menubitmap_s	preview;
 	menubitmap_s	bays[MAX_BAYS];
-	menubitmap_s	back;
-	menutext_s		autoRotate;
-	menutext_s		resetView;
-	menutext_s		upgradeRobot;
-	menutext_s		upgradeWeapon;
-	menutext_s		finish;
-	menutext_s		buy;
-	menutext_s		shopPrev;
-	menutext_s		shopNext;
+	hangarButton_t	back;
+	hangarButton_t	autoRotate;
+	hangarButton_t	resetView;
+	hangarButton_t	upgradeRobot;
+	hangarButton_t	upgradeWeapon;
+	hangarButton_t	finish;
+	hangarButton_t	buy;
+	hangarButton_t	shopPrev;
+	hangarButton_t	shopNext;
 
 	playerInfo_t	players[MAX_BAYS];
 	playerInfo_t	shopPlayer;
@@ -100,18 +117,22 @@ typedef struct {
 	qhandle_t		bayShader;
 	qhandle_t		baySelectedShader;
 
-	char			upgradeRobotLabel[64];
-	char			upgradeWeaponLabel[64];
-	char			finishLabel[64];
-	char			buyLabel[64];
 	char			message[96];
 } hangarMenuInfo_t;
 
 static hangarMenuInfo_t	hangarMenuInfo;
 
 static vec4_t hangarDimColor = { 0.55f, 0.62f, 0.66f, 1.00f };
-static vec4_t hangarPanelColor = { 0.0f, 0.0f, 0.0f, 0.55f };
+static vec4_t hangarTextColor = { 0.88f, 0.90f, 0.92f, 1.00f };
+static vec4_t hangarAccentColor = { 1.00f, 0.55f, 0.15f, 1.00f };
+static vec4_t hangarPanelColor = { 0.0f, 0.0f, 0.0f, 0.60f };
+static vec4_t hangarBarColor = { 0.0f, 0.0f, 0.0f, 0.70f };
+static vec4_t hangarRuleColor = { 0.55f, 0.62f, 0.66f, 0.35f };
 static vec4_t hangarGreenColor = { 0.45f, 1.0f, 0.45f, 1.0f };
+static vec4_t hangarMoneyColor = { 1.0f, 0.85f, 0.30f, 1.0f };
+static vec4_t hangarButtonColor = { 0.06f, 0.08f, 0.10f, 0.85f };
+static vec4_t hangarButtonFocusColor = { 0.30f, 0.15f, 0.04f, 0.90f };
+static vec4_t hangarBorderColor = { 0.40f, 0.46f, 0.50f, 1.0f };
 
 
 /*
@@ -247,12 +268,39 @@ static accountRobot_t *Hangar_SelectedRobot( void ) {
 Hangar_Show
 =================
 */
-static void Hangar_Show( menutext_s *item, qboolean show ) {
+static void Hangar_Show( hangarButton_t *button, qboolean show ) {
 	if ( show ) {
-		item->generic.flags &= ~( QMF_HIDDEN | QMF_INACTIVE );
+		button->item.generic.flags &= ~( QMF_HIDDEN | QMF_INACTIVE );
 	} else {
-		item->generic.flags |= QMF_HIDDEN | QMF_INACTIVE;
+		button->item.generic.flags |= QMF_HIDDEN | QMF_INACTIVE;
 	}
+}
+
+
+/*
+=================
+Hangar_PlaceButton
+
+moves a button inside the panel (its row depends on the state of the robot)
+=================
+*/
+static void Hangar_PlaceButton( hangarButton_t *button, int y ) {
+	button->item.generic.y = y;
+	button->item.generic.top = y;
+	button->item.generic.bottom = y + button->item.height;
+}
+
+
+/*
+=================
+Hangar_SetButton
+=================
+*/
+static void Hangar_SetButton( hangarButton_t *button, const char *label, const char *detail, qboolean enabled ) {
+	Q_strncpyz( button->label, label, sizeof( button->label ) );
+	Q_strncpyz( button->detail, detail, sizeof( button->detail ) );
+	button->enabled = enabled;
+	Hangar_Show( button, qtrue );
 }
 
 
@@ -265,13 +313,24 @@ static void Hangar_UpdateButtons( void ) {
 	accountRobot_t	*robot = Hangar_SelectedRobot();
 	int				now = UI_AccountTime();
 
+	Hangar_SetButton( &hangarMenuInfo.autoRotate,
+		trap_Cvar_VariableValue( "ui_hangarAutoRotate" ) ? "AUTO ROTATE: ON" : "AUTO ROTATE: OFF", "", qtrue );
+
+	// rows under the characteristics: upgrades right after them; the shop and the
+	// finish button leave a line for the text above them (Hangar_DrawPanel)
+	Hangar_PlaceButton( &hangarMenuInfo.upgradeRobot, ROW_FIRST );
+	Hangar_PlaceButton( &hangarMenuInfo.upgradeWeapon, ROW_FIRST + BUTTON_H + 6 );
+	Hangar_PlaceButton( &hangarMenuInfo.finish, ROW_FIRST + 2 * LINE + 4 );
+	Hangar_PlaceButton( &hangarMenuInfo.shopPrev, ROW_FIRST + LINE + 6 );
+	Hangar_PlaceButton( &hangarMenuInfo.buy, ROW_FIRST + LINE + 6 );
+	Hangar_PlaceButton( &hangarMenuInfo.shopNext, ROW_FIRST + LINE + 6 );
+
 	if ( !robot ) {
 		const robotInfo_t	*info = &bg_robots[hangarMenuInfo.shopType];
-		Com_sprintf( hangarMenuInfo.buyLabel, sizeof( hangarMenuInfo.buyLabel ), "BUY  %s CR", Hangar_Number( info->price ) );
-		hangarMenuInfo.buy.color = uiAccount.currency >= info->price ? color_red : hangarDimColor;
-		Hangar_Show( &hangarMenuInfo.buy, qtrue );
-		Hangar_Show( &hangarMenuInfo.shopPrev, qtrue );
-		Hangar_Show( &hangarMenuInfo.shopNext, qtrue );
+		Hangar_SetButton( &hangarMenuInfo.buy, va( "BUY  %s CR", Hangar_Number( info->price ) ), "",
+			uiAccount.currency >= info->price );
+		Hangar_SetButton( &hangarMenuInfo.shopPrev, "<", "", qtrue );
+		Hangar_SetButton( &hangarMenuInfo.shopNext, ">", "", qtrue );
 		Hangar_Show( &hangarMenuInfo.upgradeRobot, qfalse );
 		Hangar_Show( &hangarMenuInfo.upgradeWeapon, qfalse );
 		Hangar_Show( &hangarMenuInfo.finish, qfalse );
@@ -282,10 +341,8 @@ static void Hangar_UpdateButtons( void ) {
 	Hangar_Show( &hangarMenuInfo.shopNext, qfalse );
 
 	if ( robot->upgrade != UPGRADE_NONE ) {
-		int		left = robot->upgradeEnd - now;
-		Com_sprintf( hangarMenuInfo.finishLabel, sizeof( hangarMenuInfo.finishLabel ), "FINISH NOW  %i CR", BG_SpeedUpCost( left ) );
-		hangarMenuInfo.finish.color = uiAccount.currency >= BG_SpeedUpCost( left ) ? color_red : hangarDimColor;
-		Hangar_Show( &hangarMenuInfo.finish, qtrue );
+		int		cost = BG_SpeedUpCost( robot->upgradeEnd - now );
+		Hangar_SetButton( &hangarMenuInfo.finish, "FINISH NOW", va( "%i CR", cost ), uiAccount.currency >= cost );
 		Hangar_Show( &hangarMenuInfo.upgradeRobot, qfalse );
 		Hangar_Show( &hangarMenuInfo.upgradeWeapon, qfalse );
 		return;
@@ -294,24 +351,40 @@ static void Hangar_UpdateButtons( void ) {
 
 	if ( robot->level < ROBOT_LEVELS ) {
 		int		cost = BG_UpgradeCost( qfalse, robot->level );
-		// the button carries the name only: cost and time are drawn in the small
-		// fixed font beside it (Hangar_DrawPanel), the proportional font does not fit
-		Q_strncpyz( hangarMenuInfo.upgradeRobotLabel, "UPGRADE ROBOT", sizeof( hangarMenuInfo.upgradeRobotLabel ) );
-		hangarMenuInfo.upgradeRobot.color = uiAccount.points >= cost ? color_red : hangarDimColor;
-		Hangar_Show( &hangarMenuInfo.upgradeRobot, qtrue );
+		Hangar_SetButton( &hangarMenuInfo.upgradeRobot, "UPGRADE ROBOT",
+			va( "%i PTS  %s", cost, Hangar_Duration( BG_UpgradeTime( qfalse, robot->level ) ) ), uiAccount.points >= cost );
 	} else {
 		Hangar_Show( &hangarMenuInfo.upgradeRobot, qfalse );
 	}
 	if ( robot->weaponLevel < WEAPON_LEVELS ) {
 		int		cost = BG_UpgradeCost( qtrue, robot->weaponLevel );
-		// the button carries the name only: cost and time are drawn in the small
-		// fixed font beside it (Hangar_DrawPanel), the proportional font does not fit
-		Q_strncpyz( hangarMenuInfo.upgradeWeaponLabel, "UPGRADE WEAPON", sizeof( hangarMenuInfo.upgradeWeaponLabel ) );
-		hangarMenuInfo.upgradeWeapon.color = uiAccount.points >= cost ? color_red : hangarDimColor;
-		Hangar_Show( &hangarMenuInfo.upgradeWeapon, qtrue );
+		Hangar_SetButton( &hangarMenuInfo.upgradeWeapon, "UPGRADE WEAPON",
+			va( "%i PTS  %s", cost, Hangar_Duration( BG_UpgradeTime( qtrue, robot->weaponLevel ) ) ), uiAccount.points >= cost );
 	} else {
 		Hangar_Show( &hangarMenuInfo.upgradeWeapon, qfalse );
 	}
+}
+
+
+/*
+=================
+Hangar_Text
+=================
+*/
+static void Hangar_Text( int x, int y, const char *text, int align, float *color ) {
+	UI_DrawString( x, y, text, align | UI_TINYFONT, color );
+}
+
+
+/*
+=================
+Hangar_Rule
+
+thin separator line across the panel
+=================
+*/
+static void Hangar_Rule( int y ) {
+	UI_FillRect( PANEL_X + PANEL_PAD, y, PANEL_W - 2 * PANEL_PAD, 1, hangarRuleColor );
 }
 
 
@@ -323,10 +396,10 @@ a characteristic: name on the left, value and the gain of the next level on the 
 =================
 */
 static void Hangar_DrawLine( int y, const char *name, const char *value, const char *next ) {
-	UI_DrawString( PANEL_X + 8, y, name, UI_LEFT | UI_SMALLFONT, hangarDimColor );
-	UI_DrawString( PANEL_X + 150, y, value, UI_LEFT | UI_SMALLFONT, color_white );
+	Hangar_Text( PANEL_X + PANEL_PAD, y, name, UI_LEFT, hangarDimColor );
+	Hangar_Text( PANEL_X + 168, y, value, UI_RIGHT, hangarTextColor );
 	if ( next && next[0] ) {
-		UI_DrawString( PANEL_X + PANEL_W - 8, y, next, UI_RIGHT | UI_SMALLFONT, hangarGreenColor );
+		Hangar_Text( PANEL_X + PANEL_W - PANEL_PAD, y, next, UI_RIGHT, hangarGreenColor );
 	}
 }
 
@@ -356,12 +429,17 @@ static void Hangar_DrawPanel( void ) {
 	weapon = &bg_robotWeapons[info->weapon];
 	showNext = robot && robot->upgrade == UPGRADE_NONE;
 
-	UI_FillRect( PANEL_X, PANEL_Y - 6, PANEL_W, 280, hangarPanelColor );
-	y = PANEL_Y;
-	UI_DrawString( PANEL_X + 8, y, va( "%s   LEVEL %i", info->title, level ), UI_LEFT | UI_BIGFONT, color_orange );
-	y += 30;
-	UI_DrawString( PANEL_X + 8, y, info->description, UI_LEFT | UI_SMALLFONT, hangarDimColor );
-	y += LINE + 6;
+	UI_FillRect( PANEL_X, PANEL_Y, PANEL_W, PANEL_H, hangarPanelColor );
+	UI_FillRect( PANEL_X, PANEL_Y, PANEL_W, 2, hangarAccentColor );
+
+	y = PANEL_Y + 8;
+	UI_DrawString( PANEL_X + PANEL_PAD, y, info->title, UI_LEFT | UI_SMALLFONT, hangarAccentColor );
+	Hangar_Text( PANEL_X + PANEL_W - PANEL_PAD, y + 3, robot ? va( "LEVEL %i / %i", level, ROBOT_LEVELS ) : "IN SHOP",
+		UI_RIGHT, hangarAccentColor );
+	y += 18;
+	Hangar_Text( PANEL_X + PANEL_PAD, y, info->description, UI_LEFT, hangarDimColor );
+	y += LINE + 4;
+	Hangar_Rule( y - 3 );
 
 	next = level < ROBOT_LEVELS ? level + 1 : level;
 	value = BG_RobotStructure( type, level );
@@ -379,10 +457,12 @@ static void Hangar_DrawPanel( void ) {
 	value = BG_RobotSpeed( type, level );
 	Hangar_DrawLine( y, "SPEED", va( "%i km/h", value ),
 		showNext && next > level && BG_RobotSpeed( type, next ) > value ? va( "+%i", BG_RobotSpeed( type, next ) - value ) : "" );
-	y += LINE + 8;
+	y += LINE + 6;
 
-	UI_DrawString( PANEL_X + 8, y, va( "%s   LEVEL %i", weapon->title, weaponLevel ), UI_LEFT | UI_SMALLFONT, color_orange );
-	y += LINE;
+	Hangar_Rule( y - 3 );
+	Hangar_Text( PANEL_X + PANEL_PAD, y, weapon->title, UI_LEFT, hangarAccentColor );
+	Hangar_Text( PANEL_X + PANEL_W - PANEL_PAD, y, va( "LEVEL %i / %i", weaponLevel, WEAPON_LEVELS ), UI_RIGHT, hangarAccentColor );
+	y += LINE + 2;
 	next = weaponLevel < WEAPON_LEVELS ? weaponLevel + 1 : weaponLevel;
 	value = BG_WeaponDamage( info->weapon, weaponLevel );
 	Hangar_DrawLine( y, "DAMAGE", Hangar_Number( value ),
@@ -394,26 +474,50 @@ static void Hangar_DrawPanel( void ) {
 			( 10000 / BG_WeaponInterval( info->weapon, next ) ) % 10 ) : "" );
 	y += LINE;
 	Hangar_DrawLine( y, "RANGE", va( "%i", weapon->range ), "" );
-	y += LINE + 8;
+	y += LINE + 6;
+	Hangar_Rule( y - 3 );
 
+	// the rows under the characteristics start at ROW_FIRST (Hangar_UpdateButtons)
+	y = ROW_FIRST + 2;
 	if ( robot && robot->upgrade != UPGRADE_NONE ) {
-		UI_DrawString( PANEL_X + 8, y, va( "UPGRADING %s: %s LEFT", robot->upgrade == UPGRADE_ROBOT ? "ROBOT" : "WEAPON",
-			Hangar_Duration( robot->upgradeEnd - UI_AccountTime() ) ), UI_LEFT | UI_SMALLFONT, color_yellow );
-		UI_DrawString( PANEL_X + 8, y + LINE, "does not go into battles until done", UI_LEFT | UI_SMALLFONT, hangarDimColor );
+		Hangar_Text( PANEL_X + PANEL_PAD, y, va( "UPGRADING %s", robot->upgrade == UPGRADE_ROBOT ? "ROBOT" : "WEAPON" ),
+			UI_LEFT, color_yellow );
+		Hangar_Text( PANEL_X + PANEL_W - PANEL_PAD, y, va( "%s left", Hangar_Duration( robot->upgradeEnd - UI_AccountTime() ) ),
+			UI_RIGHT, color_yellow );
+		Hangar_Text( PANEL_X + PANEL_PAD, y + LINE, "stays out of battles until done", UI_LEFT, hangarDimColor );
 	} else if ( !robot ) {
-		UI_DrawString( PANEL_X + 8, y, "EMPTY BAY: buy a robot", UI_LEFT | UI_SMALLFONT, color_yellow );
+		Hangar_Text( PANEL_X + PANEL_PAD, y, "Empty bay: choose a robot to buy", UI_LEFT, hangarDimColor );
+	}
+	if ( hangarMenuInfo.message[0] ) {
+		Hangar_Text( PANEL_X + PANEL_W / 2, PANEL_Y + PANEL_H - 14, hangarMenuInfo.message, UI_CENTER, color_red );
+	}
+}
+
+
+/*
+=================
+Hangar_DrawButton
+=================
+*/
+static void Hangar_DrawButton( void *self ) {
+	hangarButton_t	*button = (hangarButton_t *)self;
+	menucommon_s	*item = &button->item.generic;
+	qboolean		focus = ( item->parent->cursor == item->menuPosition );
+	float			*color;
+	int				textY = item->y + ( button->item.height - TINYFONT_HEIGHT ) / 2;
+
+	UI_FillRect( item->x, item->y, button->item.width, button->item.height, focus ? hangarButtonFocusColor : hangarButtonColor );
+	UI_DrawRect( item->x, item->y, button->item.width, button->item.height, focus ? hangarAccentColor : hangarBorderColor );
+	if ( !button->enabled ) {
+		color = hangarDimColor;
 	} else {
-		// cost and duration of the upgrades, on the lines of their buttons
-		if ( robot->level < ROBOT_LEVELS ) {
-			int		cost = BG_UpgradeCost( qfalse, robot->level );
-			UI_DrawString( PANEL_X + PANEL_W - 8, PANEL_Y + 218, va( "%i PTS  %s", cost, Hangar_Duration( BG_UpgradeTime( qfalse, robot->level ) ) ),
-				UI_RIGHT | UI_SMALLFONT, uiAccount.points >= cost ? color_white : hangarDimColor );
-		}
-		if ( robot->weaponLevel < WEAPON_LEVELS ) {
-			int		cost = BG_UpgradeCost( qtrue, robot->weaponLevel );
-			UI_DrawString( PANEL_X + PANEL_W - 8, PANEL_Y + 238, va( "%i PTS  %s", cost, Hangar_Duration( BG_UpgradeTime( qtrue, robot->weaponLevel ) ) ),
-				UI_RIGHT | UI_SMALLFONT, uiAccount.points >= cost ? color_white : hangarDimColor );
-		}
+		color = focus ? colorWhite : hangarAccentColor;
+	}
+	if ( button->detail[0] ) {
+		Hangar_Text( item->x + 6, textY, button->label, UI_LEFT, color );
+		Hangar_Text( item->x + button->item.width - 6, textY, button->detail, UI_RIGHT, button->enabled ? hangarTextColor : hangarDimColor );
+	} else {
+		Hangar_Text( item->x + button->item.width / 2, textY, button->label, UI_CENTER, color );
 	}
 }
 
@@ -432,7 +536,7 @@ static void Hangar_DrawPreview( void *self ) {
 	uiPlayerOrbitPitch = hangarMenuInfo.previewPitch;
 	uiPlayerOrbitRoll = hangarMenuInfo.previewRoll;
 	uiPlayerOrbitZoom = hangarMenuInfo.previewZoom;
-	UI_DrawPlayer( PREVIEW_X, PREVIEW_Y, PREVIEW_W, PREVIEW_H, player, uis.realtime / 2 );
+	UI_DrawPlayer( PREVIEW_X, PREVIEW_Y, PREVIEW_W, PREVIEW_H - 24, player, uis.realtime / 2 );
 	uiPlayerOrbit = qfalse;
 }
 
@@ -453,14 +557,14 @@ static void Hangar_DrawBay( void *self ) {
 	index = bay->generic.id - ID_BAY0;
 	focus = ( bay->generic.parent->cursor == bay->generic.menuPosition );
 
-	UI_FillRect( bay->generic.x, bay->generic.y, bay->width, bay->height, color_black );
+	UI_FillRect( bay->generic.x, bay->generic.y, bay->width, bay->height, hangarPanelColor );
 	if ( index < uiAccount.numRobots ) {
 		accountRobot_t	*robot = &uiAccount.robots[index];
 		Hangar_FaceYaw( &hangarMenuInfo.players[index], hangarMenuInfo.bayYaw + index * 25 );
-		UI_DrawPlayer( bay->generic.x + 4, bay->generic.y + 2, bay->width - 8, bay->height - 18, &hangarMenuInfo.players[index], uis.realtime / 2 );
-		Com_sprintf( label, sizeof( label ), "%s %i", bg_robots[robot->type].title, robot->level );
+		UI_DrawPlayer( bay->generic.x + 4, bay->generic.y + 2, bay->width - 8, bay->height - 16, &hangarMenuInfo.players[index], uis.realtime / 2 );
+		Com_sprintf( label, sizeof( label ), "%s  LV %i", bg_robots[robot->type].title, robot->level );
 		if ( robot->upgrade != UPGRADE_NONE ) {
-			UI_DrawString( bay->generic.x + bay->width / 2, bay->generic.y + 4, "UPGRADING", UI_CENTER | UI_SMALLFONT, color_yellow );
+			Hangar_Text( bay->generic.x + bay->width / 2, bay->generic.y + 4, "UPGRADING", UI_CENTER, color_yellow );
 		}
 	} else {
 		Q_strncpyz( label, "+ BUY", sizeof( label ) );
@@ -469,8 +573,8 @@ static void Hangar_DrawBay( void *self ) {
 	UI_DrawHandlePic( bay->generic.x, bay->generic.y, bay->width, bay->height,
 		index == hangarMenuInfo.selected ? hangarMenuInfo.baySelectedShader : hangarMenuInfo.bayShader );
 
-	color = ( index == hangarMenuInfo.selected ) ? text_color_normal : ( focus ? text_color_highlight : hangarDimColor );
-	UI_DrawString( bay->generic.x + bay->width / 2, bay->generic.y + bay->height - 16, label, UI_CENTER | UI_SMALLFONT, color );
+	color = ( index == hangarMenuInfo.selected ) ? hangarAccentColor : ( focus ? colorWhite : hangarDimColor );
+	Hangar_Text( bay->generic.x + bay->width / 2, bay->generic.y + bay->height - 15, label, UI_CENTER, color );
 }
 
 
@@ -513,20 +617,27 @@ static void Hangar_Draw( void ) {
 	if ( trap_Cvar_VariableValue( "ui_hangarAutoRotate" ) ) {
 		hangarMenuInfo.bayYaw = AngleMod( hangarMenuInfo.bayYaw + TURN_SPEED * 0.5f * seconds );
 	}
-	hangarMenuInfo.autoRotate.string = trap_Cvar_VariableValue( "ui_hangarAutoRotate" ) ? "AUTO ROTATE: ON" : "AUTO ROTATE: OFF";
 
 	UI_DrawHandlePic( 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, hangarMenuInfo.backgroundShader );
+
+	// top bar: pilot, money
+	UI_FillRect( 0, 0, SCREEN_WIDTH, TOPBAR_H, hangarBarColor );
+	UI_FillRect( 0, TOPBAR_H, SCREEN_WIDTH, 1, hangarRuleColor );
+	Hangar_Text( 10, 5, uiAccount.nick, UI_LEFT, hangarTextColor );
+	Hangar_Text( 10 + ( strlen( uiAccount.nick ) + 2 ) * TINYFONT_WIDTH, 5, va( "PILOT LEVEL %i", uiAccount.level ), UI_LEFT, hangarDimColor );
+	Hangar_Text( 630, 5, va( "%s PTS", Hangar_Number( uiAccount.points ) ), UI_RIGHT, hangarGreenColor );
+	Hangar_Text( 630 - 14 * TINYFONT_WIDTH, 5, va( "%s CR", Hangar_Number( uiAccount.currency ) ), UI_RIGHT, hangarMoneyColor );
+
 	Hangar_DrawPanel();
-	UI_DrawString( 8, 8, va( "%s  LV %i", uiAccount.nick, uiAccount.level ), UI_LEFT | UI_SMALLFONT, color_white );
-	UI_DrawString( 632, 8, va( "%s CR    %s PTS", Hangar_Number( uiAccount.currency ), Hangar_Number( uiAccount.points ) ),
-		UI_RIGHT | UI_SMALLFONT, color_yellow );
+
+	// bottom bar
+	UI_FillRect( 0, BOTTOM_Y, SCREEN_WIDTH, SCREEN_HEIGHT - BOTTOM_Y, hangarBarColor );
+	UI_FillRect( 0, BOTTOM_Y, SCREEN_WIDTH, 1, hangarRuleColor );
+	Hangar_Text( 630, BOTTOM_Y + 10, va( "%i of %i robots ready for battle", UI_AccountAvailableRobots(), uiAccount.numRobots ),
+		UI_RIGHT, hangarDimColor );
+	Hangar_Text( 630, BOTTOM_Y + 26, "LMB drag: turn   RMB drag: roll   wheel: zoom", UI_RIGHT, hangarDimColor );
+
 	Menu_Draw( &hangarMenuInfo.menu );
-	if ( hangarMenuInfo.message[0] ) {
-		UI_DrawString( 320, 422, hangarMenuInfo.message, UI_CENTER | UI_SMALLFONT, color_red );
-	}
-	UI_DrawString( 400, 446, "drag: left - turn, right - roll   wheel: zoom", UI_CENTER | UI_SMALLFONT, hangarDimColor );
-	UI_DrawString( 400, 462, va( "%i of %i robots ready for battle", UI_AccountAvailableRobots(), uiAccount.numRobots ),
-		UI_CENTER | UI_SMALLFONT, hangarDimColor );
 }
 
 
@@ -540,7 +651,7 @@ static sfxHandle_t Hangar_Key( int key ) {
 	case K_MOUSE1:
 	case K_MOUSE2:
 		if ( uis.cursorx >= PREVIEW_X && uis.cursorx <= PREVIEW_X + PREVIEW_W &&
-			uis.cursory >= PREVIEW_Y + 20 && uis.cursory <= PREVIEW_Y + PREVIEW_H - 50 ) {
+			uis.cursory >= PREVIEW_Y && uis.cursory <= PREVIEW_Y + PREVIEW_H - 24 ) {
 			if ( key == K_MOUSE1 ) {
 				hangarMenuInfo.dragging = qtrue;
 			} else {
@@ -753,8 +864,6 @@ UI_Hangar_Cache
 */
 void UI_Hangar_Cache( void ) {
 	trap_R_RegisterShaderNoMip( ART_BACKGROUND );
-	trap_R_RegisterShaderNoMip( ART_BACK0 );
-	trap_R_RegisterShaderNoMip( ART_BACK1 );
 	trap_R_RegisterShaderNoMip( ART_BAY );
 	trap_R_RegisterShaderNoMip( ART_BAY_SELECTED );
 }
@@ -762,19 +871,26 @@ void UI_Hangar_Cache( void ) {
 
 /*
 =================
-Hangar_Button
+Hangar_InitButton
 =================
 */
-static void Hangar_Button( menutext_s *item, int id, int x, int y, int style, const char *text ) {
-	item->generic.type		= MTYPE_PTEXT;
-	item->generic.flags		= ( style & UI_RIGHT ? QMF_RIGHT_JUSTIFY : ( style & UI_CENTER ? QMF_CENTER_JUSTIFY : QMF_LEFT_JUSTIFY ) ) | QMF_PULSEIFFOCUS;
+static void Hangar_InitButton( hangarButton_t *button, int id, int x, int y, int width, int height ) {
+	menubitmap_s	*item = &button->item;
+
+	item->generic.type		= MTYPE_BITMAP;
+	item->generic.flags		= QMF_NODEFAULTINIT;
 	item->generic.id		= id;
 	item->generic.callback	= Hangar_Event;
+	item->generic.ownerdraw	= Hangar_DrawButton;
 	item->generic.x			= x;
 	item->generic.y			= y;
-	item->string			= (char *)text;
-	item->style				= style | UI_SMALLFONT;
-	item->color				= color_red;
+	item->width				= width;
+	item->height			= height;
+	item->generic.left		= x;
+	item->generic.top		= y;
+	item->generic.right		= x + width;
+	item->generic.bottom	= y + height;
+	button->enabled			= qtrue;
 	Menu_AddItem( &hangarMenuInfo.menu, item );
 }
 
@@ -785,7 +901,7 @@ Hangar_Init
 =================
 */
 static void Hangar_Init( void ) {
-	int		index;
+	int		index, buttonY, buttonX, buttonW;
 
 	memset( &hangarMenuInfo, 0, sizeof( hangarMenuInfo ) );
 	hangarMenuInfo.menu.fullscreen = qtrue;
@@ -807,14 +923,6 @@ static void Hangar_Init( void ) {
 	Hangar_SyncModels();
 	hangarMenuInfo.previewYaw = 150;
 	hangarMenuInfo.previewZoom = 1;
-
-	hangarMenuInfo.banner.generic.type	= MTYPE_BTEXT;
-	hangarMenuInfo.banner.generic.x		= 320;
-	hangarMenuInfo.banner.generic.y		= 10;
-	hangarMenuInfo.banner.string		= "HANGAR";
-	hangarMenuInfo.banner.color			= color_white;
-	hangarMenuInfo.banner.style			= UI_CENTER;
-	Menu_AddItem( &hangarMenuInfo.menu, &hangarMenuInfo.banner );
 
 	hangarMenuInfo.preview.generic.type		= MTYPE_BITMAP;
 	hangarMenuInfo.preview.generic.flags	= QMF_INACTIVE;
@@ -842,27 +950,24 @@ static void Hangar_Init( void ) {
 		Menu_AddItem( &hangarMenuInfo.menu, &hangarMenuInfo.bays[index] );
 	}
 
-	// actions under the characteristics
-	Hangar_Button( &hangarMenuInfo.upgradeRobot, ID_UPGRADE_ROBOT, PANEL_X + 8, PANEL_Y + 214, UI_LEFT, hangarMenuInfo.upgradeRobotLabel );
-	Hangar_Button( &hangarMenuInfo.upgradeWeapon, ID_UPGRADE_WEAPON, PANEL_X + 8, PANEL_Y + 234, UI_LEFT, hangarMenuInfo.upgradeWeaponLabel );
-	Hangar_Button( &hangarMenuInfo.finish, ID_FINISH, PANEL_X + 8, PANEL_Y + 254, UI_LEFT, hangarMenuInfo.finishLabel );
-	Hangar_Button( &hangarMenuInfo.buy, ID_BUY, PANEL_X + PANEL_W / 2, PANEL_Y + 254, UI_CENTER, hangarMenuInfo.buyLabel );
-	Hangar_Button( &hangarMenuInfo.shopPrev, ID_SHOP_PREV, PANEL_X + 8, PANEL_Y + 254, UI_LEFT, "<" );
-	Hangar_Button( &hangarMenuInfo.shopNext, ID_SHOP_NEXT, PANEL_X + PANEL_W - 8, PANEL_Y + 254, UI_RIGHT, ">" );
-	Hangar_Button( &hangarMenuInfo.autoRotate, ID_AUTOROTATE, PREVIEW_X + 4, PREVIEW_Y + PREVIEW_H - 20, UI_LEFT, "AUTO ROTATE: ON" );
-	Hangar_Button( &hangarMenuInfo.resetView, ID_RESETVIEW, PREVIEW_X + PREVIEW_W - 4, PREVIEW_Y + PREVIEW_H - 20, UI_RIGHT, "RESET VIEW" );
+	// actions at the bottom of the characteristics panel
+	buttonX = PANEL_X + PANEL_PAD;
+	buttonW = PANEL_W - 2 * PANEL_PAD;
+	buttonY = ROW_FIRST;		// rows are set again by Hangar_UpdateButtons
+	Hangar_InitButton( &hangarMenuInfo.upgradeRobot, ID_UPGRADE_ROBOT, buttonX, buttonY, buttonW, BUTTON_H );
+	Hangar_InitButton( &hangarMenuInfo.upgradeWeapon, ID_UPGRADE_WEAPON, buttonX, buttonY + BUTTON_H + 6, buttonW, BUTTON_H );
+	Hangar_InitButton( &hangarMenuInfo.finish, ID_FINISH, buttonX, buttonY + BUTTON_H + 6, buttonW, BUTTON_H );
+	Hangar_InitButton( &hangarMenuInfo.shopPrev, ID_SHOP_PREV, buttonX, buttonY + BUTTON_H + 6, 24, BUTTON_H );
+	Hangar_InitButton( &hangarMenuInfo.buy, ID_BUY, buttonX + 30, buttonY + BUTTON_H + 6, buttonW - 60, BUTTON_H );
+	Hangar_InitButton( &hangarMenuInfo.shopNext, ID_SHOP_NEXT, buttonX + buttonW - 24, buttonY + BUTTON_H + 6, 24, BUTTON_H );
 
-	hangarMenuInfo.back.generic.type		= MTYPE_BITMAP;
-	hangarMenuInfo.back.generic.name		= ART_BACK0;
-	hangarMenuInfo.back.generic.flags		= QMF_LEFT_JUSTIFY | QMF_PULSEIFFOCUS;
-	hangarMenuInfo.back.generic.id			= ID_BACK;
-	hangarMenuInfo.back.generic.callback	= Hangar_Event;
-	hangarMenuInfo.back.generic.x			= 0;
-	hangarMenuInfo.back.generic.y			= 480 - 64;
-	hangarMenuInfo.back.width				= 128;
-	hangarMenuInfo.back.height				= 64;
-	hangarMenuInfo.back.focuspic			= ART_BACK1;
-	Menu_AddItem( &hangarMenuInfo.menu, &hangarMenuInfo.back );
+	// preview controls under the robot
+	Hangar_InitButton( &hangarMenuInfo.autoRotate, ID_AUTOROTATE, PREVIEW_X + 8, PREVIEW_Y + PREVIEW_H - 20, 116, 16 );
+	Hangar_InitButton( &hangarMenuInfo.resetView, ID_RESETVIEW, PREVIEW_X + 130, PREVIEW_Y + PREVIEW_H - 20, 80, 16 );
+	Hangar_SetButton( &hangarMenuInfo.resetView, "RESET VIEW", "", qtrue );
+
+	Hangar_InitButton( &hangarMenuInfo.back, ID_BACK, 10, BOTTOM_Y + 12, 96, 24 );
+	Hangar_SetButton( &hangarMenuInfo.back, "BACK", "", qtrue );
 	Hangar_UpdateButtons();
 }
 

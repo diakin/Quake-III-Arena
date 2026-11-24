@@ -11,11 +11,11 @@ This file is part of WALKER, based on the Quake III Arena source code
 #include "bg_robots.h"
 
 const robotInfo_t bg_robots[ROBOT_COUNT] = {
-	{ "k7", "K7", "Medium walker, heavy machine gun", "walker",
+	{ "k7", "K7", "Medium walker, autocannon", "walker",
 		62000, 15, 8000, 38, RWEAPON_AUTOCANNON, 3000 },
-	{ "strizh", "STRIZH", "Light scout, strong shield, two fast guns", "strizh",
+	{ "strizh", "STRIZH", "Light scout, strong shield", "strizh",
 		42000, 5, 18000, 56, RWEAPON_RAPIDGUNS, 6000 },
-	{ "molot", "MOLOT", "Heavy assault walker, thick armor, cannon", "molot",
+	{ "molot", "MOLOT", "Heavy assault, thick armor", "molot",
 		98000, 30, 0, 28, RWEAPON_CANNON, 9000 },
 };
 

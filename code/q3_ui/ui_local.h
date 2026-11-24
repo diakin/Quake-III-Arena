@@ -718,6 +718,11 @@ void UI_SelectBotsMenu( void );
 #define	UPGRADE_NONE		0
 #define	UPGRADE_ROBOT		1
 #define	UPGRADE_WEAPON		2
+// WALKER: 6x12 characters for dense panels (UI_DrawString)
+#define UI_TINYFONT		0x00000080
+#define TINYFONT_WIDTH	6
+#define TINYFONT_HEIGHT	12
+
 #define	MAX_ACCOUNTS		12
 
 typedef struct {

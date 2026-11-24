@@ -716,7 +716,12 @@ void UI_DrawString( int x, int y, const char* str, int style, vec4_t color )
 	if ((style & UI_BLINK) && ((uis.realtime/BLINK_DIVISOR) & 1))
 		return;
 
-	if (style & UI_SMALLFONT)
+	if (style & UI_TINYFONT)
+	{
+		charw =	TINYFONT_WIDTH;		// WALKER
+		charh =	TINYFONT_HEIGHT;
+	}
+	else if (style & UI_SMALLFONT)
 	{
 		charw =	SMALLCHAR_WIDTH;
 		charh =	SMALLCHAR_HEIGHT;
