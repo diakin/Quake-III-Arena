@@ -648,6 +648,7 @@ int				trap_FS_FOpenFile( const char *qpath, fileHandle_t *f, fsMode_t mode );
 void			trap_FS_Read( void *buffer, int len, fileHandle_t f );
 void			trap_FS_Write( const void *buffer, int len, fileHandle_t f );
 void			trap_FS_FCloseFile( fileHandle_t f );
+int				trap_RealTime( qtime_t *qtime );		// WALKER: seconds since 1970
 int				trap_FS_GetFileList(  const char *path, const char *extension, char *listbuf, int bufsize );
 int				trap_FS_Seek( fileHandle_t f, long offset, int origin ); // fsOrigin_t
 qhandle_t		trap_R_RegisterModel( const char *name );
@@ -713,6 +714,43 @@ void UI_SelectBots_Cache( void );
 void UI_SelectBotsMenu( void );
 
 //
+// ui_account.c (WALKER): pilot accounts
+#define	UPGRADE_NONE		0
+#define	UPGRADE_ROBOT		1
+#define	UPGRADE_WEAPON		2
+#define	MAX_ACCOUNTS		12
+
+typedef struct {
+	int			type;			// robotType_t
+	int			level;
+	int			weaponLevel;
+	int			upgrade;		// UPGRADE_*
+	int			upgradeEnd;		// real time (seconds since 1970) when the upgrade is done
+} accountRobot_t;
+
+typedef struct {
+	qboolean		loaded;
+	char			nick[32];
+	int				level;
+	int				xp;
+	int				currency;
+	int				points;			// development points
+	int				numRobots;
+	accountRobot_t	robots[ROBOT_HANGAR_SIZE];
+	char			lastReward[32];	// id of the last battle whose reward was taken
+	char			lastBattle[128];// what the last battle gave, for the main menu
+} account_t;
+
+extern account_t	uiAccount;
+
+void		UI_AccountMenu( void );
+qboolean	UI_AccountLoad( const char *nick );
+void		UI_AccountSave( void );
+void		UI_AccountUpdate( void );
+int			UI_AccountTime( void );
+int			UI_AccountAvailableRobots( void );
+void		UI_AccountEnsure( void );
+
 // ui_hangar.c (WALKER)
 //
 void UI_Hangar_Cache( void );

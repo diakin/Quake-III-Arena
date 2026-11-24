@@ -500,6 +500,7 @@ void respawn( gentity_t *ent ) {
 	gentity_t	*tent;
 
 	CopyToBodyQue (ent);
+	ClientUserinfoChanged( ent - g_entities );	// WALKER: the model of the next robot
 	ClientSpawn(ent);
 
 	// add a teleportation effect
@@ -788,6 +789,15 @@ void ClientUserinfoChanged( int clientNum ) {
 	} else {
 		Q_strncpyz( model, Info_ValueForKey (userinfo, "model"), sizeof( model ) );
 		Q_strncpyz( headModel, Info_ValueForKey (userinfo, "headmodel"), sizeof( headModel ) );
+	}
+
+	// WALKER: robots of the account of a human player; the model is that of the current robot
+	if ( !( ent->r.svFlags & SVF_BOT ) ) {
+		G_RobotParse( client, Info_ValueForKey( userinfo, "walker_robots" ) );
+	}
+	if ( client->pers.numRobots > 0 ) {
+		G_RobotModel( client, model, sizeof( model ) );
+		G_RobotModel( client, headModel, sizeof( headModel ) );
 	}
 
 	// bots set their team a few frames later
@@ -1194,6 +1204,12 @@ void ClientSpawn(gentity_t *ent) {
 	// health will count down towards max_health
 	ent->health = client->ps.stats[STAT_HEALTH] = client->ps.stats[STAT_MAX_HEALTH] + 25;
 
+	// WALKER: structure, shield, weapon of the current robot (g_robots.c)
+	if ( client->sess.sessionTeam != TEAM_SPECTATOR ) {
+		G_RobotSpawn( ent );
+		client->pers.playedTeam = client->sess.sessionTeam;
+	}
+
 	G_SetOrigin( ent, spawn_origin );
 	VectorCopy( spawn_origin, client->ps.origin );
 
@@ -1209,8 +1225,8 @@ void ClientSpawn(gentity_t *ent) {
 		G_KillBox( ent );
 		trap_LinkEntity (ent);
 
-		// force the base weapon up
-		client->ps.weapon = WP_MACHINEGUN;
+		// force the base weapon up (WALKER: the weapon of the robot)
+		client->ps.weapon = ( client->ps.stats[STAT_WEAPONS] & ( 1 << WP_ROCKET_LAUNCHER ) ) ? WP_ROCKET_LAUNCHER : WP_MACHINEGUN;
 		client->ps.weaponstate = WEAPON_READY;
 
 	}

@@ -46,6 +46,7 @@ INGAME MENU
 #define ID_QUIT					17
 #define ID_RESUME				18
 #define ID_TEAMORDERS			19
+#define ID_ENDBATTLE			20	// WALKER: test: end the battle now and take the reward
 
 
 typedef struct {
@@ -62,6 +63,7 @@ typedef struct {
 	menutext_s		teamorders;
 	menutext_s		quit;
 	menutext_s		resume;
+	menutext_s		endBattle;
 } ingamemenu_t;
 
 static ingamemenu_t	s_ingame;
@@ -141,6 +143,11 @@ void InGame_Event( void *ptr, int notification ) {
 
 	case ID_TEAMORDERS:
 		UI_TeamOrdersMenu();
+		break;
+
+	case ID_ENDBATTLE:
+		trap_Cmd_ExecuteText( EXEC_APPEND, "cmd endbattle\n" );
+		UI_PopMenu();
 		break;
 
 	case ID_RESUME:
@@ -307,6 +314,20 @@ void InGame_MenuInit( void ) {
 	s_ingame.quit.color					= color_red;
 	s_ingame.quit.style					= UI_CENTER|UI_SMALLFONT;
 
+	y += INGAME_MENU_VERTICAL_SPACING;
+	s_ingame.endBattle.generic.type		= MTYPE_PTEXT;
+	s_ingame.endBattle.generic.flags	= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
+	s_ingame.endBattle.generic.x		= 320;
+	s_ingame.endBattle.generic.y		= y;
+	s_ingame.endBattle.generic.id		= ID_ENDBATTLE;
+	s_ingame.endBattle.generic.callback	= InGame_Event;
+	s_ingame.endBattle.string			= "END BATTLE (TEST)";
+	s_ingame.endBattle.color			= color_yellow;
+	s_ingame.endBattle.style			= UI_CENTER|UI_SMALLFONT;
+	if( !trap_Cvar_VariableValue( "sv_running" ) ) {
+		s_ingame.endBattle.generic.flags |= QMF_GRAYED;
+	}
+
 	Menu_AddItem( &s_ingame.menu, &s_ingame.frame );
 	Menu_AddItem( &s_ingame.menu, &s_ingame.team );
 	Menu_AddItem( &s_ingame.menu, &s_ingame.addbots );
@@ -317,6 +338,7 @@ void InGame_MenuInit( void ) {
 	Menu_AddItem( &s_ingame.menu, &s_ingame.resume );
 	Menu_AddItem( &s_ingame.menu, &s_ingame.leave );
 	Menu_AddItem( &s_ingame.menu, &s_ingame.quit );
+	Menu_AddItem( &s_ingame.menu, &s_ingame.endBattle );
 }
 
 

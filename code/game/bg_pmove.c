@@ -1711,6 +1711,10 @@ static void PM_Weapon( void ) {
 		addTime /= 1.3;
 	}
 
+	// WALKER: the interval of the robot weapon (bg_robots.c, set at spawn by the game)
+	if ( pm->ps->stats[STAT_FIRE_INTERVAL] > 0 ) {
+		addTime = pm->ps->stats[STAT_FIRE_INTERVAL];
+	}
 	pm->ps->weaponTime += addTime;
 }
 

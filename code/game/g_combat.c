@@ -514,6 +514,7 @@ void player_die( gentity_t *self, gentity_t *inflictor, gentity_t *attacker, int
 			AddScore( attacker, self->r.currentOrigin, -1 );
 		} else {
 			AddScore( attacker, self->r.currentOrigin, 1 );
+			attacker->client->pers.kills++;		// WALKER: for the reward
 
 			if( meansOfDeath == MOD_GAUNTLET ) {
 				
@@ -1005,6 +1006,18 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 	// save some from armor
 	asave = CheckArmor (targ, take, dflags);
 	take -= asave;
+
+	// WALKER: the shield of the robot takes the hit first, its armor a share of the rest;
+	// the damage done counts for the reward of the attacker
+	if ( client && !( dflags & DAMAGE_NO_PROTECTION ) ) {
+		int		shieldBefore = client->ps.stats[STAT_SHIELD];
+
+		take = G_RobotAbsorb( targ, take );
+		if ( attacker && attacker->client && attacker != targ && !OnSameTeam( targ, attacker ) ) {
+			int		dealt = shieldBefore - client->ps.stats[STAT_SHIELD] + ( take < targ->health ? take : targ->health );
+			attacker->client->pers.damageDealt += dealt * ROBOT_HEALTH_SCALE;
+		}
+	}
 
 	if ( g_debugDamage.integer ) {
 		G_Printf( "%i: client:%i health:%i damage:%i armor:%i\n", level.time, targ->s.number,

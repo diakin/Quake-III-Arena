@@ -740,6 +740,15 @@ static void ServerOptions_Start( void ) {
 	int		n;
 	char	buf[64];
 
+	// WALKER: robots being upgraded do not go into battles
+	if ( uiAccount.loaded ) {
+		UI_AccountUpdate();
+		if ( !UI_AccountAvailableRobots() ) {
+			static const char	*lines[] = { "All your robots are being upgraded.", "Finish an upgrade in the hangar", "or buy a robot.", NULL };
+			UI_Message( lines );
+			return;
+		}
+	}
 
 	timelimit	 = atoi( s_serveroptions.timelimit.field.buffer );
 	fraglimit	 = atoi( s_serveroptions.fraglimit.field.buffer );

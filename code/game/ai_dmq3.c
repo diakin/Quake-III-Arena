@@ -1753,7 +1753,9 @@ void BotUpdateInventory(bot_state_t *bs) {
 	bs->inventory[INVENTORY_BELT] = bs->cur_ps.ammo[WP_CHAINGUN];
 #endif
 	//powerups
-	bs->inventory[INVENTORY_HEALTH] = bs->cur_ps.stats[STAT_HEALTH];
+	// WALKER: the structure of a robot is thousands; the bot logic thinks in Q3 health (100)
+	bs->inventory[INVENTORY_HEALTH] = bs->cur_ps.stats[STAT_MAX_HEALTH] > 0
+		? bs->cur_ps.stats[STAT_HEALTH] * 100 / bs->cur_ps.stats[STAT_MAX_HEALTH] : bs->cur_ps.stats[STAT_HEALTH];
 	bs->inventory[INVENTORY_TELEPORTER] = bs->cur_ps.stats[STAT_HOLDABLE_ITEM] == MODELINDEX_TELEPORTER;
 	bs->inventory[INVENTORY_MEDKIT] = bs->cur_ps.stats[STAT_HOLDABLE_ITEM] == MODELINDEX_MEDKIT;
 #ifdef MISSIONPACK

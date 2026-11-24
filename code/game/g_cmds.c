@@ -532,7 +532,7 @@ void SetTeam( gentity_t *ent, char *s ) {
 	} else if ( !Q_stricmp( s, "spectator" ) || !Q_stricmp( s, "s" ) ) {
 		team = TEAM_SPECTATOR;
 		specState = SPECTATOR_FREE;
-	} else if ( g_gametype.integer == GT_BEACONS && client->pers.robotsLost >= g_robots.integer ) {
+	} else if ( g_gametype.integer == GT_BEACONS && client->pers.robotsLost >= ( client->pers.numRobots > 0 ? client->pers.numRobots : 1 ) ) {
 		// WALKER: beacon capture: no robots left, only watching
 		trap_SendServerCommand( clientNum, "cp \"No robots left in your hangar\n\"" );
 		return;
@@ -1670,6 +1670,14 @@ void ClientCommand( int clientNum ) {
 		Cmd_Notarget_f (ent);
 	else if (Q_stricmp (cmd, "noclip") == 0)
 		Cmd_Noclip_f (ent);
+	else if ( Q_stricmp( cmd, "endbattle" ) == 0 ) {
+		// WALKER: test: end the battle now; the rewards go out at the intermission.
+		// Only on a local server (the menu offers it only there).
+		if ( ent->client->pers.localClient && !level.intermissionQueued && !level.intermissiontime ) {
+			trap_SendServerCommand( -1, "print \"Battle ended (test).\n\"" );
+			LogExit( "Battle ended (test)." );
+		}
+	}
 	else if (Q_stricmp (cmd, "kill") == 0)
 		Cmd_Kill_f (ent);
 	else if (Q_stricmp (cmd, "teamtask") == 0)

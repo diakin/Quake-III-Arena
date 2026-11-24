@@ -156,6 +156,8 @@ void SnapVectorTowards( vec3_t v, vec3_t to ) {
 #define	MACHINEGUN_DAMAGE	7
 #define	MACHINEGUN_TEAM_DAMAGE	5		// wimpier MG in teamplay
 
+static float	bulletRange = 8192 * 16;	// WALKER: range of the robot gun (FireWeapon)
+
 void Bullet_Fire (gentity_t *ent, float spread, int damage ) {
 	trace_t		tr;
 	vec3_t		end;
@@ -171,9 +173,9 @@ void Bullet_Fire (gentity_t *ent, float spread, int damage ) {
 	damage *= s_quadFactor;
 
 	r = random() * M_PI * 2.0f;
-	u = sin(r) * crandom() * spread * 16;
-	r = cos(r) * crandom() * spread * 16;
-	VectorMA (muzzle, 8192*16, forward, end);
+	u = sin(r) * crandom() * spread * 16 * bulletRange / ( 8192 * 16 );
+	r = cos(r) * crandom() * spread * 16 * bulletRange / ( 8192 * 16 );
+	VectorMA (muzzle, bulletRange, forward, end);
 	VectorMA (end, r, right, end);
 	VectorMA (end, u, up, end);
 
@@ -398,6 +400,18 @@ void Weapon_RocketLauncher_Fire (gentity_t *ent) {
 	gentity_t	*m;
 
 	m = fire_rocket (ent, muzzle, forward);
+	// WALKER: the cannon of the robot: damage, splash and speed of the shell, and its range
+	if ( ent->client ) {
+		const robotWeaponInfo_t	*weapon = G_RobotWeapon( ent->client );
+		m->damage = G_RobotWeaponDamage( ent->client );
+		m->splashDamage = m->damage / 2;
+		m->splashRadius = weapon->splashRadius;
+		if ( weapon->projectileSpeed > 0 ) {
+			VectorScale( forward, weapon->projectileSpeed, m->s.pos.trDelta );
+			SnapVector( m->s.pos.trDelta );
+			m->nextthink = level.time + weapon->range * 1000 / weapon->projectileSpeed;	// bursts at its range
+		}
+	}
 	m->damage *= s_quadFactor;
 	m->splashDamage *= s_quadFactor;
 
@@ -931,11 +945,10 @@ void FireWeapon( gentity_t *ent ) {
 		weapon_supershotgun_fire( ent );
 		break;
 	case WP_MACHINEGUN:
-		if ( g_gametype.integer != GT_TEAM ) {
-			Bullet_Fire( ent, MACHINEGUN_SPREAD, MACHINEGUN_DAMAGE );
-		} else {
-			Bullet_Fire( ent, MACHINEGUN_SPREAD, MACHINEGUN_TEAM_DAMAGE );
-		}
+		// WALKER: damage and range of the robot gun (bg_robots.c)
+		bulletRange = G_RobotWeapon( ent->client )->range;
+		Bullet_Fire( ent, MACHINEGUN_SPREAD, G_RobotWeaponDamage( ent->client ) );
+		bulletRange = 8192 * 16;
 		break;
 	case WP_GRENADE_LAUNCHER:
 		weapon_grenadelauncher_fire( ent );

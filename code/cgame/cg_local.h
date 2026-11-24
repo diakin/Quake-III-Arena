@@ -749,6 +749,7 @@ typedef struct {
 	qhandle_t	smokePuffRageProShader;
 	qhandle_t	shotgunSmokePuffShader;
 	qhandle_t	plasmaBallShader;
+	qhandle_t	shellShader;		// WALKER: cannon shell of a robot
 	qhandle_t	waterBubbleShader;
 	qhandle_t	bloodTrailShader;
 #ifdef MISSIONPACK
@@ -1321,6 +1322,8 @@ void CG_Player( centity_t *cent );
 void CG_ResetPlayerEntity( centity_t *cent );
 void CG_AddRefEntityWithPowerups( refEntity_t *ent, entityState_t *state, int team );
 void CG_NewClientInfo( int clientNum );
+qboolean CG_IsRobotModel( const char *modelName );
+void CG_RegisterRobotModels( void );
 sfxHandle_t	CG_CustomSound( int clientNum, const char *soundName );
 
 //

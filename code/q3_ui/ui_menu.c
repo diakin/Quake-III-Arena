@@ -41,6 +41,7 @@ MAIN MENU
 #define ID_MODS					16
 #define ID_EXIT					17
 #define ID_HANGAR				18	// WALKER
+#define ID_PILOT				19	// WALKER
 
 #define MAIN_BANNER_MODEL				"models/mapobjects/banner/banner5.md3"
 #define MAIN_MENU_VERTICAL_SPACING		34
@@ -51,6 +52,8 @@ typedef struct {
 
 	menutext_s		singleplayer;
 	menutext_s		hangar;		// WALKER
+	menutext_s		pilot;		// WALKER: the account, opens the list of pilots
+	char			pilotLabel[96];
 	menutext_s		multiplayer;
 	menutext_s		setup;
 	menutext_s		demos;
@@ -100,6 +103,10 @@ void Main_MenuEvent (void* ptr, int event) {
 	switch( ((menucommon_s*)ptr)->id ) {
 	case ID_HANGAR:
 		UI_HangarMenu();
+		break;
+
+	case ID_PILOT:
+		UI_AccountMenu();
 		break;
 
 	case ID_SINGLEPLAYER:
@@ -228,6 +235,16 @@ static void Main_MenuDraw( void ) {
 	}
 	else
 	{
+		// WALKER: the pilot; the account may have changed in another menu
+		if ( uiAccount.loaded ) {
+			Com_sprintf( s_main.pilotLabel, sizeof( s_main.pilotLabel ), "PILOT %s  LV %i  -  %i CR  %i PTS",
+				uiAccount.nick, uiAccount.level, uiAccount.currency, uiAccount.points );
+			if ( uiAccount.lastBattle[0] ) {
+				UI_DrawString( 320, 132, uiAccount.lastBattle, UI_CENTER|UI_SMALLFONT, color_yellow );
+			}
+		} else {
+			Q_strncpyz( s_main.pilotLabel, "CHOOSE PILOT", sizeof( s_main.pilotLabel ) );
+		}
 		// standard menu drawing
 		Menu_Draw( &s_main.menu );		
 	}
@@ -433,8 +450,20 @@ void UI_MainMenu( void ) {
 	}
 	Menu_AddItem( &s_main.menu,	&s_main.exit );             
 
+	// WALKER: the pilot account (top right), its menu comes up first until one is chosen
+	s_main.pilot.generic.type		= MTYPE_PTEXT;
+	s_main.pilot.generic.flags		= QMF_RIGHT_JUSTIFY | QMF_PULSEIFFOCUS;
+	s_main.pilot.generic.id			= ID_PILOT;
+	s_main.pilot.generic.callback	= Main_MenuEvent;
+	s_main.pilot.generic.x			= 632;
+	s_main.pilot.generic.y			= 8;
+	s_main.pilot.string				= s_main.pilotLabel;
+	s_main.pilot.style				= UI_RIGHT | UI_SMALLFONT;
+	s_main.pilot.color				= color_red;
+	Menu_AddItem( &s_main.menu,	&s_main.pilot );
+
 	trap_Key_SetCatcher( KEYCATCH_UI );
 	uis.menusp = 0;
 	UI_PushMenu ( &s_main.menu );
-		
+	UI_AccountEnsure();
 }

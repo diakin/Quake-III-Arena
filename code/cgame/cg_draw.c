@@ -632,9 +632,10 @@ static void CG_DrawStatusBar( void ) {
 	// health
 	//
 	value = ps->stats[STAT_HEALTH];
-	if ( value > 100 ) {
+	// WALKER: colours by the share of the full structure
+	if ( ps->stats[STAT_MAX_HEALTH] > 0 && value * 100 / ps->stats[STAT_MAX_HEALTH] > 100 ) {
 		trap_R_SetColor( colors[3] );		// white
-	} else if (value > 25) {
+	} else if ( ps->stats[STAT_MAX_HEALTH] > 0 ? value * 100 / ps->stats[STAT_MAX_HEALTH] > 25 : value > 25 ) {
 		trap_R_SetColor( colors[0] );	// green
 	} else if (value > 0) {
 		color = (cg.time >> 8) & 1;	// flash
@@ -644,7 +645,12 @@ static void CG_DrawStatusBar( void ) {
 	}
 
 	// stretch the health up when taking damage
-	CG_DrawField ( 185, 432, 3, value);
+	// WALKER: the structure of the robot (real value), the shield above it
+	CG_DrawField ( 120, 432, 6, value * ROBOT_HEALTH_SCALE );
+	if ( ps->stats[STAT_MAX_SHIELD] > 0 ) {
+		vec4_t	shieldColor = { 0.45f, 0.85f, 1.0f, 1.0f };
+		CG_DrawBigStringColor( 124, 410, va( "SHIELD %i", ps->stats[STAT_SHIELD] * ROBOT_HEALTH_SCALE ), shieldColor );
+	}
 	CG_ColorForHealth( hcolor );
 	trap_R_SetColor( hcolor );
 

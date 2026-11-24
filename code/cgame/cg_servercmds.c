@@ -986,6 +986,26 @@ static void CG_ServerCommand( void ) {
 		return;
 	}
 
+	// WALKER: reward of the battle for the pilot account (the ui adds it, ui_account.c)
+	if ( !strcmp( cmd, "reward" ) ) {
+		char	text[256];
+		int		index;
+
+		text[0] = 0;
+		for ( index = 1; index < trap_Argc() && index < 9; index++ ) {
+			Q_strcat( text, sizeof( text ), va( "%s%s", index > 1 ? " " : "", CG_Argv( index ) ) );
+		}
+		trap_Cvar_Set( "walker_reward", text );
+		// CG_Argv returns one static buffer: take the numbers one by one
+		{
+			int		points = atoi( CG_Argv( 2 ) );
+			int		currency = atoi( CG_Argv( 3 ) );
+			int		xp = atoi( CG_Argv( 4 ) );
+			CG_Printf( "Reward: %i development points, %i credits, %i experience\n", points, currency, xp );
+		}
+		return;
+	}
+
 	if ( !strcmp( cmd, "cp" ) ) {
 		CG_CenterPrint( CG_Argv(1), SCREEN_HEIGHT * 0.30, BIGCHAR_WIDTH );
 		return;

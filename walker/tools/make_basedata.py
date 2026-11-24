@@ -1152,6 +1152,15 @@ sprites/plasma1
 		blendfunc GL_ONE GL_ONE
 	}
 }
+shellGlow
+{
+	cull disable
+	{
+		clampmap gfx/misc/flare.tga
+		blendfunc GL_ONE GL_ONE
+		rgbGen const ( 1.0 0.75 0.4 )
+	}
+}
 """)
     save('gfx/2d/black.tga', Image.new('RGBA', (8, 8), (0, 0, 0, 255)))
 

@@ -1046,6 +1046,7 @@ static void CG_RegisterGraphics( void ) {
 	cgs.media.beaconBeamShader = trap_R_RegisterShader( "beaconBeam" );
 	cgs.media.beaconRingShader = trap_R_RegisterShader( "beaconRing" );
 	cgs.media.barrierShader = trap_R_RegisterShader( "barrierGrid" );
+	cgs.media.shellShader = trap_R_RegisterShader( "shellGlow" );
 	cgs.media.wakeMarkShader = trap_R_RegisterShader( "wake" );
 	cgs.media.bloodMarkShader = trap_R_RegisterShader( "bloodMark" );
 
@@ -1148,6 +1149,7 @@ CG_RegisterClients
 static void CG_RegisterClients( void ) {
 	int		i;
 
+	CG_RegisterRobotModels();	// WALKER: all robots of the hangars, see CG_IsRobotModel
 	CG_LoadingClient(cg.clientNum);
 	CG_NewClientInfo(cg.clientNum);
 

@@ -306,12 +306,17 @@ void CG_DrawHealthBars( void ) {
 		}
 		CG_FillRect( screenX - width * 0.5f - 1, screenY - 1, width + 2, 6, back );
 		CG_FillRect( screenX - width * 0.5f, screenY, width * Com_Clamp( 0, 100, state->generic1 ) / 100.0f, 4, fill );
+		// WALKER: the shield above the structure (entityState time2, percent)
+		if ( state->time2 > 0 ) {
+			vec4_t	shieldColor = { 0.45f, 0.85f, 1.0f, 0.95f };
+			CG_FillRect( screenX - width * 0.5f - 1, screenY - 5, width + 2, 4, back );
+			CG_FillRect( screenX - width * 0.5f, screenY - 4, width * Com_Clamp( 0, 100, state->time2 ) / 100.0f, 2, shieldColor );
+		}
 	}
 
 	// robots left in the hangar (beacon capture)
 	if ( cgs.gametype == GT_BEACONS && myTeam != TEAM_SPECTATOR ) {
-		const char	*label = va( "ROBOTS %i/%i", cg.snap->ps.stats[STAT_ROBOTS] > 0 ? cg.snap->ps.stats[STAT_ROBOTS] : 0,
-			atoi( Info_ValueForKey( CG_ConfigString( CS_SERVERINFO ), "g_robots" ) ) );
+		const char	*label = va( "ROBOTS LEFT %i", cg.snap->ps.stats[STAT_ROBOTS] > 0 ? cg.snap->ps.stats[STAT_ROBOTS] : 0 );
 		vec4_t		color = { 1, 1, 1, 0.9f };
 		CG_DrawStringExt( 8, 420, label, color, qtrue, qtrue, 10, 14, 0 );
 		if ( cg.snap->ps.stats[STAT_HEALTH] <= 0 && cg.snap->ps.stats[STAT_ROBOTS] > 1 ) {

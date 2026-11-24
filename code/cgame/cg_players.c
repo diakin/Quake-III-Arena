@@ -871,6 +871,49 @@ static void CG_SetDeferredClientInfo( clientInfo_t *ci ) {
 
 /*
 ======================
+CG_IsRobotModel
+
+WALKER: one of the robot models of bg_robots (precached at level load)
+======================
+*/
+qboolean CG_IsRobotModel( const char *modelName ) {
+	int		index;
+
+	for ( index = 0 ; index < ROBOT_COUNT ; index++ ) {
+		if ( !Q_stricmp( modelName, bg_robots[index].model ) ) {
+			return qtrue;
+		}
+	}
+	return qfalse;
+}
+
+
+/*
+======================
+CG_RegisterRobotModels
+
+WALKER: loads the parts and team paints of every robot type into the renderer
+cache, so a player who changes the robot at respawn gets it at once
+======================
+*/
+void CG_RegisterRobotModels( void ) {
+	static const char	*skins[] = { "default", "red", "blue" };
+	static const char	*parts[] = { "lower", "upper", "head" };
+	int					robot, part, skin;
+
+	for ( robot = 0 ; robot < ROBOT_COUNT ; robot++ ) {
+		for ( part = 0 ; part < 3 ; part++ ) {
+			trap_R_RegisterModel( va( "models/players/%s/%s.md3", bg_robots[robot].model, parts[part] ) );
+			for ( skin = 0 ; skin < 3 ; skin++ ) {
+				trap_R_RegisterSkin( va( "models/players/%s/%s_%s.skin", bg_robots[robot].model, parts[part], skins[skin] ) );
+			}
+		}
+	}
+}
+
+
+/*
+======================
 CG_NewClientInfo
 ======================
 */
@@ -1034,7 +1077,11 @@ void CG_NewClientInfo( int clientNum ) {
 		forceDefer = trap_MemoryRemaining() < 4000000;
 
 		// if we are defering loads, just have it pick the first valid
-		if ( forceDefer || (cg_deferPlayers.integer && !cg_buildScript.integer && !cg.loading ) ) {
+		// WALKER: robot models are registered at level load (CG_RegisterRobotModels), so
+		// switching to the next robot of the hangar is a cache hit and is never deferred;
+		// a deferred model showed the previous robot until the next death
+		if ( forceDefer || (cg_deferPlayers.integer && !cg_buildScript.integer && !cg.loading
+			&& !CG_IsRobotModel( newInfo.modelName ) ) ) {
 			// keep whatever they had if it won't violate team skins
 			CG_SetDeferredClientInfo( &newInfo );
 			// if we are low on memory, leave them with this model

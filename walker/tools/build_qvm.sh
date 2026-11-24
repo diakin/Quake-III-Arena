@@ -32,18 +32,18 @@ GAME="game/g_main.c game/bg_misc.c game/bg_lib.c game/bg_pmove.c game/bg_slidemo
  game/ai_dmnet.c game/ai_dmq3.c game/ai_team.c game/ai_main.c game/ai_chat.c game/ai_cmd.c game/ai_vcmd.c
  game/g_active.c game/g_arenas.c game/g_bot.c game/g_client.c game/g_cmds.c game/g_combat.c game/g_items.c game/g_mem.c
  game/g_misc.c game/g_missile.c game/g_mover.c game/g_session.c game/g_spawn.c game/g_svcmds.c game/g_target.c
- game/g_team.c game/g_trigger.c game/g_utils.c game/g_weapon.c"
+ game/g_team.c game/g_trigger.c game/g_utils.c game/g_weapon.c game/g_beacons.c game/g_robots.c game/bg_robots.c"
 CGAME="cgame/cg_main.c cgame/cg_consolecmds.c cgame/cg_draw.c cgame/cg_drawtools.c cgame/cg_effects.c cgame/cg_ents.c
  cgame/cg_event.c cgame/cg_info.c cgame/cg_localents.c cgame/cg_marks.c cgame/cg_players.c cgame/cg_playerstate.c
  cgame/cg_predict.c cgame/cg_scoreboard.c cgame/cg_servercmds.c cgame/cg_snapshot.c cgame/cg_view.c cgame/cg_weapons.c
- game/bg_slidemove.c game/bg_pmove.c game/bg_lib.c game/bg_misc.c game/q_math.c game/q_shared.c"
+ cgame/cg_beacons.c game/bg_slidemove.c game/bg_pmove.c game/bg_lib.c game/bg_misc.c game/bg_robots.c game/q_math.c game/q_shared.c"
 UI="q3_ui/ui_main.c q3_ui/ui_gameinfo.c q3_ui/ui_atoms.c q3_ui/ui_cinematics.c q3_ui/ui_connect.c q3_ui/ui_controls2.c
  q3_ui/ui_demo2.c q3_ui/ui_mfield.c q3_ui/ui_credits.c q3_ui/ui_menu.c q3_ui/ui_ingame.c q3_ui/ui_confirm.c q3_ui/ui_setup.c
  q3_ui/ui_options.c q3_ui/ui_display.c q3_ui/ui_sound.c q3_ui/ui_network.c q3_ui/ui_playermodel.c q3_ui/ui_players.c
  q3_ui/ui_playersettings.c q3_ui/ui_preferences.c q3_ui/ui_effects.c q3_ui/ui_qmenu.c q3_ui/ui_serverinfo.c q3_ui/ui_servers2.c
  q3_ui/ui_sparena.c q3_ui/ui_specifyserver.c q3_ui/ui_sppostgame.c q3_ui/ui_splevel.c q3_ui/ui_spskill.c
  q3_ui/ui_startserver.c q3_ui/ui_team.c q3_ui/ui_video.c q3_ui/ui_addbots.c q3_ui/ui_removebots.c q3_ui/ui_selectbots.c q3_ui/ui_hangar.c q3_ui/ui_teamorders.c
- q3_ui/ui_loadconfig.c q3_ui/ui_saveconfig.c q3_ui/ui_cdkey.c q3_ui/ui_mods.c game/bg_misc.c game/bg_lib.c game/q_math.c game/q_shared.c"
+ q3_ui/ui_loadconfig.c q3_ui/ui_saveconfig.c q3_ui/ui_cdkey.c q3_ui/ui_mods.c q3_ui/ui_account.c game/bg_misc.c game/bg_lib.c game/bg_robots.c game/q_math.c game/q_shared.c"
 
 compile game $GAME
 assemble game qagame "$CODE/game/g_syscalls.asm" $GAME

@@ -214,6 +214,10 @@ static cvarTable_t		cvarTable[] = {
 	{ &ui_server15, "server15", "", CVAR_ARCHIVE },
 	{ &ui_server16, "server16", "", CVAR_ARCHIVE },
 	{ &ui_hangarAutoRotate, "ui_hangarAutoRotate", "1", CVAR_ARCHIVE },	// WALKER: hangar robot turns by itself
+	{ NULL, "ui_account", "", CVAR_ARCHIVE },			// WALKER: last pilot account
+	{ NULL, "walker_robots", "", CVAR_USERINFO },		// WALKER: robots of the account the player takes into a battle
+	{ NULL, "walker_level", "1", CVAR_USERINFO },		// WALKER: level of the pilot
+	{ NULL, "walker_reward", "", 0 },					// WALKER: reward of the last battle (cgame -> ui)
 
 	{ &ui_cdkeychecked, "ui_cdkeychecked", "0", CVAR_ROM }
 };
@@ -246,6 +250,8 @@ void UI_UpdateCvars( void ) {
 	cvarTable_t	*cv;
 
 	for ( i = 0, cv = cvarTable ; i < cvarTableSize ; i++, cv++ ) {
-		trap_Cvar_Update( cv->vmCvar );
+		if ( cv->vmCvar ) {		// WALKER: entries that only create a cvar
+			trap_Cvar_Update( cv->vmCvar );
+		}
 	}
 }

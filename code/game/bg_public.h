@@ -227,7 +227,10 @@ typedef enum {
 	STAT_DEAD_YAW,					// look this direction when dead (FIXME: get rid of?)
 	STAT_CLIENTS_READY,				// bit mask of clients wishing to exit the intermission (FIXME: configstring?)
 	STAT_MAX_HEALTH,				// health / armor limit, changable by handicap
-	STAT_ROBOTS						// WALKER: beacon capture, robots left in the hangar (this one included)
+	STAT_ROBOTS,					// WALKER: beacon capture, robots left in the hangar (this one included)
+	STAT_SHIELD,					// WALKER: shield of the robot, real value / ROBOT_HEALTH_SCALE
+	STAT_MAX_SHIELD,
+	STAT_FIRE_INTERVAL				// WALKER: msec between shots of the robot weapon (bg_robots.c)
 } statIndex_t;
 
 
@@ -754,3 +757,4 @@ qboolean	BG_PlayerTouchesItem( playerState_t *ps, entityState_t *item, int atTim
 #define KAMI_BOOMSPHERE_MAXRADIUS		720
 #define KAMI_SHOCKWAVE2_MAXRADIUS		704
 
+#include "bg_robots.h"		// WALKER: robots, weapons, upgrades

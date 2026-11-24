@@ -236,6 +236,13 @@ typedef struct {
 #define MAX_NETNAME			36
 #define	MAX_VOTE_COUNT		3
 
+// WALKER: a robot a player brings into the battle (g_robots.c)
+typedef struct {
+	int			type;			// robotType_t
+	int			level;
+	int			weaponLevel;
+} battleRobot_t;
+
 // client data that stays across multiple respawns, but is cleared
 // on each level change or team change at ClientBegin()
 typedef struct {
@@ -255,6 +262,12 @@ typedef struct {
 	qboolean	teamInfo;			// send team overlay updates?
 	qboolean	thirdPerson;		// WALKER: cg_thirdPerson userinfo, the shot follows the camera
 	float		thirdPersonRange;	// WALKER: cg_thirdPersonRange userinfo
+	battleRobot_t robots[ROBOT_HANGAR_SIZE];	// WALKER: the hangar of the player (g_robots.c)
+	int			numRobots;
+	int			damageDealt;		// WALKER: for the reward: real damage (structure and shield)
+	int			kills;
+	int			captures;
+	int			playedTeam;			// WALKER: the team the player fought for
 } clientPersistant_t;
 
 
@@ -269,6 +282,9 @@ struct gclient_s {
 	clientSession_t		sess;
 
 	qboolean	readyToExit;		// wishes to leave the intermission
+
+	int			shieldHitTime;		// WALKER: last hit, the shield recovers some time after it
+	int			shieldResidual;
 
 	qboolean	noclip;
 
@@ -589,6 +605,18 @@ void CalculateRanks( void );
 qboolean SpotWouldTelefrag( gentity_t *spot );
 
 //
+// g_robots.c (WALKER)
+void			G_RobotParse( gclient_t *client, const char *list );
+battleRobot_t	*G_RobotCurrent( gclient_t *client );
+void			G_RobotModel( gclient_t *client, char *model, int size );
+void			G_RobotSpawn( gentity_t *ent );
+float			G_RobotSpeed( gclient_t *client );
+int				G_RobotWeaponDamage( gclient_t *client );
+const robotWeaponInfo_t *G_RobotWeapon( gclient_t *client );
+int				G_RobotAbsorb( gentity_t *targ, int damage );
+void			G_RobotThink( gentity_t *ent, int msec );
+void			G_RobotRewards( void );
+
 // g_beacons.c (WALKER)
 //
 void SP_team_beacon( gentity_t *ent );
@@ -749,6 +777,8 @@ extern	vmCvar_t	g_speed;
 extern	vmCvar_t	g_beaconPoints;
 extern	vmCvar_t	g_beaconDrain;
 extern	vmCvar_t	g_robots;
+extern	vmCvar_t	g_botLevel;
+extern	vmCvar_t	g_botRobots;
 extern	vmCvar_t	g_knockback;
 extern	vmCvar_t	g_quadfactor;
 extern	vmCvar_t	g_forcerespawn;

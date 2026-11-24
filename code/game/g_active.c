@@ -839,8 +839,13 @@ void ClientThink_real( gentity_t *ent ) {
 
 	client->ps.gravity = g_gravity.value;
 
-	// set speed
-	client->ps.speed = g_speed.value;
+	// set speed (WALKER: the speed of the robot, g_speed is the speed of 38 km/h)
+	if ( client->sess.sessionTeam != TEAM_SPECTATOR ) {
+		client->ps.speed = G_RobotSpeed( client );
+		G_RobotThink( ent, msec );
+	} else {
+		client->ps.speed = g_speed.value;
+	}
 
 #ifdef MISSIONPACK
 	if( bg_itemlist[client->ps.stats[STAT_PERSISTANT_POWERUP]].giTag == PW_SCOUT ) {
@@ -1000,7 +1005,7 @@ void ClientThink_real( gentity_t *ent ) {
 		// the player watches the match
 		if ( g_gametype.integer == GT_BEACONS ) {
 			if ( level.time > client->respawnTime ) {
-				if ( client->pers.robotsLost >= g_robots.integer ) {
+				if ( client->pers.robotsLost >= ( client->pers.numRobots > 0 ? client->pers.numRobots : 1 ) ) {
 					trap_SendServerCommand( ent - g_entities, "cp \"All your robots are lost\n\"" );
 					SetTeam( ent, "spectator" );
 				} else {
@@ -1193,7 +1198,7 @@ void ClientEndFrame( gentity_t *ent ) {
 		ent->client->ps.generic1 = percent < 0 ? 0 : ( percent > 100 ? 100 : percent );
 	}
 	ent->client->ps.stats[STAT_ROBOTS] = g_gametype.integer == GT_BEACONS
-		? g_robots.integer - ent->client->pers.robotsLost : 0;
+		? ( ent->client->pers.numRobots > 0 ? ent->client->pers.numRobots : 1 ) - ent->client->pers.robotsLost : 0;
 
 	G_SetClientSound (ent);
 
@@ -1204,6 +1209,9 @@ void ClientEndFrame( gentity_t *ent ) {
 	else {
 		BG_PlayerStateToEntityState( &ent->client->ps, &ent->s, qtrue );
 	}
+	// WALKER: shield in percent for the bars over the robots (cg_beacons.c)
+	ent->s.time2 = ent->client->ps.stats[STAT_MAX_SHIELD] > 0
+		? ent->client->ps.stats[STAT_SHIELD] * 100 / ent->client->ps.stats[STAT_MAX_SHIELD] : 0;
 	SendPendingPredictableEvents( &ent->client->ps );
 
 	// set the bit for the reachability area the client is currently in

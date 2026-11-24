@@ -122,8 +122,38 @@ void G_BeaconsInit( void ) {
 G_BeaconAnnounce
 =================
 */
+/*
+=================
+G_BeaconCredit
+
+WALKER: the robots of the team standing on the beacon when it is taken (reward)
+=================
+*/
+static void G_BeaconCredit( gentity_t *beacon, int team ) {
+	int			index;
+	gclient_t	*client;
+	float		radius = beacon->s.origin2[0];
+	vec3_t		delta;
+
+	for ( index = 0 ; index < level.maxclients ; index++ ) {
+		client = &level.clients[index];
+		if ( client->pers.connected != CON_CONNECTED || client->sess.sessionTeam != team
+			|| client->ps.stats[STAT_HEALTH] <= 0 ) {
+			continue;
+		}
+		VectorSubtract( client->ps.origin, beacon->s.origin, delta );
+		if ( fabs( delta[2] ) <= BEACON_HEIGHT && delta[0] * delta[0] + delta[1] * delta[1] <= radius * radius ) {
+			client->pers.captures++;
+		}
+	}
+}
+
 static void G_BeaconAnnounce( gentity_t *beacon, int team ) {
 	int		letter = 'A' + beacon->s.modelindex2;
+
+	if ( team == TEAM_RED || team == TEAM_BLUE ) {
+		G_BeaconCredit( beacon, team );
+	}
 
 	if ( team == TEAM_RED ) {
 		trap_SendServerCommand( -1, va( "cp \"" S_COLOR_RED "Red" S_COLOR_WHITE " captured beacon %c\n\"", letter ) );

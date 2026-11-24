@@ -468,6 +468,16 @@ static void CG_Missile( centity_t *cent ) {
 		return;
 	}
 
+	// WALKER: missiles without a model (the cannon shell of a robot): a glowing ball
+	if ( !weapon->missileModel ) {
+		ent.reType = RT_SPRITE;
+		ent.radius = 7;
+		ent.rotation = 0;
+		ent.customShader = cgs.media.shellShader;
+		trap_R_AddRefEntityToScene( &ent );
+		return;
+	}
+
 	// flicker between two skins
 	ent.skinNum = cg.clientFrame & 1;
 	ent.hModel = weapon->missileModel;

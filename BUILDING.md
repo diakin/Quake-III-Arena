@@ -84,6 +84,8 @@ bspc -cfg walker/maps/aas_walker.cfg -bsp2aas wk_beacons.bsp
 - Для запекания текстур робота (`bake_walker.py`) ещё **xatlas** и **embreex**:
   `pip install xatlas embreex meshoptimizer scikit-image scipy` (meshoptimizer — для упрощённых моделей, `make_lods.py`). У embreex нет сборки для 32-битного Python под Windows,
   поэтому запекание пока делается под Linux или 64-битным Python.
+- Модели роботов STRIZH и MOLOT (`make_robots.py`) требуют только numpy и Pillow;
+  результат — `models/players/strizh` и `models/players/molot` в pak0.
 - **ffmpeg** — для нарезки шагов по воде из записи (`import_splash.py`).
 - Утилиты **zip** и **sh** — для `build_all.sh`.
 - **q3map** (компилятор карт) и **bspc** (навигация ботов) — собираются из репозитория.
