@@ -1220,10 +1220,18 @@ typedef struct
 	int nodenum;		//node found after splitting
 } aas_linkstack_t;
 
+// WALKER: the AAS of the large terrain maps (wk_islands) has many small areas; the
+// box of a robot (grown by the bot's own box) straddles so many node planes that the
+// 128 entries of the original stack ran out: "AAS_LinkEntity: stack overflow" every
+// frame, the entity was linked only partly and the console filled with the message
+#define AAS_LINKSTACK_SIZE	4096
+
+static int		linkOverflows;
+
 aas_link_t *AAS_AASLinkEntity(vec3_t absmins, vec3_t absmaxs, int entnum)
 {
 	int side, nodenum;
-	aas_linkstack_t linkstack[128];
+	static aas_linkstack_t linkstack[AAS_LINKSTACK_SIZE];		// no recursion: static, off the C stack
 	aas_linkstack_t *lstack_p;
 	aas_node_t *aasnode;
 	aas_plane_t *plane;
@@ -1295,9 +1303,12 @@ aas_link_t *AAS_AASLinkEntity(vec3_t absmins, vec3_t absmaxs, int entnum)
 			lstack_p->nodenum = aasnode->children[0];
 			lstack_p++;
 		} //end if
-		if (lstack_p >= &linkstack[127])
+		if (lstack_p >= &linkstack[AAS_LINKSTACK_SIZE - 1])
 		{
-			botimport.Print(PRT_ERROR, "AAS_LinkEntity: stack overflow\n");
+			// once, then every 1000th time: printing every frame slowed the game down
+			if ( ( linkOverflows++ % 1000 ) == 0 ) {
+				botimport.Print(PRT_ERROR, "AAS_LinkEntity: stack overflow (%i times)\n", linkOverflows);
+			}
 			break;
 		} //end if
 		//if on the back side of the node
@@ -1306,9 +1317,12 @@ aas_link_t *AAS_AASLinkEntity(vec3_t absmins, vec3_t absmaxs, int entnum)
 			lstack_p->nodenum = aasnode->children[1];
 			lstack_p++;
 		} //end if
-		if (lstack_p >= &linkstack[127])
+		if (lstack_p >= &linkstack[AAS_LINKSTACK_SIZE - 1])
 		{
-			botimport.Print(PRT_ERROR, "AAS_LinkEntity: stack overflow\n");
+			// once, then every 1000th time: printing every frame slowed the game down
+			if ( ( linkOverflows++ % 1000 ) == 0 ) {
+				botimport.Print(PRT_ERROR, "AAS_LinkEntity: stack overflow (%i times)\n", linkOverflows);
+			}
 			break;
 		} //end if
 	} //end while
