@@ -1120,6 +1120,8 @@ void R_Init( void ) {
 
 	InitOpenGL();
 
+	GLSL_Init();		// WALKER: programs, after every start of OpenGL
+
 	R_InitImages();
 
 	R_InitShaders();

@@ -58,6 +58,7 @@ sun_shadows_simple: r_sunShadows 1
 water_reflection_off: r_noportals 1
 haze_off: r_drawfog 0
 dlights_off: r_dynamiclight 0
+dlights_classic: r_glsl 0                // dynamic lights the old way: a pass for each light
 fast_sky: r_fastsky 1
 marks_off: cg_marks 0
 model_lod_near: r_lodDistance 300

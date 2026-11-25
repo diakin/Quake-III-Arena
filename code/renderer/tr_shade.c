@@ -627,6 +627,7 @@ black for additive. r_drawfog 2 brings back the original fog pass.
 static qboolean	hardwareFog;
 static qboolean	hardwareFogUsed;	// this tesselation was fogged by OpenGL
 static vec3_t	hardwareFogColor;
+static float	hardwareFogDensity;	// for the dynamic lights under the haze
 
 static qboolean RB_HardwareFogBegin( void ) {
 	fog_t	*fog;
@@ -642,7 +643,8 @@ static qboolean RB_HardwareFogBegin( void ) {
 	}
 	VectorCopy( fog->parms.color, hardwareFogColor );
 	qglFogi( GL_FOG_MODE, GL_EXP );
-	qglFogf( GL_FOG_DENSITY, 2.4f / ( fog->parms.depthForOpaque > 1 ? fog->parms.depthForOpaque : 1 ) );
+	hardwareFogDensity = 2.4f / ( fog->parms.depthForOpaque > 1 ? fog->parms.depthForOpaque : 1 );
+	qglFogf( GL_FOG_DENSITY, hardwareFogDensity );
 	qglHint( GL_FOG_HINT, GL_NICEST );
 	qglEnable( GL_FOG );
 	hardwareFog = qtrue;
@@ -679,6 +681,121 @@ static void RB_HardwareFogEnd( void ) {
 		hardwareFog = qfalse;
 	}
 }
+
+/*
+===================
+WALKER: dynamic lights in one pass (GLSL)
+
+ProjectDlightTexture draws a pass for every light touching the surface, with
+texture coordinates and colours computed on the processor for every vertex.
+With OpenGL 2.0 all lights of the surface go in one pass of a program
+(tr_glsl.c), which computes the same falloff per pixel; the processor only
+picks the triangles inside some light (the same box test as Q3's). r_glsl 0
+or additive lights: the classic pass.
+===================
+*/
+static void RB_DlightPassGLSL( void ) {
+	float		lights[GLSL_MAX_DLIGHTS][4];
+	float		colors[GLSL_MAX_DLIGHTS][4];
+	byte		clipBits[SHADER_MAX_VERTEXES];
+	byte		lit[SHADER_MAX_INDEXES / 3];
+	glIndex_t	hitIndexes[SHADER_MAX_INDEXES];
+	int			numTriangles = tess.numIndexes / 3;
+	int			light, vertex, triangle, count = 0, numIndexes;
+
+	Com_Memset( lit, 0, numTriangles );
+	for ( light = 0; light <= backEnd.refdef.num_dlights; light++ ) {
+		dlight_t	*dl;
+		float		radius, half;
+
+		// a full set of lights, or the last one: draw what they light
+		if ( count == GLSL_MAX_DLIGHTS || ( light == backEnd.refdef.num_dlights && count ) ) {
+			numIndexes = 0;
+			for ( triangle = 0; triangle < numTriangles; triangle++ ) {
+				if ( lit[triangle] ) {
+					hitIndexes[numIndexes] = tess.indexes[triangle * 3];
+					hitIndexes[numIndexes + 1] = tess.indexes[triangle * 3 + 1];
+					hitIndexes[numIndexes + 2] = tess.indexes[triangle * 3 + 2];
+					numIndexes += 3;
+				}
+			}
+			if ( numIndexes ) {
+				// GLS_DEPTHFUNC_EQUAL: no light where alpha tested surfaces are not drawn
+				GL_State( GLS_SRCBLEND_DST_COLOR | GLS_DSTBLEND_ONE | GLS_DEPTHFUNC_EQUAL );
+				GLSL_DlightsBegin( count, lights[0], colors[0], hardwareFogUsed ? hardwareFogDensity : 0 );
+				R_DrawElements( numIndexes, hitIndexes );
+				GLSL_DlightsEnd();
+				backEnd.pc.c_totalIndexes += numIndexes;
+				backEnd.pc.c_dlightIndexes += numIndexes;
+			}
+			count = 0;
+			Com_Memset( lit, 0, numTriangles );
+		}
+		if ( light == backEnd.refdef.num_dlights ) {
+			break;
+		}
+		if ( !( tess.dlightBits & ( 1 << light ) ) ) {
+			continue;
+		}
+		dl = &backEnd.refdef.dlights[light];
+		radius = dl->radius;
+		half = radius * 0.5f;		// the light texture reaches half the radius across
+
+		for ( vertex = 0; vertex < tess.numVertexes; vertex++ ) {
+			float	*xyz = tess.xyz[vertex];
+			int		clip = 0;
+
+			if ( dl->transformed[0] - xyz[0] < -half ) {
+				clip |= 1;
+			} else if ( dl->transformed[0] - xyz[0] > half ) {
+				clip |= 2;
+			}
+			if ( dl->transformed[1] - xyz[1] < -half ) {
+				clip |= 4;
+			} else if ( dl->transformed[1] - xyz[1] > half ) {
+				clip |= 8;
+			}
+			if ( dl->transformed[2] - xyz[2] > radius ) {
+				clip |= 16;
+			} else if ( dl->transformed[2] - xyz[2] < -radius ) {
+				clip |= 32;
+			}
+			clipBits[vertex] = clip;
+		}
+		backEnd.pc.c_dlightVertexes += tess.numVertexes;
+		for ( triangle = 0; triangle < numTriangles; triangle++ ) {
+			if ( !( clipBits[tess.indexes[triangle * 3]] & clipBits[tess.indexes[triangle * 3 + 1]] & clipBits[tess.indexes[triangle * 3 + 2]] ) ) {
+				lit[triangle] = 1;
+			}
+		}
+		VectorCopy( dl->transformed, lights[count] );
+		lights[count][3] = 1.0f / radius;
+		VectorCopy( dl->color, colors[count] );
+		colors[count][3] = 1.0f;
+		count++;
+	}
+}
+
+static void RB_DlightPass( void ) {
+	int		light;
+
+	if ( !backEnd.refdef.num_dlights ) {
+		return;
+	}
+	if ( GLSL_DlightsAvailable() ) {
+		for ( light = 0; light < backEnd.refdef.num_dlights; light++ ) {
+			if ( ( tess.dlightBits & ( 1 << light ) ) && backEnd.refdef.dlights[light].additive ) {
+				break;
+			}
+		}
+		if ( light == backEnd.refdef.num_dlights ) {
+			RB_DlightPassGLSL();
+			return;
+		}
+	}
+	ProjectDlightTexture();
+}
+
 
 /*
 ===================
@@ -1206,7 +1323,7 @@ void RB_StageIteratorGeneric( void )
 	//
 	if ( tess.dlightBits && tess.shader->sort <= SS_OPAQUE
 		&& !(tess.shader->surfaceFlags & (SURF_NODLIGHT | SURF_SKY) ) ) {
-		ProjectDlightTexture();
+		RB_DlightPass();		// WALKER: one GLSL pass when it can
 	}
 
 	//
@@ -1299,7 +1416,7 @@ void RB_StageIteratorVertexLitTexture( void )
 	// now do any dynamic lighting needed
 	//
 	if ( tess.dlightBits && tess.shader->sort <= SS_OPAQUE ) {
-		ProjectDlightTexture();
+		RB_DlightPass();		// WALKER: one GLSL pass when it can
 	}
 
 	//
@@ -1409,7 +1526,7 @@ void RB_StageIteratorLightmappedMultitexture( void ) {
 	// now do any dynamic lighting needed
 	//
 	if ( tess.dlightBits && tess.shader->sort <= SS_OPAQUE ) {
-		ProjectDlightTexture();
+		RB_DlightPass();		// WALKER: one GLSL pass when it can
 	}
 
 	//

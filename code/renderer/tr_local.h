@@ -1078,6 +1078,14 @@ extern	cvar_t	*r_roundImagesDown;
 extern	cvar_t	*r_colorMipLevels;				// development aid to see texture mip usage
 extern	cvar_t	*r_picmip;						// controls picmip values
 extern	cvar_t	*r_noTextures;					// WALKER: world and model textures white (latched)
+
+// WALKER: tr_glsl.c
+#define GLSL_MAX_DLIGHTS	16			// lights in one pass (MAX_LIGHTS in the program)
+extern	cvar_t	*r_glsl;
+void		GLSL_Init( void );
+qboolean	GLSL_DlightsAvailable( void );
+void		GLSL_DlightsBegin( int count, const float *lights, const float *colors, float fogDensity );
+void		GLSL_DlightsEnd( void );
 void	R_GetFrameStats( int *batches, int *triangles );
 extern	cvar_t	*r_finish;
 extern	cvar_t	*r_drawBuffer;
