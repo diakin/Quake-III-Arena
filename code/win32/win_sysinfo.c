@@ -448,8 +448,12 @@ void Sys_SystemReport( char *buffer, int size, const char *glVendor, const char 
 			|| ( !generic && ContainsNoCase( adapter->provider, "microsoft" ) && !Brand( adapter->description )[0] ) ) {
 			continue;		// Windows' own software devices (names are translated on other languages)
 		}
-		if ( generic ) {
+		if ( generic && software ) {
 			Check( 2, "%s: Windows' generic driver, the video card has no driver of its own; install it from the maker", adapter->description );
+		} else if ( generic ) {
+			// the registry keeps devices that are gone or switched off; the game draws through another one
+			Check( 0, "%s: listed with Windows' generic driver, probably an old or disabled device; the game does not use it", adapter->description );
+			continue;
 		} else if ( ContainsNoCase( adapter->provider, "microsoft" ) && Brand( adapter->description )[0] ) {
 			Check( 1, "%s: the driver is from Windows Update (%s), such drivers may lack full OpenGL; better the one from the maker of the card", adapter->description, adapter->provider );
 		}

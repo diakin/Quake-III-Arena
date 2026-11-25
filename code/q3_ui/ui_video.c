@@ -533,6 +533,27 @@ static void GraphicsOptions_ApplyChanges( void *unused, int notification )
 		trap_Cvar_Set( "r_textureMode", "GL_LINEAR_MIPMAP_NEAREST" );
 	}
 
+	// WALKER: the presets also set the effects of SETUP -> EFFECTS, which cost the most
+	// (benchmark on GTX 1650 / i3-9100F: robot shadows round +45 %, building shadows off
+	// +31 %, dynamic lights off +17 %); Custom leaves them as they are
+	{
+		static const struct {
+			int		robotShadows, buildingShadows, dynamicLights, reflections;
+		} presetEffects[] = {
+			{ 2, 2, 1, 1 },		// High Quality
+			{ 2, 1, 1, 1 },		// Normal
+			{ 1, 0, 0, 1 },		// Fast
+			{ 1, 0, 0, 0 },		// Fastest
+		};
+		int		preset = s_graphicsoptions.list.curvalue;
+		if ( preset >= 0 && preset < (int)( sizeof( presetEffects ) / sizeof( presetEffects[0] ) ) ) {
+			trap_Cvar_SetValue( "cg_shadows", presetEffects[preset].robotShadows );
+			trap_Cvar_SetValue( "r_sunShadows", presetEffects[preset].buildingShadows );
+			trap_Cvar_SetValue( "r_dynamiclight", presetEffects[preset].dynamicLights );
+			trap_Cvar_SetValue( "r_noportals", !presetEffects[preset].reflections );
+		}
+	}
+
 	trap_Cmd_ExecuteText( EXEC_APPEND, "vid_restart\n" );
 }
 

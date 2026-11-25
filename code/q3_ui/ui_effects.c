@@ -161,7 +161,8 @@ static void Effects_Preset( qboolean fast ) {
 	effectsMenuInfo.haze.curvalue = 1;		// OpenGL fog: almost free
 	effectsMenuInfo.ripples.curvalue = 1;
 	effectsMenuInfo.shadows.curvalue = fast ? 1 : 2;
-	effectsMenuInfo.buildings.curvalue = fast ? 1 : 2;
+	// WALKER: the coarse building shadows (1) saved only 6 % in the benchmark, off saved 31 %
+	effectsMenuInfo.buildings.curvalue = fast ? 0 : 2;
 	effectsMenuInfo.detail.curvalue = fast ? 2 : 1;
 	effectsMenuInfo.dlights.curvalue = !fast;
 	effectsMenuInfo.marks.curvalue = 1;
