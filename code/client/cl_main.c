@@ -2145,6 +2145,7 @@ void CL_StartHunkUsers( void ) {
 	if ( !cls.rendererStarted ) {
 		cls.rendererStarted = qtrue;
 		CL_InitRenderer();
+		CL_SystemInfoFile();	// WALKER: sysinfo.txt once a start (cl_bench.c)
 	}
 
 	if ( !cls.soundStarted ) {
@@ -2376,6 +2377,7 @@ void CL_Init( void ) {
 	Cmd_AddCommand ("snd_restart", CL_Snd_Restart_f);
 	Cmd_AddCommand ("vid_restart", CL_Vid_Restart_f);
 	Cmd_AddCommand ("benchmark", CL_Benchmark_f);	// WALKER: cl_bench.c
+	Cmd_AddCommand ("sysinfo", CL_SystemInfo_f);
 	Cmd_AddCommand ("disconnect", CL_Disconnect_f);
 	Cmd_AddCommand ("record", CL_Record_f);
 	Cmd_AddCommand ("demo", CL_PlayDemo_f);
@@ -2435,6 +2437,7 @@ void CL_Shutdown( void ) {
 	Cmd_RemoveCommand ("snd_restart");
 	Cmd_RemoveCommand ("vid_restart");
 	Cmd_RemoveCommand ("benchmark");
+	Cmd_RemoveCommand ("sysinfo");
 	Cmd_RemoveCommand ("disconnect");
 	Cmd_RemoveCommand ("record");
 	Cmd_RemoveCommand ("demo");

@@ -739,6 +739,8 @@ extern	int		time_bots;			// WALKER: bot AI (listen server)
 extern	int		com_profiling;		// WALKER: the benchmark measures (cl_bench.c), times are taken as with com_speeds
 
 void	CL_BenchFrame( int frameMsec, int serverMsec, int clientMsec );	// cl_bench.c
+// WALKER: Windows, processor, memory, video adapters and drivers, with checks (win_sysinfo.c)
+void	Sys_SystemReport( char *buffer, int size, const char *glVendor, const char *glRenderer, const char *glVersion );
 
 extern	int		com_frameTime;
 extern	int		com_frameMsec;

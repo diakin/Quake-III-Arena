@@ -11,3 +11,5 @@ walker/dist/basewalker/games.log
 walker/dist/basewalker/accounts/
 walker/dist/botlib.log
 walker/dist/basewalker/balance.cfg
+walker/dist/basewalker/sysinfo.txt
+walker/dist/basewalker/benchmark.log

@@ -520,3 +520,5 @@ qboolean CL_Netchan_Process( netchan_t *chan, msg_t *msg );
 
 // cl_bench.c (WALKER)
 void CL_Benchmark_f( void );
+void CL_SystemInfo_f( void );
+void CL_SystemInfoFile( void );

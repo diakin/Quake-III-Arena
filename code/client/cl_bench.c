@@ -24,6 +24,7 @@ This file is part of WALKER, based on the Quake III Arena source code
 
 #define BENCH_FILE			"benchmark.txt"
 #define BENCH_LOG			"benchmark.log"
+#define SYSINFO_FILE		"sysinfo.txt"
 #define BENCH_MAX_STEPS		48
 #define BENCH_MAX_SETS		8			// cvars a step changes
 #define BENCH_MAX_FRAMES	16384		// frame times kept per step (1 % low)
@@ -210,13 +211,117 @@ static int QDECL Bench_Compare( const void *first, const void *second ) {
 }
 
 
+static int Bench_CountWords( const char *text ) {
+	int		count = 0;
+	while ( *text ) {
+		while ( *text == ' ' ) {
+			text++;
+		}
+		if ( *text ) {
+			count++;
+		}
+		while ( *text && *text != ' ' ) {
+			text++;
+		}
+	}
+	return count;
+}
+
+
+/*
+=================
+Bench_SystemReport
+
+the system part of the reports: Windows, hardware, drivers, OpenGL limits
+=================
+*/
+static void Bench_SystemReport( char *buffer, int size ) {
+	Sys_SystemReport( buffer, size, cls.glconfig.vendor_string, cls.glconfig.renderer_string, cls.glconfig.version_string );
+	Q_strcat( buffer, size, va( "  OpenGL limits: textures up to %i, %i texture units, %s compressed textures, %i extensions\n",
+		cls.glconfig.maxTextureSize, cls.glconfig.maxActiveTextures,
+		cls.glconfig.textureCompression != TC_NONE ? "with" : "no",
+		Bench_CountWords( cls.glconfig.extensions_string ) ) );
+}
+
+
+/*
+=================
+Bench_Print
+
+long text to the console in parts (one print takes a few kilobytes at most)
+=================
+*/
+static void Bench_Print( const char *text ) {
+	char	part[1024];
+	int		length;
+
+	while ( *text ) {
+		length = strlen( text );
+		if ( length > (int)sizeof( part ) - 1 ) {
+			length = sizeof( part ) - 1;
+		}
+		Com_Memcpy( part, text, length );
+		part[length] = 0;
+		Com_Printf( "%s", part );
+		text += length;
+	}
+}
+
+
+/*
+=================
+CL_SystemInfo_f
+
+"sysinfo": the system report to the console and sysinfo.txt
+=================
+*/
+static char		systemReport[16384];
+
+static qboolean Bench_WriteSystemFile( void ) {
+	fileHandle_t	file;
+
+	Bench_SystemReport( systemReport, sizeof( systemReport ) );
+	file = FS_FOpenFileWrite( SYSINFO_FILE );
+	if ( !file ) {
+		return qfalse;
+	}
+	FS_Write( systemReport, strlen( systemReport ), file );
+	FS_FCloseFile( file );
+	return qtrue;
+}
+
+void CL_SystemInfo_f( void ) {
+	qboolean	written = Bench_WriteSystemFile();
+	Bench_Print( systemReport );
+	if ( written ) {
+		Com_Printf( "sysinfo: written to %s\n", SYSINFO_FILE );
+	}
+}
+
+/*
+=================
+CL_SystemInfoFile
+
+at the first start of the renderer: sysinfo.txt, without printing
+=================
+*/
+void CL_SystemInfoFile( void ) {
+	static qboolean	done;
+
+	if ( !done ) {
+		done = qtrue;
+		Bench_WriteSystemFile();
+	}
+}
+
+
 /*
 =================
 Bench_Report
 =================
 */
 static void Bench_Report( void ) {
-	static char		report[32768];
+	static char		report[49152];
 	fileHandle_t	file;
 	qtime_t			now;
 	char			line[512];
@@ -232,9 +337,12 @@ static void Bench_Report( void ) {
 	report[0] = 0;
 	Q_strcat( report, sizeof( report ), va( "==== WALKER benchmark %04i-%02i-%02i %02i:%02i\n",
 		now.tm_year + 1900, now.tm_mon + 1, now.tm_mday, now.tm_hour, now.tm_min ) );
-	Q_strcat( report, sizeof( report ), va( "video: %s / %s / OpenGL %s\n",
-		cls.glconfig.vendor_string, cls.glconfig.renderer_string, cls.glconfig.version_string ) );
-	Q_strcat( report, sizeof( report ), va( "screen %ix%i, map %s, players %i, %i s a step, r_finish 1 (see real_fps)\n",
+	{
+		static char	system[16384];
+		Bench_SystemReport( system, sizeof( system ) );
+		Q_strcat( report, sizeof( report ), system );
+	}
+	Q_strcat( report, sizeof( report ), va( "game %ix%i, map %s, players %i, %i s a step, r_finish 1 (see real_fps)\n",
 		cls.glconfig.vidWidth, cls.glconfig.vidHeight, Cvar_VariableString( "mapname" ), players, benchSeconds ) );
 	Q_strcat( report, sizeof( report ), va( "settings: r_picmip %s, r_sunShadows %s, cg_shadows %s, r_noportals %s, r_drawfog %s, r_dynamiclight %s, r_mode %s, r_vertexLight %s\n",
 		Cvar_VariableString( "r_picmip" ), Cvar_VariableString( "r_sunShadows" ), Cvar_VariableString( "cg_shadows" ),
@@ -276,7 +384,7 @@ static void Bench_Report( void ) {
 	}
 	Q_strcat( report, sizeof( report ), "\n" );
 
-	Com_Printf( "%s", report );
+	Bench_Print( report );
 	FS_FOpenFileByMode( BENCH_LOG, &file, FS_APPEND );
 	if ( file ) {
 		FS_Write( report, strlen( report ), file );
