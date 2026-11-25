@@ -446,6 +446,13 @@ void UI_BalanceLoadFile( void ) {
 	fileHandle_t	file;
 	int				length = trap_FS_FOpenFile( BALANCE_FILE, &file, FS_READ );
 
+	if ( trap_Cvar_VariableValue( "com_benchExe" ) ) {
+		if ( file ) {
+			trap_FS_FCloseFile( file );
+		}
+		return;		// the benchmark exe measures with the stock balance
+	}
+
 	if ( file ) {
 		trap_FS_FCloseFile( file );
 	}

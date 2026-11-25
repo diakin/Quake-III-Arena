@@ -91,6 +91,7 @@ int		time_frontend;		// renderer frontend time
 int		time_backend;		// renderer backend time
 int		time_bots;			// WALKER: bot AI
 int		com_profiling;		// WALKER: benchmark running
+qboolean	com_benchExe;		// WALKER: started as WalkerBench.exe: a fixed battle, no user settings
 
 int			com_frameTime;
 int			com_frameMsec;
@@ -2390,12 +2391,18 @@ void Com_Init( char *commandLine ) {
 
 	Cbuf_AddText ("exec default.cfg\n");
 
+	// WALKER: the benchmark exe measures with the stock settings: the player's own
+	// q3config.cfg and autoexec.cfg are not read (and not written, Com_WriteConfiguration)
+	com_benchExe = Sys_IsBenchmarkExe();
+
 	// skip the q3config.cfg if "safe" is on the command line
-	if ( !Com_SafeMode() ) {
+	if ( !Com_SafeMode() && !com_benchExe ) {
 		Cbuf_AddText ("exec q3config.cfg\n");
 	}
 
-	Cbuf_AddText ("exec autoexec.cfg\n");
+	if ( !com_benchExe ) {
+		Cbuf_AddText ("exec autoexec.cfg\n");
+	}
 
 	Cbuf_Execute ();
 
@@ -2479,8 +2486,18 @@ void Com_Init( char *commandLine ) {
 	// being random enough for a serverid
 	com_frameTime = Com_Milliseconds();
 
+	// WALKER: the benchmark exe sets up its battle (benchmode.cfg in pak0) and runs the
+	// benchmark by itself (cl_bench.c)
+	if ( com_benchExe ) {
+		Cvar_Get( "com_benchExe", "1", CVAR_ROM );
+		Cbuf_AddText( "exec benchmode.cfg\n" );
+		CL_BenchAutoStart();
+	}
+
 	// add + commands from command line
-	if ( !Com_AddStartupCommands() ) {
+	if ( com_benchExe ) {
+		Com_AddStartupCommands();
+	} else if ( !Com_AddStartupCommands() ) {
 		// if the user didn't give any commands, run default action
 		if ( !com_dedicated->integer ) {
 			Cbuf_AddText ("cinematic idlogo.RoQ\n");
@@ -2535,6 +2552,10 @@ void Com_WriteConfiguration( void ) {
 	// if we are quiting without fully initializing, make sure
 	// we don't write out anything
 	if ( !com_fullyInitialized ) {
+		return;
+	}
+	// WALKER: the benchmark exe leaves the player's settings alone
+	if ( com_benchExe ) {
 		return;
 	}
 

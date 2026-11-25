@@ -741,6 +741,11 @@ extern	int		com_profiling;		// WALKER: the benchmark measures (cl_bench.c), time
 void	CL_BenchFrame( int frameMsec, int serverMsec, int clientMsec );	// cl_bench.c
 // WALKER: Windows, processor, memory, video adapters and drivers, with checks (win_sysinfo.c)
 void	Sys_SystemReport( char *buffer, int size, const char *glVendor, const char *glRenderer, const char *glVersion );
+// WALKER: the benchmark exe (a copy of Walker.exe with "bench" in its name, win_sysinfo.c)
+qboolean Sys_IsBenchmarkExe( void );
+void	Sys_ShowFile( const char *path );		// open in the program Windows uses for it
+extern	qboolean	com_benchExe;
+void	CL_BenchAutoStart( void );				// cl_bench.c
 
 extern	int		com_frameTime;
 extern	int		com_frameMsec;

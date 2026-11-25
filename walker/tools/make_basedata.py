@@ -71,6 +71,25 @@ base_again:                             // against base: how much the battle its
 """
 
 
+# ---------------------------------------------------------------- benchmode.cfg
+# WalkerBench.exe (a copy of Walker.exe with "bench" in its name, code/client/cl_bench.c):
+# the player's settings are not read, this starts a fixed battle and the benchmark runs
+BENCHMODE_CFG = r"""// WALKER benchmark exe: a fixed battle with the stock settings
+// (the player's q3config.cfg, autoexec.cfg and balance.cfg are not read, nothing is saved)
+set com_maxfps 250
+set r_mode 6                // 1024 x 768 in a window: the same on every computer
+set r_fullscreen 0
+set sv_maxclients 12
+set bot_minplayers 10       // 5 x 5 bots
+set g_gametype 3            // team battle without limits: it does not end in the middle
+set fraglimit 0
+set timelimit 0
+set bench_players 10        // start when this many robots are in the battle (at most 2 minutes)
+set bench_seconds 10        // a step
+map wk_islands
+"""
+
+
 # ---------------------------------------------------------------- default.cfg
 DEFAULT_CFG = r"""// WALKER default settings (read by the engine at startup)
 unbindall
@@ -1254,6 +1273,7 @@ railDisc
 def main():
     write('default.cfg', DEFAULT_CFG)
     write('benchmark.txt', BENCHMARK_TXT)
+    write('benchmode.cfg', BENCHMODE_CFG)
     console_font()
     prop_fonts()
     menu_art()

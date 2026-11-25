@@ -22,6 +22,8 @@ This file is part of WALKER, based on the Quake III Arena source code
 */
 #include "client.h"
 
+char	*FS_BuildOSPath( const char *base, const char *game, const char *qpath );	// files.c
+
 #define BENCH_FILE			"benchmark.txt"
 #define BENCH_LOG			"benchmark.log"
 #define SYSINFO_FILE		"sysinfo.txt"
@@ -55,6 +57,7 @@ typedef struct {
 	double		bots, server, game, client, front, back;	// msec summed over the frames
 	double		batches, triangles;
 	int			low;			// 99th percentile frame time, msec
+	int			median;			// half of the frames are faster
 	int			worst;
 	int			maxLag;			// msec the server was behind the newest command (Connection Interrupted past ~2 s)
 	int			lagFrames;		// frames with the server more than a second behind
@@ -86,6 +89,21 @@ static benchSet_t	benchGlobal[] = {
 	{ "r_finish", "1" },
 };
 #define BENCH_NUM_GLOBAL	( sizeof( benchGlobal ) / sizeof( benchGlobal[0] ) )
+
+// the automatic run of the benchmark exe (see CL_BenchAutoStart)
+typedef enum {
+	AUTO_OFF,
+	AUTO_WAIT,			// for the battle and the bots
+	AUTO_SPECTATE,		// joined the spectators, the view settles
+	AUTO_RUNNING,
+	AUTO_DONE
+} benchAuto_t;
+
+static int		benchAuto;
+static int		benchAutoTime;
+static int		benchAutoPrinted;
+
+static void Bench_Start( int seconds );
 
 static const char *benchDefaultSteps =
 	"base:\n"
@@ -355,7 +373,8 @@ static void Bench_Report( void ) {
 	Q_strcat( report, sizeof( report ), "worst = the longest frame, msec; lag = how far the server answer fell behind at most, msec\n"
 		"(\"Connection Interrupted\" shows past about 64 frames), lag>1s = share of frames with it over a second\n" );
 	Q_strcat( report, sizeof( report ), "view: spect = spectator, dead N % = the own robot destroyed for this share of the step\n" );
-	Q_strcat( report, sizeof( report ), "step                  fps  1%low  frame  worst    lag lag>1s   bots server client  front   back  batches  ktris   vs base  view\n" );
+	Q_strcat( report, sizeof( report ), "median = fps of a typical frame (half are faster), what the fps counter on the screen mostly shows\n" );
+	Q_strcat( report, sizeof( report ), "step                  fps median  1%low  frame  worst    lag lag>1s   bots server client  front   back  batches  ktris   vs base  view\n" );
 
 	for ( index = 0; index < benchNumSteps; index++ ) {
 		benchStep_t	*step = &benchSteps[index];
@@ -371,8 +390,8 @@ static void Bench_Report( void ) {
 		if ( index == 0 ) {
 			baseFps = fps;
 		}
-		Com_sprintf( line, sizeof( line ), "%-20s %5.1f  %5.1f  %5.1f  %5i  %5i  %4i %%  %5.1f  %5.1f  %5.1f  %5.1f  %5.1f  %7.0f  %5.0f  %+7.0f %%  %s\n",
-			step->name, fps, step->low > 0 ? 1000.0f / step->low : 0.0f, step->msec / frames,
+		Com_sprintf( line, sizeof( line ), "%-20s %5.1f  %5.1f  %5.1f  %5.1f  %5i  %5i  %4i %%  %5.1f  %5.1f  %5.1f  %5.1f  %5.1f  %7.0f  %5.0f  %+7.0f %%  %s\n",
+			step->name, fps, step->median > 0 ? 1000.0f / step->median : 0.0f, step->low > 0 ? 1000.0f / step->low : 0.0f, step->msec / frames,
 			step->worst, step->maxLag, step->lagFrames * 100 / step->frames,
 			step->bots / frames, ( step->server - step->bots ) / frames,
 			( step->client - step->front - step->back ) / frames, step->front / frames, step->back / frames,
@@ -417,6 +436,78 @@ static void Bench_Finish( qboolean report ) {
 	if ( report ) {
 		Bench_Report();
 	}
+	if ( benchAuto == AUTO_RUNNING ) {
+		benchAuto = AUTO_DONE;
+		Sys_ShowFile( FS_BuildOSPath( Cvar_VariableString( "fs_homepath" ), BASEGAME, BENCH_LOG ) );
+		Cbuf_AddText( "quit\n" );
+	}
+}
+
+
+/*
+===========================================================================
+WALKER: the benchmark exe (WalkerBench.exe, a copy of Walker.exe)
+
+benchmode.cfg (pak0) starts a fixed battle with the stock settings; here the
+run waits for the bots (bench_players in teams, at most two minutes), turns the
+player into a spectator (the camera stays at the intermission point of the
+map), runs the benchmark with bench_seconds a step, opens benchmark.log and
+quits.
+===========================================================================
+*/
+
+void CL_BenchAutoStart( void ) {
+	benchAuto = AUTO_WAIT;
+	benchAutoTime = 0;
+	com_profiling = 1;		// CL_BenchFrame is called every frame
+}
+
+static int Bench_PlayersInTeams( void ) {
+	int		index, count = 0;
+
+	for ( index = 0; index < MAX_CLIENTS; index++ ) {
+		int		offset = cl.gameState.stringOffsets[CS_PLAYERS + index];
+		if ( offset && atoi( Info_ValueForKey( cl.gameState.stringData + offset, "t" ) ) != 3 ) {		// TEAM_SPECTATOR (bg_public.h)
+			count++;
+		}
+	}
+	return count;
+}
+
+static void Bench_AutoFrame( void ) {
+	int		now = Sys_Milliseconds();
+	int		wanted = Cvar_VariableIntegerValue( "bench_players" );
+
+	switch ( benchAuto ) {
+	case AUTO_WAIT:
+		if ( cls.state != CA_ACTIVE ) {
+			benchAutoTime = 0;
+			return;
+		}
+		if ( !benchAutoTime ) {
+			benchAutoTime = now;
+			benchAutoPrinted = 0;
+			Cbuf_AddText( "team spectator\n" );
+		}
+		if ( now - benchAutoPrinted > 5000 ) {
+			Com_Printf( "benchmark: waiting for the bots, %i of %i in the battle\n", Bench_PlayersInTeams(), wanted );
+			benchAutoPrinted = now;
+		}
+		if ( Bench_PlayersInTeams() >= wanted || now - benchAutoTime > 120000 ) {
+			Cbuf_AddText( "team spectator\n" );
+			benchAuto = AUTO_SPECTATE;
+			benchAutoTime = now;
+		}
+		return;
+	case AUTO_SPECTATE:
+		if ( now - benchAutoTime > 3000 ) {
+			benchAuto = AUTO_RUNNING;
+			Bench_Start( Cvar_VariableIntegerValue( "bench_seconds" ) > 0 ? Cvar_VariableIntegerValue( "bench_seconds" ) : 10 );
+		}
+		return;
+	default:
+		return;
+	}
 }
 
 
@@ -432,6 +523,9 @@ void CL_BenchFrame( int frameMsec, int serverMsec, int clientMsec ) {
 	int			now = Sys_Milliseconds();
 
 	if ( benchState == BENCH_IDLE ) {
+		if ( benchAuto == AUTO_WAIT || benchAuto == AUTO_SPECTATE ) {
+			Bench_AutoFrame();
+		}
 		return;
 	}
 	step = &benchSteps[benchStep];
@@ -533,6 +627,7 @@ void CL_BenchFrame( int frameMsec, int serverMsec, int clientMsec ) {
 			int		count = step->frames < BENCH_MAX_FRAMES ? step->frames : BENCH_MAX_FRAMES;
 			qsort( benchFrameTimes, count, sizeof( int ), Bench_Compare );
 			step->low = benchFrameTimes[count * 99 / 100 < count ? count * 99 / 100 : count - 1];
+			step->median = benchFrameTimes[count / 2];
 		}
 		Com_Printf( "benchmark: %s %.1f fps\n", step->name, step->frames * 1000.0f / ( step->msec > 0 ? step->msec : 1 ) );
 		Bench_Restore( step );
@@ -553,9 +648,6 @@ CL_Benchmark_f
 =================
 */
 void CL_Benchmark_f( void ) {
-	char	*text = NULL;
-	int		index;
-
 	if ( benchState != BENCH_IDLE ) {
 		if ( !Q_stricmp( Cmd_Argv( 1 ), "stop" ) ) {
 			Com_Printf( "benchmark: stopped\n" );
@@ -572,10 +664,20 @@ void CL_Benchmark_f( void ) {
 		Com_Printf( "benchmark: start a battle first (best 5 x 5 with bots), then \"benchmark [seconds a step]\"\n" );
 		return;
 	}
-	benchSeconds = Cmd_Argc() > 1 ? atoi( Cmd_Argv( 1 ) ) : 10;
-	if ( benchSeconds < 2 ) {
-		benchSeconds = 2;
-	}
+	Bench_Start( Cmd_Argc() > 1 ? atoi( Cmd_Argv( 1 ) ) : 10 );
+}
+
+
+/*
+=================
+Bench_Start
+=================
+*/
+static void Bench_Start( int seconds ) {
+	char	*text = NULL;
+	int		index;
+
+	benchSeconds = seconds < 2 ? 2 : seconds;
 	if ( FS_ReadFile( BENCH_FILE, (void **)&text ) > 0 && text ) {
 		Bench_Parse( text );
 		FS_FreeFile( text );

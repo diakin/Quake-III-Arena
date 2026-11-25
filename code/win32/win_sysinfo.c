@@ -16,6 +16,7 @@ This file is part of WALKER, based on the Quake III Arena source code
 #include "../game/q_shared.h"
 #include "../qcommon/qcommon.h"
 #include <windows.h>
+#include <shellapi.h>
 
 #ifndef KEY_WOW64_64KEY
 #define KEY_WOW64_64KEY		0x0100
@@ -399,6 +400,35 @@ static void Check( int level, const char *format, ... ) {
 		reportWarnings++;
 	}
 	Report( "    %s %s\n", level == 2 ? "ERROR:" : ( level == 1 ? "WARNING:" : "note:" ), text );
+}
+
+
+/*
+=================
+Sys_IsBenchmarkExe
+
+started from a copy of the game exe with "bench" in its name (WalkerBench.exe)
+=================
+*/
+qboolean Sys_IsBenchmarkExe( void ) {
+	char	path[MAX_OSPATH];
+	char	*name;
+
+	if ( !GetModuleFileNameA( NULL, path, sizeof( path ) ) ) {
+		return qfalse;
+	}
+	name = strrchr( path, '\\' );
+	return ContainsNoCase( name ? name + 1 : path, "bench" );
+}
+
+
+/*
+=================
+Sys_ShowFile
+=================
+*/
+void Sys_ShowFile( const char *path ) {
+	ShellExecuteA( NULL, "open", path, NULL, NULL, SW_SHOWNORMAL );
 }
 
 
