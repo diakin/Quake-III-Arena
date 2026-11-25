@@ -776,7 +776,13 @@ void SV_Frame( int msec ) {
 
 	sv.timeResidual += msec;
 
-	if (!com_dedicated->integer) SV_BotFrame( svs.time + sv.timeResidual );
+	if (!com_dedicated->integer) {
+		int		botStart = com_profiling ? Sys_Milliseconds() : 0;
+		SV_BotFrame( svs.time + sv.timeResidual );
+		if ( com_profiling ) {
+			time_bots = Sys_Milliseconds() - botStart;
+		}
+	}
 
 	if ( com_dedicated->integer && sv.timeResidual < frameMsec ) {
 		// NET_Sleep will give the OS time slices until either get a packet
@@ -817,7 +823,7 @@ void SV_Frame( int msec ) {
 		cvar_modifiedFlags &= ~CVAR_SYSTEMINFO;
 	}
 
-	if ( com_speeds->integer ) {
+	if ( com_speeds->integer || com_profiling ) {
 		startTime = Sys_Milliseconds ();
 	} else {
 		startTime = 0;	// quite a compiler warning
@@ -837,7 +843,7 @@ void SV_Frame( int msec ) {
 		VM_Call( gvm, GAME_RUN_FRAME, svs.time );
 	}
 
-	if ( com_speeds->integer ) {
+	if ( com_speeds->integer || com_profiling ) {
 		time_game = Sys_Milliseconds () - startTime;
 	}
 

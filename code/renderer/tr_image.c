@@ -1906,6 +1906,11 @@ image_t	*R_FindImageFile( const char *name, qboolean mipmap, qboolean allowPicmi
 		return NULL;
 	}
 
+	// WALKER: r_noTextures: world and model textures white, the rest (2D, effects) as is
+	if ( r_noTextures->integer && tr.whiteImage && ( !Q_stricmpn( name, "textures/", 9 ) || !Q_stricmpn( name, "models/", 7 ) ) ) {
+		return tr.whiteImage;
+	}
+
 	hash = generateHashValue(name);
 
 	//

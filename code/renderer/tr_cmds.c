@@ -31,7 +31,16 @@ volatile qboolean	renderThreadActive;
 R_PerformanceCounters
 =====================
 */
+static int		lastFrameBatches, lastFrameTriangles;	// WALKER: for the benchmark
+
+void R_GetFrameStats( int *batches, int *triangles ) {
+	*batches = lastFrameBatches;
+	*triangles = lastFrameTriangles;
+}
+
 void R_PerformanceCounters( void ) {
+	lastFrameBatches = backEnd.pc.c_surfaces;
+	lastFrameTriangles = backEnd.pc.c_totalIndexes / 3;
 	if ( !r_speeds->integer ) {
 		// clear the counters even if we aren't printing
 		Com_Memset( &tr.pc, 0, sizeof( tr.pc ) );

@@ -735,6 +735,10 @@ extern	cvar_t	*sv_paused;
 extern	int		time_game;
 extern	int		time_frontend;
 extern	int		time_backend;		// renderer backend time
+extern	int		time_bots;			// WALKER: bot AI (listen server)
+extern	int		com_profiling;		// WALKER: the benchmark measures (cl_bench.c), times are taken as with com_speeds
+
+void	CL_BenchFrame( int frameMsec, int serverMsec, int clientMsec );	// cl_bench.c
 
 extern	int		com_frameTime;
 extern	int		com_frameMsec;

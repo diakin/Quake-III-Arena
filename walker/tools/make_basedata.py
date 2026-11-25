@@ -40,6 +40,35 @@ def write(path, text):
         file.write(text)
 
 
+# ---------------------------------------------------------------- benchmark.txt
+# steps of the "benchmark" command (code/client/cl_bench.c)
+BENCHMARK_TXT = r"""// WALKER benchmark: in a battle (best 5 x 5 with bots) "benchmark [seconds a step]"
+// in the console; results go to benchmark.log. Every step starts from the settings
+// the benchmark was started with, they are restored at the end.
+// name: commands. Two words = a cvar and its value; vid_restart for the cvars that need it.
+base:
+real_fps: r_finish 0                    // the frame rate without waiting for the card every frame
+no_robots: r_drawentities 0             // robots, weapons, shells and effects not drawn
+no_world: r_drawworld 0                 // the map not drawn
+no_hud: cg_draw2D 0
+robot_shadows_off: cg_shadows 0
+robot_shadows_round: cg_shadows 1
+sun_shadows_off: r_sunShadows 0
+sun_shadows_simple: r_sunShadows 1
+water_reflection_off: r_noportals 1
+haze_off: r_drawfog 0
+dlights_off: r_dynamiclight 0
+fast_sky: r_fastsky 1
+marks_off: cg_marks 0
+model_lod_near: r_lodDistance 300
+no_textures: r_noTextures 1; vid_restart
+small_textures: r_picmip 2; vid_restart
+vertex_light: r_vertexLight 1; vid_restart
+640x480: r_mode 3; vid_restart
+base_again:                             // against base: how much the battle itself varies
+"""
+
+
 # ---------------------------------------------------------------- default.cfg
 DEFAULT_CFG = r"""// WALKER default settings (read by the engine at startup)
 unbindall
@@ -1222,6 +1251,7 @@ railDisc
 
 def main():
     write('default.cfg', DEFAULT_CFG)
+    write('benchmark.txt', BENCHMARK_TXT)
     console_font()
     prop_fonts()
     menu_art()

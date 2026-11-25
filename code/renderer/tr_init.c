@@ -106,6 +106,7 @@ cvar_t	*r_singleShader;
 cvar_t	*r_roundImagesDown;
 cvar_t	*r_colorMipLevels;
 cvar_t	*r_picmip;
+cvar_t	*r_noTextures;
 cvar_t	*r_showtris;
 cvar_t	*r_showsky;
 cvar_t	*r_shownormals;
@@ -883,6 +884,9 @@ void R_Register( void )
 #endif
 
 	r_picmip = ri.Cvar_Get ("r_picmip", "0", CVAR_ARCHIVE | CVAR_LATCH );	// WALKER: full-size textures by default
+	// WALKER: 1 = the textures of the world and the models are white, only the lighting
+	// (lightmaps, light on models) stays; to see what the textures cost (benchmark)
+	r_noTextures = ri.Cvar_Get ("r_noTextures", "0", CVAR_LATCH );
 	r_roundImagesDown = ri.Cvar_Get ("r_roundImagesDown", "1", CVAR_ARCHIVE | CVAR_LATCH );
 	r_colorMipLevels = ri.Cvar_Get ("r_colorMipLevels", "0", CVAR_LATCH );
 	AssertCvarRange( r_picmip, 0, 16, qtrue );
@@ -1220,6 +1224,7 @@ refexport_t *GetRefAPI ( int apiVersion, refimport_t *rimp ) {
 
 	re.BeginFrame = RE_BeginFrame;
 	re.EndFrame = RE_EndFrame;
+	re.GetFrameStats = R_GetFrameStats;
 
 	re.MarkFragments = R_MarkFragments;
 	re.LerpTag = R_LerpTag;

@@ -89,6 +89,8 @@ cvar_t	*com_noErrorInterrupt;
 int		time_game;
 int		time_frontend;		// renderer frontend time
 int		time_backend;		// renderer backend time
+int		time_bots;			// WALKER: bot AI
+int		com_profiling;		// WALKER: benchmark running
 
 int			com_frameTime;
 int			com_frameMsec;
@@ -2678,7 +2680,7 @@ void Com_Frame( void ) {
 	//
 	// main event loop
 	//
-	if ( com_speeds->integer ) {
+	if ( com_speeds->integer || com_profiling ) {
 		timeBeforeFirstEvents = Sys_Milliseconds ();
 	}
 
@@ -2706,7 +2708,7 @@ void Com_Frame( void ) {
 	//
 	// server side
 	//
-	if ( com_speeds->integer ) {
+	if ( com_speeds->integer || com_profiling ) {
 		timeBeforeServer = Sys_Milliseconds ();
 	}
 
@@ -2737,7 +2739,7 @@ void Com_Frame( void ) {
 		// run event loop a second time to get server to client packets
 		// without a frame of latency
 		//
-		if ( com_speeds->integer ) {
+		if ( com_speeds->integer || com_profiling ) {
 			timeBeforeEvents = Sys_Milliseconds ();
 		}
 		Com_EventLoop();
@@ -2747,13 +2749,13 @@ void Com_Frame( void ) {
 		//
 		// client side
 		//
-		if ( com_speeds->integer ) {
+		if ( com_speeds->integer || com_profiling ) {
 			timeBeforeClient = Sys_Milliseconds ();
 		}
 
 		CL_Frame( msec );
 
-		if ( com_speeds->integer ) {
+		if ( com_speeds->integer || com_profiling ) {
 			timeAfter = Sys_Milliseconds ();
 		}
 	}
@@ -2761,6 +2763,9 @@ void Com_Frame( void ) {
 	//
 	// report timing information
 	//
+	if ( com_profiling && !com_dedicated->integer ) {
+		CL_BenchFrame( com_frameMsec, timeBeforeEvents - timeBeforeServer, timeAfter - timeBeforeClient );
+	}
 	if ( com_speeds->integer ) {
 		int			all, sv, ev, cl;
 

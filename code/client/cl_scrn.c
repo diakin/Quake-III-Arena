@@ -536,7 +536,7 @@ void SCR_UpdateScreen( void ) {
 		SCR_DrawScreenField( STEREO_CENTER );
 	}
 
-	if ( com_speeds->integer ) {
+	if ( com_speeds->integer || com_profiling ) {
 		re.EndFrame( &time_frontend, &time_backend );
 	} else {
 		re.EndFrame( NULL, NULL );
