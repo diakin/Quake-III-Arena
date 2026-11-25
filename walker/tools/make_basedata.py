@@ -67,6 +67,11 @@ no_textures: r_noTextures 1; vid_restart
 small_textures: r_picmip 2; vid_restart
 vertex_light: r_vertexLight 1; vid_restart
 640x480: r_mode 3; vid_restart
+bots_hold_fire: bot_hold 1              // the bots stand still, aim and shoot
+bots_hold: bot_hold 2                   // they stand and do not shoot
+bots_hold_no_world: bot_hold 2; r_drawworld 0
+bots_hold_nothing: bot_hold 2; r_drawworld 0; r_drawentities 0     // only the sky and the HUD
+nothing_bots_paused: bot_pause 1; r_drawworld 0; r_drawentities 0  // and the bot AI stopped too
 base_again:                             // against base: how much the battle itself varies
 """
 
@@ -80,7 +85,7 @@ set com_maxfps 250
 set r_mode 6                // 1024 x 768 in a window: the same on every computer
 set r_fullscreen 0
 set sv_maxclients 12
-set bot_minplayers 10       // 5 x 5 bots
+set bot_minplayers 0        // the benchmark adds the bots one by one itself (5 x 5)
 set g_gametype 3            // team battle without limits: it does not end in the middle
 set fraglimit 0
 set timelimit 0

@@ -769,6 +769,15 @@ void ClientThink_real( gentity_t *ent ) {
 	// mark the time, so the connection sprite can be removed
 	ucmd = &ent->client->pers.cmd;
 
+	// WALKER: bot_hold (benchmark): 1 - the bots stand where they are and still aim and
+	// shoot, 2 - and do not shoot either; their AI goes on thinking
+	if ( g_botHold.integer && ( ent->r.svFlags & SVF_BOT ) ) {
+		ucmd->forwardmove = ucmd->rightmove = ucmd->upmove = 0;
+		if ( g_botHold.integer >= 2 ) {
+			ucmd->buttons &= ~( BUTTON_ATTACK | BUTTON_GESTURE | BUTTON_USE_HOLDABLE );
+		}
+	}
+
 	// sanity check the command time to prevent speedup cheating
 	if ( ucmd->serverTime > level.time + 200 ) {
 		ucmd->serverTime = level.time + 200;

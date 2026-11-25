@@ -93,7 +93,8 @@ static benchSet_t	benchGlobal[] = {
 // the automatic run of the benchmark exe (see CL_BenchAutoStart)
 typedef enum {
 	AUTO_OFF,
-	AUTO_WAIT,			// for the battle and the bots
+	AUTO_WAIT,			// for the battle
+	AUTO_RAMP,			// adds the bots one by one and measures each number
 	AUTO_SPECTATE,		// joined the spectators, the view settles
 	AUTO_RUNNING,
 	AUTO_DONE
@@ -104,6 +105,25 @@ static int		benchAutoTime;
 static int		benchAutoPrinted;
 
 static void Bench_Start( int seconds );
+
+// bots entering one by one (the benchmark exe): a row for each number of robots in the battle
+#define BENCH_MAX_RAMP		( MAX_CLIENTS / 2 + 1 )
+static benchStep_t	benchRamp[BENCH_MAX_RAMP];
+static int			benchNumRamp;
+static qboolean		benchGlobalsApplied;
+
+static void Bench_ApplyGlobals( void ) {
+	int		index;
+
+	if ( benchGlobalsApplied ) {
+		return;
+	}
+	for ( index = 0; index < (int)BENCH_NUM_GLOBAL; index++ ) {
+		Q_strncpyz( benchGlobal[index].saved, Cvar_VariableString( benchGlobal[index].name ), sizeof( benchGlobal[0].saved ) );
+		Cvar_Set( benchGlobal[index].name, benchGlobal[index].value );
+	}
+	benchGlobalsApplied = qtrue;
+}
 
 static const char *benchDefaultSteps =
 	"base:\n"
@@ -337,6 +357,34 @@ void CL_SystemInfoFile( void ) {
 
 /*
 =================
+Bench_Line
+
+a row of the table; baseFps 0: this is the base itself
+=================
+*/
+static void Bench_Line( benchStep_t *step, float baseFps, char *line, int size ) {
+	float	fps, frames;
+
+	if ( !step->frames || !step->msec ) {
+		Com_sprintf( line, size, "%-20s  not measured\n", step->name );
+		return;
+	}
+	frames = step->frames;
+	fps = step->frames * 1000.0f / step->msec;
+	Com_sprintf( line, size, "%-20s %5.1f  %5.1f  %5.1f  %5.1f  %5i  %5i  %4i %%  %5.1f  %5.1f  %5.1f  %5.1f  %5.1f  %7.0f  %5.0f  %+7.0f %%  %s\n",
+		step->name, fps, step->median > 0 ? 1000.0f / step->median : 0.0f, step->low > 0 ? 1000.0f / step->low : 0.0f, step->msec / frames,
+		step->worst, step->maxLag, step->lagFrames * 100 / step->frames,
+		step->bots / frames, ( step->server - step->bots ) / frames,
+		( step->client - step->front - step->back ) / frames, step->front / frames, step->back / frames,
+		step->batches / frames, step->triangles / frames / 1000.0f,
+		baseFps > 0 ? ( fps / baseFps - 1.0f ) * 100.0f : 0.0f,
+		step->deadFrames ? va( "dead %i %%", step->deadFrames * 100 / step->frames )
+		: ( step->spectatorFrames * 2 > step->frames ? "spect" : "" ) );
+}
+
+
+/*
+=================
 Bench_Report
 =================
 */
@@ -374,31 +422,28 @@ static void Bench_Report( void ) {
 		"(\"Connection Interrupted\" shows past about 64 frames), lag>1s = share of frames with it over a second\n" );
 	Q_strcat( report, sizeof( report ), "view: spect = spectator, dead N % = the own robot destroyed for this share of the step\n" );
 	Q_strcat( report, sizeof( report ), "median = fps of a typical frame (half are faster), what the fps counter on the screen mostly shows\n" );
+	if ( benchNumRamp > 0 ) {
+		float	rampBase = 0;
+		Q_strcat( report, sizeof( report ), "bots entering the battle one by one (vs base = against no bots):\n" );
+		Q_strcat( report, sizeof( report ), "robots in battle      fps median  1%low  frame  worst    lag lag>1s   bots server client  front   back  batches  ktris   vs base  view\n" );
+		for ( index = 0; index < benchNumRamp; index++ ) {
+			Bench_Line( &benchRamp[index], index == 0 ? 0 : rampBase, line, sizeof( line ) );
+			if ( index == 0 && benchRamp[0].frames && benchRamp[0].msec ) {
+				rampBase = benchRamp[0].frames * 1000.0f / benchRamp[0].msec;
+			}
+			Q_strcat( report, sizeof( report ), line );
+		}
+		Q_strcat( report, sizeof( report ), "then the steps, with all the bots:\n" );
+	}
 	Q_strcat( report, sizeof( report ), "step                  fps median  1%low  frame  worst    lag lag>1s   bots server client  front   back  batches  ktris   vs base  view\n" );
 
 	for ( index = 0; index < benchNumSteps; index++ ) {
 		benchStep_t	*step = &benchSteps[index];
-		float		fps, frames;
 
-		if ( !step->frames || !step->msec ) {
-			Com_sprintf( line, sizeof( line ), "%-20s  not measured\n", step->name );
-			Q_strcat( report, sizeof( report ), line );
-			continue;
+		Bench_Line( step, index == 0 ? 0 : baseFps, line, sizeof( line ) );
+		if ( index == 0 && step->frames && step->msec ) {
+			baseFps = step->frames * 1000.0f / step->msec;
 		}
-		frames = step->frames;
-		fps = step->frames * 1000.0f / step->msec;
-		if ( index == 0 ) {
-			baseFps = fps;
-		}
-		Com_sprintf( line, sizeof( line ), "%-20s %5.1f  %5.1f  %5.1f  %5.1f  %5i  %5i  %4i %%  %5.1f  %5.1f  %5.1f  %5.1f  %5.1f  %7.0f  %5.0f  %+7.0f %%  %s\n",
-			step->name, fps, step->median > 0 ? 1000.0f / step->median : 0.0f, step->low > 0 ? 1000.0f / step->low : 0.0f, step->msec / frames,
-			step->worst, step->maxLag, step->lagFrames * 100 / step->frames,
-			step->bots / frames, ( step->server - step->bots ) / frames,
-			( step->client - step->front - step->back ) / frames, step->front / frames, step->back / frames,
-			step->batches / frames, step->triangles / frames / 1000.0f,
-			baseFps > 0 ? ( fps / baseFps - 1.0f ) * 100.0f : 0.0f,
-			step->deadFrames ? va( "dead %i %%", step->deadFrames * 100 / step->frames )
-			: ( step->spectatorFrames * 2 > step->frames ? "spect" : "" ) );
 		Q_strcat( report, sizeof( report ), line );
 	}
 	Q_strcat( report, sizeof( report ), "steps:\n" );
@@ -428,8 +473,11 @@ Bench_Finish
 static void Bench_Finish( qboolean report ) {
 	int		index;
 
-	for ( index = BENCH_NUM_GLOBAL - 1; index >= 0; index-- ) {
-		Cvar_Set( benchGlobal[index].name, benchGlobal[index].saved );
+	if ( benchGlobalsApplied ) {
+		for ( index = BENCH_NUM_GLOBAL - 1; index >= 0; index-- ) {
+			Cvar_Set( benchGlobal[index].name, benchGlobal[index].saved );
+		}
+		benchGlobalsApplied = qfalse;
 	}
 	com_profiling = 0;
 	benchState = BENCH_IDLE;
@@ -441,6 +489,66 @@ static void Bench_Finish( qboolean report ) {
 		Sys_ShowFile( FS_BuildOSPath( Cvar_VariableString( "fs_homepath" ), BASEGAME, BENCH_LOG ) );
 		Cbuf_AddText( "quit\n" );
 	}
+}
+
+
+/*
+=================
+Bench_Accumulate / Bench_Close
+
+one frame into a step; at its end the 1 % low and the median
+=================
+*/
+static void Bench_Accumulate( benchStep_t *step, int frameMsec, int serverMsec, int clientMsec ) {
+	if ( cl.snap.ps.pm_type == BENCH_PM_SPECTATOR ) {
+		step->spectatorFrames++;
+	} else if ( cl.snap.ps.pm_type == BENCH_PM_DEAD || cl.snap.ps.stats[0] <= 0 ) {
+		step->deadFrames++;
+	}
+	{
+		// how far the snapshots fall behind the commands sent (what cgame shows as Connection Interrupted)
+		int		lag = cl.cmds[cl.cmdNumber & CMD_MASK].serverTime - cl.snap.ps.commandTime;
+		if ( lag > step->maxLag ) {
+			step->maxLag = lag;
+		}
+		if ( lag > 1000 ) {
+			step->lagFrames++;
+		}
+	}
+	if ( step->frames < BENCH_MAX_FRAMES ) {
+		benchFrameTimes[step->frames] = frameMsec;
+	}
+	step->frames++;
+	step->msec += frameMsec;
+	if ( frameMsec > step->worst ) {
+		step->worst = frameMsec;
+	}
+	step->bots += time_bots;
+	step->game += time_game;
+	step->server += serverMsec;
+	step->client += clientMsec;
+	step->front += time_frontend;
+	step->back += time_backend;
+	{
+		int		batches = 0, triangles = 0;
+		if ( re.GetFrameStats ) {
+			re.GetFrameStats( &batches, &triangles );
+		}
+		step->batches += batches;
+		step->triangles += triangles;
+	}
+}
+
+static void Bench_Close( benchStep_t *step ) {
+	int		count = step->frames < BENCH_MAX_FRAMES ? step->frames : BENCH_MAX_FRAMES;
+
+	if ( count <= 0 ) {
+		return;
+	}
+	// 1 % low: the frame time 99 % of the frames are faster than
+	qsort( benchFrameTimes, count, sizeof( int ), Bench_Compare );
+	step->low = benchFrameTimes[count * 99 / 100 < count ? count * 99 / 100 : count - 1];
+	step->median = benchFrameTimes[count / 2];
 }
 
 
@@ -474,9 +582,18 @@ static int Bench_PlayersInTeams( void ) {
 	return count;
 }
 
-static void Bench_AutoFrame( void ) {
+#define RAMP_SETTLE		2500		// msec after a bot entered, not measured (it loads, spawns)
+#define RAMP_MEASURE	6000
+#define RAMP_JOIN_WAIT	15000		// a bot that does not enter by then is given up
+
+static const char	*benchBotNames[] = { "Anvil", "Bastion", "Cinder", "Drake", "Ember", "Flint", "Granite", "Hornet", "Jackal" };
+static int			benchRampPhase;		// 0 settle, 1 measure, 2 waiting for the next bot
+static int			benchRampTime;
+
+static void Bench_AutoFrame( int frameMsec, int serverMsec, int clientMsec ) {
 	int		now = Sys_Milliseconds();
 	int		wanted = Cvar_VariableIntegerValue( "bench_players" );
+	int		players;
 
 	switch ( benchAuto ) {
 	case AUTO_WAIT:
@@ -486,21 +603,67 @@ static void Bench_AutoFrame( void ) {
 		}
 		if ( !benchAutoTime ) {
 			benchAutoTime = now;
-			benchAutoPrinted = 0;
 			Cbuf_AddText( "team spectator\n" );
+			return;
 		}
-		if ( now - benchAutoPrinted > 5000 ) {
-			Com_Printf( "benchmark: waiting for the bots, %i of %i in the battle\n", Bench_PlayersInTeams(), wanted );
-			benchAutoPrinted = now;
+		if ( now - benchAutoTime < 2000 ) {
+			return;
 		}
-		if ( Bench_PlayersInTeams() >= wanted || now - benchAutoTime > 120000 ) {
-			Cbuf_AddText( "team spectator\n" );
-			benchAuto = AUTO_SPECTATE;
-			benchAutoTime = now;
+		// the view settled: measure from no bots on
+		Bench_ApplyGlobals();
+		Com_Memset( benchRamp, 0, sizeof( benchRamp ) );
+		benchNumRamp = 1;
+		Com_sprintf( benchRamp[0].name, sizeof( benchRamp[0].name ), "%i", Bench_PlayersInTeams() );
+		benchRampPhase = 0;
+		benchRampTime = now;
+		benchAuto = AUTO_RAMP;
+		Com_Printf( "benchmark: measuring as the bots enter\n" );
+		return;
+
+	case AUTO_RAMP:
+		if ( cls.state != CA_ACTIVE ) {
+			return;
+		}
+		players = Bench_PlayersInTeams();
+		if ( benchRampPhase == 0 ) {
+			if ( now - benchRampTime >= RAMP_SETTLE ) {
+				benchRampPhase = 1;
+				benchRampTime = now;
+			}
+			return;
+		}
+		if ( benchRampPhase == 1 ) {
+			benchStep_t	*row = &benchRamp[benchNumRamp - 1];
+			Bench_Accumulate( row, frameMsec, serverMsec, clientMsec );
+			if ( now - benchRampTime < RAMP_MEASURE ) {
+				return;
+			}
+			Bench_Close( row );
+			Com_Printf( "benchmark: %s robots %.1f fps\n", row->name, row->frames * 1000.0f / ( row->msec > 0 ? row->msec : 1 ) );
+			if ( players >= wanted || benchNumRamp >= BENCH_MAX_RAMP ) {
+				benchAuto = AUTO_SPECTATE;
+				benchAutoTime = now;
+				return;
+			}
+			// the next bot, teams in turn
+			Cbuf_AddText( va( "addbot %s 3 %s\n", benchBotNames[players % ( sizeof( benchBotNames ) / sizeof( benchBotNames[0] ) )],
+				( players & 1 ) ? "blue" : "red" ) );
+			benchRampPhase = 2;
+			benchRampTime = now;
+			return;
+		}
+		// waiting for the bot to enter
+		if ( players > atoi( benchRamp[benchNumRamp - 1].name ) || now - benchRampTime > RAMP_JOIN_WAIT ) {
+			benchStep_t	*row = &benchRamp[benchNumRamp++];
+			Com_Memset( row, 0, sizeof( *row ) );
+			Com_sprintf( row->name, sizeof( row->name ), "%i", players );
+			benchRampPhase = 0;
+			benchRampTime = now;
 		}
 		return;
+
 	case AUTO_SPECTATE:
-		if ( now - benchAutoTime > 3000 ) {
+		if ( now - benchAutoTime > 1000 ) {
 			benchAuto = AUTO_RUNNING;
 			Bench_Start( Cvar_VariableIntegerValue( "bench_seconds" ) > 0 ? Cvar_VariableIntegerValue( "bench_seconds" ) : 10 );
 		}
@@ -523,8 +686,8 @@ void CL_BenchFrame( int frameMsec, int serverMsec, int clientMsec ) {
 	int			now = Sys_Milliseconds();
 
 	if ( benchState == BENCH_IDLE ) {
-		if ( benchAuto == AUTO_WAIT || benchAuto == AUTO_SPECTATE ) {
-			Bench_AutoFrame();
+		if ( benchAuto == AUTO_WAIT || benchAuto == AUTO_RAMP || benchAuto == AUTO_SPECTATE ) {
+			Bench_AutoFrame( frameMsec, serverMsec, clientMsec );
 		}
 		return;
 	}
@@ -582,53 +745,11 @@ void CL_BenchFrame( int frameMsec, int serverMsec, int clientMsec ) {
 			Bench_Finish( qtrue );
 			return;
 		}
-		if ( cl.snap.ps.pm_type == BENCH_PM_SPECTATOR ) {
-			step->spectatorFrames++;
-		} else if ( cl.snap.ps.pm_type == BENCH_PM_DEAD || cl.snap.ps.stats[0] <= 0 ) {
-			step->deadFrames++;
-		}
-		{
-			// how far the snapshots fall behind the commands sent (what cgame shows as Connection Interrupted)
-			int		lag = cl.cmds[cl.cmdNumber & CMD_MASK].serverTime - cl.snap.ps.commandTime;
-			if ( lag > step->maxLag ) {
-				step->maxLag = lag;
-			}
-			if ( lag > 1000 ) {
-				step->lagFrames++;
-			}
-		}
-		if ( step->frames < BENCH_MAX_FRAMES ) {
-			benchFrameTimes[step->frames] = frameMsec;
-		}
-		step->frames++;
-		step->msec += frameMsec;
-		if ( frameMsec > step->worst ) {
-			step->worst = frameMsec;
-		}
-		step->bots += time_bots;
-		step->game += time_game;
-		step->server += serverMsec;
-		step->client += clientMsec;
-		step->front += time_frontend;
-		step->back += time_backend;
-		{
-			int		batches = 0, triangles = 0;
-			if ( re.GetFrameStats ) {
-				re.GetFrameStats( &batches, &triangles );
-			}
-			step->batches += batches;
-			step->triangles += triangles;
-		}
+		Bench_Accumulate( step, frameMsec, serverMsec, clientMsec );
 		if ( now - benchStateTime < benchSeconds * 1000 ) {
 			return;
 		}
-		// 1 % low: the frame time 99 % of the frames are faster than
-		{
-			int		count = step->frames < BENCH_MAX_FRAMES ? step->frames : BENCH_MAX_FRAMES;
-			qsort( benchFrameTimes, count, sizeof( int ), Bench_Compare );
-			step->low = benchFrameTimes[count * 99 / 100 < count ? count * 99 / 100 : count - 1];
-			step->median = benchFrameTimes[count / 2];
-		}
+		Bench_Close( step );
 		Com_Printf( "benchmark: %s %.1f fps\n", step->name, step->frames * 1000.0f / ( step->msec > 0 ? step->msec : 1 ) );
 		Bench_Restore( step );
 		benchStep++;
@@ -688,10 +809,7 @@ static void Bench_Start( int seconds ) {
 		Com_Printf( "benchmark: no steps in %s\n", BENCH_FILE );
 		return;
 	}
-	for ( index = 0; index < (int)BENCH_NUM_GLOBAL; index++ ) {
-		Q_strncpyz( benchGlobal[index].saved, Cvar_VariableString( benchGlobal[index].name ), sizeof( benchGlobal[0].saved ) );
-		Cvar_Set( benchGlobal[index].name, benchGlobal[index].value );
-	}
+	Bench_ApplyGlobals();
 	Com_Printf( "benchmark: %i steps, about %i s; do not touch the game; \"benchmark stop\" stops\n",
 		benchNumSteps, benchNumSteps * ( benchSeconds + BENCH_WARMUP / 1000 ) );
 	benchStep = 0;
