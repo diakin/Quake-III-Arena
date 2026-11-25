@@ -56,6 +56,8 @@ typedef struct {
 	double		batches, triangles;
 	int			low;			// 99th percentile frame time, msec
 	int			worst;
+	int			maxLag;			// msec the server was behind the newest command (Connection Interrupted past ~2 s)
+	int			lagFrames;		// frames with the server more than a second behind
 	int			deadFrames;		// the own robot destroyed: another view
 	int			spectatorFrames;
 } benchStep_t;
@@ -350,8 +352,10 @@ static void Bench_Report( void ) {
 		Cvar_VariableString( "r_mode" ), Cvar_VariableString( "r_vertexLight" ) ) );
 	Q_strcat( report, sizeof( report ), "times: msec a frame on average; bots = bot AI, server = the rest of the server game,\n"
 		"client = client and cgame, front = renderer scene, back = GL calls and the video card\n" );
+	Q_strcat( report, sizeof( report ), "worst = the longest frame, msec; lag = how far the server answer fell behind at most, msec\n"
+		"(\"Connection Interrupted\" shows past about 64 frames), lag>1s = share of frames with it over a second\n" );
 	Q_strcat( report, sizeof( report ), "view: spect = spectator, dead N % = the own robot destroyed for this share of the step\n" );
-	Q_strcat( report, sizeof( report ), "step                  fps  1%low  frame   bots server client  front   back  batches  ktris   vs base  view\n" );
+	Q_strcat( report, sizeof( report ), "step                  fps  1%low  frame  worst    lag lag>1s   bots server client  front   back  batches  ktris   vs base  view\n" );
 
 	for ( index = 0; index < benchNumSteps; index++ ) {
 		benchStep_t	*step = &benchSteps[index];
@@ -367,8 +371,9 @@ static void Bench_Report( void ) {
 		if ( index == 0 ) {
 			baseFps = fps;
 		}
-		Com_sprintf( line, sizeof( line ), "%-20s %5.1f  %5.1f  %5.1f  %5.1f  %5.1f  %5.1f  %5.1f  %5.1f  %7.0f  %5.0f  %+7.0f %%  %s\n",
+		Com_sprintf( line, sizeof( line ), "%-20s %5.1f  %5.1f  %5.1f  %5i  %5i  %4i %%  %5.1f  %5.1f  %5.1f  %5.1f  %5.1f  %7.0f  %5.0f  %+7.0f %%  %s\n",
 			step->name, fps, step->low > 0 ? 1000.0f / step->low : 0.0f, step->msec / frames,
+			step->worst, step->maxLag, step->lagFrames * 100 / step->frames,
 			step->bots / frames, ( step->server - step->bots ) / frames,
 			( step->client - step->front - step->back ) / frames, step->front / frames, step->back / frames,
 			step->batches / frames, step->triangles / frames / 1000.0f,
@@ -445,6 +450,7 @@ void CL_BenchFrame( int frameMsec, int serverMsec, int clientMsec ) {
 			step->bots = step->server = step->game = step->client = step->front = step->back = 0;
 			step->batches = step->triangles = 0;
 			step->worst = step->deadFrames = step->spectatorFrames = 0;
+			step->maxLag = step->lagFrames = 0;
 			benchState = BENCH_WARMUP_STATE;
 		}
 		benchSettle = BENCH_SETTLE_FRAMES;
@@ -486,6 +492,16 @@ void CL_BenchFrame( int frameMsec, int serverMsec, int clientMsec ) {
 			step->spectatorFrames++;
 		} else if ( cl.snap.ps.pm_type == BENCH_PM_DEAD || cl.snap.ps.stats[0] <= 0 ) {
 			step->deadFrames++;
+		}
+		{
+			// how far the snapshots fall behind the commands sent (what cgame shows as Connection Interrupted)
+			int		lag = cl.cmds[cl.cmdNumber & CMD_MASK].serverTime - cl.snap.ps.commandTime;
+			if ( lag > step->maxLag ) {
+				step->maxLag = lag;
+			}
+			if ( lag > 1000 ) {
+				step->lagFrames++;
+			}
 		}
 		if ( step->frames < BENCH_MAX_FRAMES ) {
 			benchFrameTimes[step->frames] = frameMsec;
