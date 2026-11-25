@@ -2174,9 +2174,14 @@ WALKER: 1 when the robot stands in the shade of a building (the way to the sun i
 */
 #define	SHADE_SPOT_ALPHA	0.75f
 #define	SHADE_FADE_TIME		250
+#define	SHADE_TRACE_TIME	120		// msec between traces toward the sun (the fade hides it)
+#define	SHADE_TRACE_MOVE	24		// or after the robot moved this far
 
 static float	robotShade[MAX_GENTITIES];
 static int		robotShadeTime[MAX_GENTITIES];
+static float	robotShadeTarget[MAX_GENTITIES];
+static int		robotShadeTraceTime[MAX_GENTITIES];
+static vec3_t	robotShadeTraceOrigin[MAX_GENTITIES];
 
 static float CG_RobotShade( centity_t *cent ) {
 	vec3_t		sun, start, end;
@@ -2199,12 +2204,21 @@ static float CG_RobotShade( centity_t *cent ) {
 		return 0;
 	}
 	// from the middle of the robot body toward the sun; the sky stops the trace too, but
-	// marks it with SURF_SKY
-	VectorCopy( cent->lerpOrigin, start );
-	start[2] += 16;
-	VectorMA( start, 4000, sun, end );
-	CG_Trace( &trace, start, NULL, NULL, end, number, MASK_SOLID );
-	target = ( trace.fraction < 1.0f && !( trace.surfaceFlags & SURF_SKY ) ) ? 1.0f : 0.0f;
+	// marks it with SURF_SKY. A trace 4000 units long through the map took about 0.3 ms
+	// a robot (benchmark: 3 ms a frame with 10 robots), so it is done a few times a second
+	// (staggered by entity) or when the robot moved
+	if ( cg.time - robotShadeTraceTime[number] >= SHADE_TRACE_TIME + ( number * 7 ) % 40
+		|| cg.time < robotShadeTraceTime[number]
+		|| DistanceSquared( cent->lerpOrigin, robotShadeTraceOrigin[number] ) > SHADE_TRACE_MOVE * SHADE_TRACE_MOVE ) {
+		VectorCopy( cent->lerpOrigin, start );
+		start[2] += 16;
+		VectorMA( start, 4000, sun, end );
+		CG_Trace( &trace, start, NULL, NULL, end, number, MASK_SOLID );
+		robotShadeTarget[number] = ( trace.fraction < 1.0f && !( trace.surfaceFlags & SURF_SKY ) ) ? 1.0f : 0.0f;
+		robotShadeTraceTime[number] = cg.time;
+		VectorCopy( cent->lerpOrigin, robotShadeTraceOrigin[number] );
+	}
+	target = robotShadeTarget[number];
 
 	elapsed = cg.time - robotShadeTime[number];
 	robotShadeTime[number] = cg.time;
@@ -2221,13 +2235,14 @@ static float CG_RobotShade( centity_t *cent ) {
 	return robotShade[number];
 }
 
-static qboolean CG_PlayerShadow( centity_t *cent, float *shadowPlane ) {
+static qboolean CG_PlayerShadow( centity_t *cent, float *shadowPlane, qboolean *noVolume ) {
 	vec3_t		end, mins = {-15, -15, 0}, maxs = {15, 15, 2};
 	trace_t		trace;
 	float		alpha;
 	int			shadowMode = cg_shadows.integer;
 
 	*shadowPlane = 0;
+	*noVolume = qfalse;
 
 	if ( shadowMode == 0 ) {
 		return qfalse;
@@ -2240,6 +2255,13 @@ static qboolean CG_PlayerShadow( centity_t *cent, float *shadowPlane ) {
 			warned = qtrue;
 		}
 		shadowMode = 1;
+	}
+	// WALKER: far robots get the spot: the shadow volume is built by the processor every
+	// frame, and far away it is a few pixels
+	if ( shadowMode == 2 && cg_shadowDistance.value > 0
+		&& DistanceSquared( cent->lerpOrigin, cg.refdef.vieworg ) > cg_shadowDistance.value * cg_shadowDistance.value ) {
+		shadowMode = 1;
+		*noVolume = qtrue;
 	}
 
 	// no shadows when invisible
@@ -2483,6 +2505,7 @@ void CG_Player( centity_t *cent ) {
 	refEntity_t		head;
 	int				clientNum;
 	int				renderfx;
+	qboolean		noShadowVolume;
 	qboolean		shadow;
 	float			shadowPlane;
 #ifdef MISSIONPACK
@@ -2537,7 +2560,10 @@ void CG_Player( centity_t *cent ) {
 	CG_PlayerSprites( cent );
 
 	// add the shadow
-	shadow = CG_PlayerShadow( cent, &shadowPlane );
+	shadow = CG_PlayerShadow( cent, &shadowPlane, &noShadowVolume );
+	if ( noShadowVolume ) {
+		renderfx |= RF_NOSHADOW;		// WALKER: far away, the spot instead (weapons follow renderfx)
+	}
 
 	// add a water splash if partially in and out of water
 	CG_PlayerSplash( cent );

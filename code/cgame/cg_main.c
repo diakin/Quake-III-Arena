@@ -98,6 +98,7 @@ vmCvar_t	cg_bobpitch;
 vmCvar_t	cg_bobroll;
 vmCvar_t	cg_swingSpeed;
 vmCvar_t	cg_shadows;
+vmCvar_t	cg_shadowDistance;
 vmCvar_t	r_sunDirection;		// WALKER: set by the renderer at map load
 vmCvar_t	cg_drawHealthBars;	// WALKER: health bars over the robots
 vmCvar_t	cg_gibs;
@@ -217,6 +218,7 @@ static cvarTable_t cvarTable[] = { // bk001129
 	{ &cg_viewsize, "cg_viewsize", "100", CVAR_ARCHIVE },
 	{ &cg_stereoSeparation, "cg_stereoSeparation", "0.4", CVAR_ARCHIVE  },
 	{ &cg_shadows, "cg_shadows", "1", CVAR_ARCHIVE  },
+	{ &cg_shadowDistance, "cg_shadowDistance", "1200", CVAR_ARCHIVE },	// WALKER: full robot shadows up to this far, then the spot
 	{ &r_sunDirection, "r_sunDirection", "", CVAR_ROM },
 	{ &cg_drawHealthBars, "cg_drawHealthBars", "1", CVAR_ARCHIVE },
 	{ &cg_gibs, "cg_gibs", "1", CVAR_ARCHIVE  },

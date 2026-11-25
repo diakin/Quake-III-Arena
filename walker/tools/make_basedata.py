@@ -53,6 +53,7 @@ no_world: r_drawworld 0                 // the map not drawn
 no_hud: cg_draw2D 0
 robot_shadows_off: cg_shadows 0
 robot_shadows_round: cg_shadows 1
+robot_shadows_far: cg_shadowDistance 0      // full robot shadows at any distance (as before)
 sun_shadows_off: r_sunShadows 0
 sun_shadows_simple: r_sunShadows 1
 water_reflection_off: r_noportals 1

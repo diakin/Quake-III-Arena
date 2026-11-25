@@ -1113,6 +1113,7 @@ extern	vmCvar_t		cg_bobpitch;
 extern	vmCvar_t		cg_bobroll;
 extern	vmCvar_t		cg_swingSpeed;
 extern	vmCvar_t		cg_shadows;
+extern	vmCvar_t		cg_shadowDistance;
 extern	vmCvar_t		r_sunDirection;
 extern	vmCvar_t		cg_drawHealthBars;
 extern	vmCvar_t		cg_gibs;
