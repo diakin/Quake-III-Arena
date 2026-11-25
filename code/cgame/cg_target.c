@@ -107,13 +107,11 @@ CG_TargetVisible
 =================
 */
 static qboolean CG_TargetVisible( centity_t *cent ) {
-	trace_t		trace;
 	vec3_t		point;
 
 	VectorCopy( cent->lerpOrigin, point );
 	point[2] += 24;
-	CG_Trace( &trace, cg.refdef.vieworg, NULL, NULL, point, cg.snap->ps.clientNum, MASK_SOLID );
-	return trace.fraction > 0.99f;
+	return CG_VisibleFromView( cent->currentState.number, point, 1 );	// traced a few times a second
 }
 
 

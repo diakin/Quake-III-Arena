@@ -453,9 +453,8 @@ void CG_DrawHealthBars( void ) {
 		if ( forward < 16 || distance > HEALTH_BAR_DISTANCE ) {
 			continue;
 		}
-		// hidden behind the world
-		CG_Trace( &trace, cg.refdef.vieworg, NULL, NULL, point, cg.snap->ps.clientNum, MASK_SOLID );
-		if ( trace.fraction < 0.99f ) {
+		// hidden behind the world (WALKER: the trace a few times a second, CG_VisibleFromView)
+		if ( !CG_VisibleFromView( state->number, point, 0 ) ) {
 			continue;
 		}
 		across = DotProduct( delta, cg.refdef.viewaxis[1] );

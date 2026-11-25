@@ -2270,14 +2270,44 @@ static qboolean CG_PlayerShadow( centity_t *cent, float *shadowPlane, qboolean *
 	}
 
 	// send a trace down from the player to the ground
-	VectorCopy( cent->lerpOrigin, end );
-	end[2] -= SHADOW_DISTANCE;
+	// WALKER: a box trace through the map for every robot every frame; it is kept for
+	// a tenth of a second or until the robot moves, the spot follows the robot across
+	{
+		static int		groundTime[MAX_GENTITIES];
+		static vec3_t	groundOrigin[MAX_GENTITIES];
+		static float	groundHeight[MAX_GENTITIES];
+		static vec3_t	groundNormal[MAX_GENTITIES];
+		static qboolean	groundHit[MAX_GENTITIES];
+		int				number = cent->currentState.number;
+		float			moved = ( cent->lerpOrigin[0] - groundOrigin[number][0] ) * ( cent->lerpOrigin[0] - groundOrigin[number][0] )
+							+ ( cent->lerpOrigin[1] - groundOrigin[number][1] ) * ( cent->lerpOrigin[1] - groundOrigin[number][1] );
 
-	trap_CM_BoxTrace( &trace, cent->lerpOrigin, end, mins, maxs, 0, MASK_PLAYERSOLID );
-
-	// no shadow if too high
-	if ( trace.fraction == 1.0 || trace.startsolid || trace.allsolid ) {
-		return qfalse;
+		if ( cg.time < groundTime[number] || cg.time - groundTime[number] >= 100 + ( number * 7 ) % 30
+			|| moved > 12 * 12 || fabs( cent->lerpOrigin[2] - groundOrigin[number][2] ) > 6 ) {
+			VectorCopy( cent->lerpOrigin, end );
+			end[2] -= SHADOW_DISTANCE;
+			trap_CM_BoxTrace( &trace, cent->lerpOrigin, end, mins, maxs, 0, MASK_PLAYERSOLID );
+			groundHit[number] = !( trace.fraction == 1.0 || trace.startsolid || trace.allsolid );
+			groundHeight[number] = trace.endpos[2];
+			VectorCopy( trace.plane.normal, groundNormal[number] );
+			VectorCopy( cent->lerpOrigin, groundOrigin[number] );
+			groundTime[number] = cg.time;
+		}
+		// no shadow if too high
+		if ( !groundHit[number] ) {
+			return qfalse;
+		}
+		memset( &trace, 0, sizeof( trace ) );
+		trace.endpos[0] = cent->lerpOrigin[0];
+		trace.endpos[1] = cent->lerpOrigin[1];
+		trace.endpos[2] = groundHeight[number];
+		VectorCopy( groundNormal[number], trace.plane.normal );
+		trace.fraction = ( cent->lerpOrigin[2] - groundHeight[number] ) / SHADOW_DISTANCE;
+		if ( trace.fraction < 0 ) {
+			trace.fraction = 0;
+		} else if ( trace.fraction > 1 ) {
+			trace.fraction = 1;
+		}
 	}
 
 	*shadowPlane = trace.endpos[2] + 1;
@@ -2292,8 +2322,8 @@ static qboolean CG_PlayerShadow( centity_t *cent, float *shadowPlane, qboolean *
 		float	shade = CG_RobotShade( cent );
 		if ( shade > 0.01f ) {
 			alpha *= shade * SHADE_SPOT_ALPHA;
-			CG_ImpactMark( cgs.media.shadowMarkShader, trace.endpos, trace.plane.normal,
-				cent->pe.legs.yawAngle, alpha, alpha, alpha, 1, qfalse, 60, qtrue );
+			CG_ShadowMark( cent->currentState.number, cgs.media.shadowMarkShader, trace.endpos, trace.plane.normal,
+				cent->pe.legs.yawAngle, alpha, 60 );
 		}
 		return qtrue;
 	}
@@ -2303,8 +2333,8 @@ static qboolean CG_PlayerShadow( centity_t *cent, float *shadowPlane, qboolean *
 
 	// add the mark as a temporary, so it goes directly to the renderer
 	// without taking a spot in the cg_marks array
-	CG_ImpactMark( cgs.media.shadowMarkShader, trace.endpos, trace.plane.normal, 
-		cent->pe.legs.yawAngle, alpha,alpha,alpha,1, qfalse, 60, qtrue );	// WALKER: the robot is wider than a Q3 player (was 24)
+	CG_ShadowMark( cent->currentState.number, cgs.media.shadowMarkShader, trace.endpos, trace.plane.normal,
+		cent->pe.legs.yawAngle, alpha, 60 );	// WALKER: the robot is wider than a Q3 player (was 24); cached fragments
 
 	return qtrue;
 }

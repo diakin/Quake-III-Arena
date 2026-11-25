@@ -126,6 +126,8 @@ passed to the renderer.
 */
 #define	MAX_MARK_FRAGMENTS	256
 #define	MAX_MARK_POINTS		1024
+#define	MARK_NEAR			1000	// WALKER
+#define	MARK_FAR			2500
 
 void CG_ImpactMark( qhandle_t markShader, const vec3_t origin, const vec3_t dir, 
 				   float orientation, float red, float green, float blue, float alpha,
@@ -147,6 +149,16 @@ void CG_ImpactMark( qhandle_t markShader, const vec3_t origin, const vec3_t dir,
 
 	if ( radius <= 0 ) {
 		CG_Error( "CG_ImpactMark called with <= 0 radius" );
+	}
+
+	// WALKER: a lasting mark far from the view is a few pixels, but every one is cut to
+	// pieces on the terrain and drawn every frame for seconds; bullet holes are left
+	// within MARK_NEAR, bigger marks (explosions) within MARK_FAR
+	if ( !temporary ) {
+		float	limit = radius < 24 ? MARK_NEAR : MARK_FAR;
+		if ( DistanceSquared( origin, cg.refdef.vieworg ) > limit * limit ) {
+			return;
+		}
 	}
 
 	//if ( markTotal >= MAX_MARK_POLYS ) {
@@ -224,11 +236,118 @@ void CG_ImpactMark( qhandle_t markShader, const vec3_t origin, const vec3_t dir,
 
 
 /*
+=================
+CG_ShadowMark
+
+WALKER: the spot under a robot, every frame. CG_ImpactMark cut it out of the map
+(trap_CM_MarkFragments) anew each frame. Here the ground under a wider square is
+cut once and kept per robot; every frame only the texture coordinates are moved
+after the robot (the spot is round and the shader clamps, so the extra border is
+empty). A new cut when the robot has walked off the kept piece of ground.
+=================
+*/
+#define	SHADOW_MARK_SLOTS	16		// by entity number; two robots on one slot only cut more often
+#define	SHADOW_MARK_POLYS	96
+#define	SHADOW_MARK_VERTS	8
+#define	SHADOW_MARK_MARGIN	16		// how far the robot may walk before a new cut
+#define	SHADOW_MARK_LIFT	24		// see below
+
+typedef struct {
+	int			entityNum;
+	qhandle_t	shader;
+	vec3_t		origin;
+	vec3_t		normal;
+	float		radius;
+	int			numPolys;
+	int			numVerts[SHADOW_MARK_POLYS];
+	polyVert_t	verts[SHADOW_MARK_POLYS][SHADOW_MARK_VERTS];
+} shadowMark_t;
+
+static shadowMark_t	shadowMarks[SHADOW_MARK_SLOTS];
+
+void CG_ShadowMark( int entityNum, qhandle_t shader, const vec3_t origin, const vec3_t dir, float orientation, float alpha, float radius ) {
+	static markFragment_t	fragments[SHADOW_MARK_POLYS];
+	static vec3_t			points[SHADOW_MARK_POLYS * SHADOW_MARK_VERTS];
+	shadowMark_t	*mark;
+	vec3_t			axis[3], delta;
+	float			scale;
+	byte			level;
+	int				poly, vertex;
+
+	if ( !cg_addMarks.integer ) {
+		return;
+	}
+	if ( entityNum < 0 ) {
+		CG_ImpactMark( shader, origin, dir, orientation, alpha, alpha, alpha, 1, qfalse, radius, qtrue );
+		return;
+	}
+	VectorNormalize2( dir, axis[0] );
+	mark = &shadowMarks[entityNum % SHADOW_MARK_SLOTS];
+	if ( mark->entityNum != entityNum + 1 || mark->shader != shader || mark->radius != radius
+		|| DistanceSquared( origin, mark->origin ) > SHADOW_MARK_MARGIN * SHADOW_MARK_MARGIN
+		|| DotProduct( axis[0], mark->normal ) < 0.995f ) {
+		vec3_t	cutAxis[3], corners[4], projection;
+		float	half = radius + SHADOW_MARK_MARGIN;
+		int		axisIndex, numFragments;
+
+		// the renderer takes surfaces 32 units in front of and behind the square; cut at
+		// the ground, the terrain under a platform the robot stands on took the pieces
+		// before the platform did. The square is lifted: from 8 under the ground up
+		VectorCopy( axis[0], cutAxis[0] );
+		PerpendicularVector( cutAxis[1], cutAxis[0] );
+		CrossProduct( cutAxis[1], cutAxis[0], cutAxis[2] );	// the winding CG_ImpactMark uses (axis1 = axis0 x axis2)
+		for ( axisIndex = 0; axisIndex < 3; axisIndex++ ) {
+			float	lifted = origin[axisIndex] + SHADOW_MARK_LIFT * cutAxis[0][axisIndex];
+			corners[0][axisIndex] = lifted - half * cutAxis[1][axisIndex] - half * cutAxis[2][axisIndex];
+			corners[1][axisIndex] = lifted + half * cutAxis[1][axisIndex] - half * cutAxis[2][axisIndex];
+			corners[2][axisIndex] = lifted + half * cutAxis[1][axisIndex] + half * cutAxis[2][axisIndex];
+			corners[3][axisIndex] = lifted - half * cutAxis[1][axisIndex] + half * cutAxis[2][axisIndex];
+		}
+		VectorScale( axis[0], -( SHADOW_MARK_LIFT + 20 ), projection );
+		numFragments = trap_CM_MarkFragments( 4, (void *)corners, projection,
+			SHADOW_MARK_POLYS * SHADOW_MARK_VERTS, points[0], SHADOW_MARK_POLYS, fragments );
+
+		mark->numPolys = 0;
+		for ( poly = 0; poly < numFragments && mark->numPolys < SHADOW_MARK_POLYS; poly++ ) {
+			int		count = fragments[poly].numPoints > SHADOW_MARK_VERTS ? SHADOW_MARK_VERTS : fragments[poly].numPoints;
+			for ( vertex = 0; vertex < count; vertex++ ) {
+				VectorCopy( points[fragments[poly].firstPoint + vertex], mark->verts[mark->numPolys][vertex].xyz );
+			}
+			mark->numVerts[mark->numPolys++] = count;
+		}
+		mark->entityNum = entityNum + 1;
+		mark->shader = shader;
+		mark->radius = radius;
+		VectorCopy( origin, mark->origin );
+		VectorCopy( axis[0], mark->normal );
+	}
+
+	// texture axes for the robot's current place and turn
+	PerpendicularVector( axis[1], axis[0] );
+	RotatePointAroundVector( axis[2], axis[0], axis[1], orientation );
+	CrossProduct( axis[0], axis[2], axis[1] );
+	scale = 0.5f / radius;
+	level = alpha * 255;
+	for ( poly = 0; poly < mark->numPolys; poly++ ) {
+		for ( vertex = 0; vertex < mark->numVerts[poly]; vertex++ ) {
+			polyVert_t	*vert = &mark->verts[poly][vertex];
+			VectorSubtract( vert->xyz, origin, delta );
+			vert->st[0] = 0.5f + DotProduct( delta, axis[1] ) * scale;
+			vert->st[1] = 0.5f + DotProduct( delta, axis[2] ) * scale;
+			vert->modulate[0] = vert->modulate[1] = vert->modulate[2] = level;
+			vert->modulate[3] = 255;
+		}
+		trap_R_AddPolyToScene( shader, mark->numVerts[poly], mark->verts[poly] );
+	}
+}
+
+
+/*
 ===============
 CG_AddMarks
 ===============
 */
-#define	MARK_TOTAL_TIME		10000
+#define	MARK_TOTAL_TIME		7000	// WALKER: was 10000
 #define	MARK_FADE_TIME		1000
 
 void CG_AddMarks( void ) {

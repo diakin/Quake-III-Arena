@@ -62,7 +62,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define	MAX_STEP_CHANGE		32
 
 #define	MAX_VERTS_ON_POLY	10
-#define	MAX_MARK_POLYS		256
+#define	MAX_MARK_POLYS		160		// WALKER: was 256 (benchmark: marks cost 20 %)
 
 #define STAT_MINUS			10	// num frame for '-' stats digit
 
@@ -1344,6 +1344,8 @@ sfxHandle_t	CG_CustomSound( int clientNum, const char *soundName );
 //
 void CG_BuildSolidList( void );
 int	CG_PointContents( const vec3_t point, int passEntityNum );
+qboolean	CG_VisibleFromView( int entityNum, const vec3_t point, int slot );	// WALKER: 0 health bars, 1 target
+void	CG_ShadowMark( int entityNum, qhandle_t shader, const vec3_t origin, const vec3_t dir, float orientation, float alpha, float radius );
 void CG_Trace( trace_t *result, const vec3_t start, const vec3_t mins, const vec3_t maxs, const vec3_t end, 
 					 int skipNumber, int mask );
 void CG_PredictPlayerState( void );

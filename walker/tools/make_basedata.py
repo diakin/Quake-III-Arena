@@ -950,6 +950,14 @@ def mark(image):
     return Image.fromarray(result.astype(np.uint8), 'RGBA')
 
 
+def black_border(image):
+    """крайние пиксели — чёрные: при clampmap за краем ничего не затемняется."""
+    pixels = np.array(image)
+    pixels[0, :, :3] = pixels[-1, :, :3] = 0
+    pixels[:, 0, :3] = pixels[:, -1, :3] = 0
+    return Image.fromarray(pixels, 'RGBA')
+
+
 def effects():
     save('gfx/misc/tracer.tga', premultiply(radial(32, 0.0, 1.0, (255, 220, 160), 1.2).resize((64, 16))))
     save('gfx/misc/smokepuff3.tga', smoke(64, 3))
@@ -959,7 +967,8 @@ def effects():
     save('gfx/damage/hole_lg_mrk.tga', mark(radial(64, 0.2, 1.0, (20, 18, 16), 0.8)))
     save('gfx/damage/plasma_mrk.tga', radial(64, 0.2, 1.0, (40, 60, 90), 0.8))
     # пятно тени робота: плотная середина (затемнение ~0.8), мягкий край
-    save('gfx/marks/shadow.tga', mark(radial(64, 0.3, 1.0, (40, 40, 40), 0.9)))
+    # край — ровно чёрный: шейдер clampmap, а пятно режется по квадрату шире (CG_ShadowMark)
+    save('gfx/marks/shadow.tga', black_border(mark(radial(64, 0.3, 1.0, (40, 40, 40), 0.9))))
     save('gfx/misc/spark.tga', premultiply(radial(32, 0.0, 1.0, (255, 200, 120), 2.5)))
     save('gfx/misc/flare.tga', premultiply(radial(64, 0.0, 1.0, (255, 230, 190), 2.0)))
     # луч рельсотрона: яркая середина поперёк (v), вдоль (u) — слабые сгустки
@@ -1164,7 +1173,7 @@ markShadow
 {
 	polygonOffset
 	{
-		map gfx/marks/shadow.tga
+		clampmap gfx/marks/shadow.tga
 		blendFunc GL_ZERO GL_ONE_MINUS_SRC_COLOR
 		rgbGen exactVertex
 	}

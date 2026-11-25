@@ -156,6 +156,38 @@ void	CG_Trace( trace_t *result, const vec3_t start, const vec3_t mins, const vec
 
 /*
 ================
+CG_VisibleFromView
+
+WALKER: is a point of an entity seen from the view (nothing solid between)?
+Health bars and the target frame asked it for every robot every frame; a trace
+through the whole map costs, so the answer is kept for about a tenth of a second
+per entity and purpose (slot)
+================
+*/
+#define	VISIBLE_SLOTS		2
+#define	VISIBLE_CACHE_TIME	100
+
+qboolean CG_VisibleFromView( int entityNum, const vec3_t point, int slot ) {
+	static int		visibleTime[MAX_GENTITIES][VISIBLE_SLOTS];
+	static qboolean	visible[MAX_GENTITIES][VISIBLE_SLOTS];
+	trace_t			trace;
+
+	if ( entityNum < 0 || entityNum >= MAX_GENTITIES || slot < 0 || slot >= VISIBLE_SLOTS ) {
+		CG_Trace( &trace, cg.refdef.vieworg, NULL, NULL, point, cg.snap->ps.clientNum, MASK_SOLID );
+		return trace.fraction > 0.99f;
+	}
+	if ( cg.time >= visibleTime[entityNum][slot] && cg.time - visibleTime[entityNum][slot] < VISIBLE_CACHE_TIME + ( entityNum * 7 ) % 30 ) {
+		return visible[entityNum][slot];
+	}
+	CG_Trace( &trace, cg.refdef.vieworg, NULL, NULL, point, cg.snap->ps.clientNum, MASK_SOLID );
+	visible[entityNum][slot] = trace.fraction > 0.99f;
+	visibleTime[entityNum][slot] = cg.time;
+	return visible[entityNum][slot];
+}
+
+
+/*
+================
 CG_PointContents
 ================
 */
