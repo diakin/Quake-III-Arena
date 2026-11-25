@@ -490,11 +490,12 @@ void RB_BeginDrawingView (void) {
 		}
 	}
 	// WALKER: with water reflections off no mirror image is drawn under the water;
-	// a pale sky colour stands in for it instead of the previous frame
+	// a dark water colour stands in for it instead of the previous frame (was a pale
+	// sky colour: the water looked light grey)
 	else if ( r_noportals->integer && !( backEnd.refdef.rdflags & RDF_NOWORLDMODEL ) && !backEnd.viewParms.isPortal )
 	{
 		clearBits |= GL_COLOR_BUFFER_BIT;
-		qglClearColor( 0.50f, 0.58f, 0.63f, 1.0f );
+		qglClearColor( 0.05f, 0.08f, 0.09f, 1.0f );
 	}
 	qglClear( clearBits );
 

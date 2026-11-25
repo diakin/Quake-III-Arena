@@ -2173,6 +2173,7 @@ WALKER: 1 when the robot stands in the shade of a building (the way to the sun i
 ===============
 */
 #define	SHADE_SPOT_ALPHA	0.75f
+#define	ROBOT_SPOT_RADIUS	36		// WALKER: the round shadow, about the robot's own width (was 60)
 #define	SHADE_FADE_TIME		250
 #define	SHADE_TRACE_TIME	120		// msec between traces toward the sun (the fade hides it)
 #define	SHADE_TRACE_MOVE	24		// or after the robot moved this far
@@ -2323,7 +2324,7 @@ static qboolean CG_PlayerShadow( centity_t *cent, float *shadowPlane, qboolean *
 		if ( shade > 0.01f ) {
 			alpha *= shade * SHADE_SPOT_ALPHA;
 			CG_ShadowMark( cent->currentState.number, cgs.media.shadowMarkShader, trace.endpos, trace.plane.normal,
-				cent->pe.legs.yawAngle, alpha, 60 );
+				cent->pe.legs.yawAngle, alpha, ROBOT_SPOT_RADIUS );
 		}
 		return qtrue;
 	}
@@ -2334,7 +2335,7 @@ static qboolean CG_PlayerShadow( centity_t *cent, float *shadowPlane, qboolean *
 	// add the mark as a temporary, so it goes directly to the renderer
 	// without taking a spot in the cg_marks array
 	CG_ShadowMark( cent->currentState.number, cgs.media.shadowMarkShader, trace.endpos, trace.plane.normal,
-		cent->pe.legs.yawAngle, alpha, 60 );	// WALKER: the robot is wider than a Q3 player (was 24); cached fragments
+		cent->pe.legs.yawAngle, alpha, ROBOT_SPOT_RADIUS );	// WALKER: the robot is wider than a Q3 player (was 24); cached fragments
 
 	return qtrue;
 }

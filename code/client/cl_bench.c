@@ -424,7 +424,7 @@ static void Bench_Report( void ) {
 	Q_strcat( report, sizeof( report ), "median = fps of a typical frame (half are faster), what the fps counter on the screen mostly shows\n" );
 	if ( benchNumRamp > 0 ) {
 		float	rampBase = 0;
-		Q_strcat( report, sizeof( report ), "bots entering the battle one by one (vs base = against no bots):\n" );
+		Q_strcat( report, sizeof( report ), "bots entering the battle, two at a time (vs base = against no bots):\n" );
 		Q_strcat( report, sizeof( report ), "robots in battle      fps median  1%low  frame  worst    lag lag>1s   bots server client  front   back  batches  ktris   vs base  view\n" );
 		for ( index = 0; index < benchNumRamp; index++ ) {
 			Bench_Line( &benchRamp[index], index == 0 ? 0 : rampBase, line, sizeof( line ) );
@@ -585,10 +585,12 @@ static int Bench_PlayersInTeams( void ) {
 #define RAMP_SETTLE		2500		// msec after a bot entered, not measured (it loads, spawns)
 #define RAMP_MEASURE	6000
 #define RAMP_JOIN_WAIT	15000		// a bot that does not enter by then is given up
+#define RAMP_STEP		2			// bots added between two measurements
 
 static const char	*benchBotNames[] = { "Anvil", "Bastion", "Cinder", "Drake", "Ember", "Flint", "Granite", "Hornet", "Jackal" };
 static int			benchRampPhase;		// 0 settle, 1 measure, 2 waiting for the next bot
 static int			benchRampTime;
+static int			benchRampTarget;	// players wanted before the next measurement
 
 static void Bench_AutoFrame( int frameMsec, int serverMsec, int clientMsec ) {
 	int		now = Sys_Milliseconds();
@@ -645,15 +647,21 @@ static void Bench_AutoFrame( int frameMsec, int serverMsec, int clientMsec ) {
 				benchAutoTime = now;
 				return;
 			}
-			// the next bot, teams in turn
-			Cbuf_AddText( va( "addbot %s 3 %s\n", benchBotNames[players % ( sizeof( benchBotNames ) / sizeof( benchBotNames[0] ) )],
-				( players & 1 ) ? "blue" : "red" ) );
+			// the next bots (two: the cost of a robot is about even), teams in turn
+			benchRampTarget = players + RAMP_STEP < wanted ? players + RAMP_STEP : wanted;
+			{
+				int		next;
+				for ( next = players; next < benchRampTarget; next++ ) {
+					Cbuf_AddText( va( "addbot %s 3 %s\n", benchBotNames[next % ( sizeof( benchBotNames ) / sizeof( benchBotNames[0] ) )],
+						( next & 1 ) ? "blue" : "red" ) );
+				}
+			}
 			benchRampPhase = 2;
 			benchRampTime = now;
 			return;
 		}
 		// waiting for the bot to enter
-		if ( players > atoi( benchRamp[benchNumRamp - 1].name ) || now - benchRampTime > RAMP_JOIN_WAIT ) {
+		if ( players >= benchRampTarget || now - benchRampTime > RAMP_JOIN_WAIT ) {
 			benchStep_t	*row = &benchRamp[benchNumRamp++];
 			Com_Memset( row, 0, sizeof( *row ) );
 			Com_sprintf( row->name, sizeof( row->name ), "%i", players );

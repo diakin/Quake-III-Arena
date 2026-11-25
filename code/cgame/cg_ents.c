@@ -399,6 +399,42 @@ static void CG_Item( centity_t *cent ) {
 
 /*
 ===============
+CG_RocketFlame
+
+WALKER: a rocket of a robot in flight: a small bright flame and two smaller,
+redder puffs of the exhaust behind it, flickering. No dynamic light.
+===============
+*/
+static void CG_RocketFlame( centity_t *cent, refEntity_t *ent ) {
+	static const float	flameBack[3] = { 0, 5, 10 };			// units behind the rocket
+	static const float	flameRadius[3] = { 4.5f, 3.5f, 2.5f };
+	static const byte	flameColor[3][3] = { { 255, 210, 110 }, { 255, 130, 30 }, { 210, 70, 10 } };
+	vec3_t		backward;
+	int			index;
+
+	BG_EvaluateTrajectoryDelta( &cent->currentState.pos, cg.time, backward );
+	if ( VectorNormalize( backward ) == 0 ) {
+		backward[2] = 1;
+	}
+	VectorNegate( backward, backward );
+	for ( index = 0; index < 3; index++ ) {
+		VectorMA( cent->lerpOrigin, flameBack[index], backward, ent->origin );
+		VectorCopy( ent->origin, ent->oldorigin );
+		ent->reType = RT_SPRITE;
+		ent->rotation = rand() % 360;
+		ent->radius = flameRadius[index] * ( 0.85f + 0.3f * random() );
+		ent->customShader = cgs.media.rocketFlameShader;
+		ent->shaderRGBA[0] = flameColor[index][0];
+		ent->shaderRGBA[1] = flameColor[index][1];
+		ent->shaderRGBA[2] = flameColor[index][2];
+		ent->shaderRGBA[3] = 255;
+		trap_R_AddRefEntityToScene( ent );
+	}
+}
+
+
+/*
+===============
 CG_Missile
 ===============
 */
@@ -439,8 +475,9 @@ static void CG_Missile( centity_t *cent ) {
 			weapon->missileDlightColor[col][0], weapon->missileDlightColor[col][1], weapon->missileDlightColor[col][2] );
 	}
 */
-	// add dynamic light
-	if ( weapon->missileDlight ) {
+	// add dynamic light (WALKER: not for the shells and rockets of robots: a light spot
+	// ran over the ground under every rocket; the rocket has an exhaust flame instead)
+	if ( weapon->missileDlight && s1->generic1 <= 0 ) {
 		trap_R_AddLightToScene(cent->lerpOrigin, weapon->missileDlight, 
 			weapon->missileDlightColor[0], weapon->missileDlightColor[1], weapon->missileDlightColor[2] );
 	}
@@ -470,8 +507,8 @@ static void CG_Missile( centity_t *cent ) {
 			ent.customShader = cgs.media.plasmaBoltShader;
 			trap_R_AddLightToScene( cent->lerpOrigin, 140, 0.4f, 0.8f, 1.0f );
 		} else if ( bg_robotWeapons[type].weaponClass == WCLASS_LIGHT ) {
-			ent.radius = 6;
-			ent.customShader = cgs.media.rocketGlowShader;
+			CG_RocketFlame( cent, &ent );
+			return;
 		} else {
 			ent.radius = 9;
 			ent.customShader = cgs.media.shellShader;

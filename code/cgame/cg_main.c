@@ -1060,6 +1060,7 @@ static void CG_RegisterGraphics( void ) {
 	CG_RegisterWeapon( WP_PLASMAGUN );
 	CG_RegisterWeapon( WP_RAILGUN );
 	cgs.media.rocketGlowShader = trap_R_RegisterShader( "rocketGlow" );
+	cgs.media.rocketFlameShader = trap_R_RegisterShader( "rocketFlame" );
 	cgs.media.plasmaBoltShader = trap_R_RegisterShader( "plasmaBolt" );
 	// WALKER: weapons of the robot slots (models: make_robots.py, sounds: make_sounds.py)
 	{

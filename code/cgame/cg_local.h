@@ -761,6 +761,7 @@ typedef struct {
 	qhandle_t	robotWeaponModels[RWEAPON_COUNT];	// WALKER: weapons in the robot slots
 	sfxHandle_t	robotWeaponSounds[RWEAPON_COUNT];
 	qhandle_t	rocketGlowShader;	// WALKER: light rocket (SHMEL)
+	qhandle_t	rocketFlameShader;	// WALKER: rocket exhaust, rgbGen entity
 	qhandle_t	plasmaBoltShader;	// WALKER: plasma ball (ISKRA)
 	qhandle_t	waterBubbleShader;
 	qhandle_t	bloodTrailShader;
