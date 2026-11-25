@@ -332,27 +332,62 @@ qboolean G_BeaconsCheckExit( void ) {
 G_BeaconsSpawnPoint
 
 Maps without team spawn points (wk_islands): a deathmatch spawn point on the
-team's half of the map, red in the south (y < 0), blue in the north.
+team's side of the map. The map is split along its longer side as the
+deathmatch points lie (wk_islands: west and east), red on the negative side;
+the points near the middle (closer than SPAWN_SIDE_SHARE of the half to the
+dividing line) are left to deathmatch, so the teams do not appear next to each
+other.
 =================
 */
+#define SPAWN_SIDE_SHARE	0.4f
+
 gentity_t *G_BeaconsSpawnPoint( team_t team, vec3_t origin, vec3_t angles ) {
 	gentity_t	*spot = NULL;
 	gentity_t	*spots[64];
-	int			count = 0;
+	gentity_t	*fallback = NULL;
+	vec3_t		mins = { 99999, 99999, 0 }, maxs = { -99999, -99999, 0 };
+	float		center, half, side;
+	int			count = 0, axis;
+
+	// extent of the deathmatch points
+	while ( ( spot = G_Find( spot, FOFS( classname ), "info_player_deathmatch" ) ) != NULL ) {
+		for ( axis = 0; axis < 2; axis++ ) {
+			if ( spot->s.origin[axis] < mins[axis] ) {
+				mins[axis] = spot->s.origin[axis];
+			}
+			if ( spot->s.origin[axis] > maxs[axis] ) {
+				maxs[axis] = spot->s.origin[axis];
+			}
+		}
+	}
+	if ( maxs[0] < mins[0] ) {
+		return NULL;		// none at all
+	}
+	axis = ( maxs[0] - mins[0] >= maxs[1] - mins[1] ) ? 0 : 1;
+	center = ( mins[axis] + maxs[axis] ) * 0.5f;
+	half = ( maxs[axis] - mins[axis] ) * 0.5f;
 
 	while ( ( spot = G_Find( spot, FOFS( classname ), "info_player_deathmatch" ) ) != NULL && count < 64 ) {
-		if ( ( team == TEAM_RED ) != ( spot->s.origin[1] < 0 ) ) {
-			continue;
+		side = spot->s.origin[axis] - center;
+		if ( team == TEAM_RED ) {
+			side = -side;
 		}
+		if ( side < half * SPAWN_SIDE_SHARE ) {
+			continue;		// the middle or the enemy side
+		}
+		fallback = spot;
 		if ( SpotWouldTelefrag( spot ) ) {
 			continue;
 		}
 		spots[count++] = spot;
 	}
-	if ( !count ) {
+	if ( count ) {
+		spot = spots[rand() % count];
+	} else if ( fallback ) {
+		spot = fallback;	// all own points taken: one of them anyway
+	} else {
 		return NULL;
 	}
-	spot = spots[rand() % count];
 	VectorCopy( spot->s.origin, origin );
 	origin[2] += 9;
 	VectorCopy( spot->s.angles, angles );
