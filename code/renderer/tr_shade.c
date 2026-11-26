@@ -21,6 +21,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 // tr_shade.c
 
+#include <stddef.h>	// WALKER: offsetof
 #include "tr_local.h"
 
 /*
@@ -313,6 +314,409 @@ because a surface may be forced to perform a RB_End due
 to overflow.
 ==============
 */
+/*
+===================
+WALKER: drawing from the map's buffers (tr_vbo.c)
+===================
+*/
+
+static qboolean	RB_HardwareFogBegin( void );
+static void		RB_HardwareFogStage( int stateBits );
+static void		RB_HardwareFogEnd( void );
+
+// a stage whose colours and texture coordinates OpenGL can take as they are
+static qboolean RB_StageVBOCapable( shaderStage_t *stage ) {
+	qboolean	vertexColors;
+	int			bundleNum, modNum;
+
+	switch ( stage->rgbGen ) {
+	case CGEN_IDENTITY:
+	case CGEN_IDENTITY_LIGHTING:
+	case CGEN_CONST:
+	case CGEN_WAVEFORM:
+		vertexColors = qfalse;
+		break;
+	case CGEN_EXACT_VERTEX:
+		vertexColors = qtrue;
+		break;
+	case CGEN_VERTEX:
+		if ( tr.identityLight != 1 ) {
+			return qfalse;		// scaled per vertex
+		}
+		vertexColors = qtrue;
+		break;
+	default:
+		return qfalse;
+	}
+	switch ( stage->alphaGen ) {
+	case AGEN_SKIP:
+	case AGEN_IDENTITY:		// with vertex colours: the vertex alpha (255 in maps)
+		break;
+	case AGEN_CONST:
+	case AGEN_WAVEFORM:
+		if ( vertexColors ) {
+			return qfalse;
+		}
+		break;
+	case AGEN_VERTEX:
+		if ( !vertexColors ) {
+			return qfalse;
+		}
+		break;
+	default:
+		return qfalse;
+	}
+
+	for ( bundleNum = 0; bundleNum < NUM_TEXTURE_BUNDLES; bundleNum++ ) {
+		textureBundle_t	*bundle = &stage->bundle[bundleNum];
+
+		if ( bundleNum > 0 && !bundle->image[0] ) {
+			break;
+		}
+		if ( bundle->tcGen != TCGEN_TEXTURE && bundle->tcGen != TCGEN_LIGHTMAP && bundle->tcGen != TCGEN_VECTOR ) {
+			return qfalse;
+		}
+		for ( modNum = 0; modNum < bundle->numTexMods; modNum++ ) {
+			texMod_t	type = bundle->texMods[modNum].type;
+			if ( type == TMOD_NONE ) {
+				break;
+			}
+			if ( type != TMOD_SCALE && type != TMOD_SCROLL && type != TMOD_TRANSFORM && type != TMOD_ROTATE ) {
+				return qfalse;
+			}
+		}
+	}
+	return qtrue;
+}
+
+static qboolean RB_ShaderVBOCheck( shader_t *shader ) {
+	int		stageNum, numStages = 0;
+
+	shader->vboCapable = -1;
+	if ( shader == tr.shadowShader || shader->isSky || shader->numUnfoggedPasses <= 0
+		|| shader->optimalStageIteratorFunc == RB_StageIteratorSky ) {
+		return qfalse;
+	}
+	for ( stageNum = 0; stageNum < MAX_SHADER_STAGES; stageNum++ ) {
+		if ( !shader->stages[stageNum] ) {
+			break;
+		}
+		if ( !RB_StageVBOCapable( shader->stages[stageNum] ) ) {
+			return qfalse;
+		}
+		numStages++;
+	}
+	if ( !numStages ) {
+		return qfalse;
+	}
+	// deformVertexes lodshift alone (buildings in two detail levels): it moves nothing
+	// outside the band of r_lodDistance, so a surface wholly outside it can come from the
+	// buffers (RB_VBOLodShiftStill), the others the old way
+	if ( shader->numDeforms == 1 && shader->deforms[0].deformation == DEFORM_LODSHIFT ) {
+		shader->vboCapable = 2;
+		return qtrue;
+	}
+	if ( shader->numDeforms ) {
+		return qfalse;
+	}
+	shader->vboCapable = 1;
+	return qtrue;
+}
+
+// a surface of a lodshift shader that the deform leaves where it is in this view
+qboolean RB_VBOLodShiftStill( vec3_t bounds[2] ) {
+	deformStage_t	*deform = &tess.shader->deforms[0];
+	float			band = r_lodBand->value < 1 ? 1 : r_lodBand->value;
+	float			start = r_lodDistance->value - band * 0.5f;
+	vec3_t			origin;
+	float			radius, distance;
+
+	VectorAdd( bounds[0], bounds[1], origin );
+	VectorScale( origin, 0.5f, origin );
+	radius = RadiusFromBounds( bounds[0], bounds[1] );
+	distance = Distance( origin, backEnd.viewParms.or.origin );
+
+	if ( deform->bulgeHeight == 0 ) {
+		return qtrue;
+	}
+	if ( deform->moveVector[0] ) {
+		return distance - radius >= start + band;	// far level: still beyond the band
+	}
+	return distance + radius <= start;				// near level: still before it
+}
+
+// 0: the old way, 1: from the buffers, 2: from the buffers where lodshift is still
+static int RB_ShaderVBOCapable( shader_t *shader ) {
+	if ( !shader->vboCapable && !RB_ShaderVBOCheck( shader ) && r_vbo->integer == 2 && shader->lightmapIndex != LIGHTMAP_2D ) {
+		ri.Printf( PRINT_ALL, "VBO: the old way: %s\n", shader->name );	// r_vbo 2: map shaders left out, once each
+	}
+	return shader->vboCapable > 0 ? shader->vboCapable : 0;
+}
+
+// this batch: the shader, and no fog pass or colours faded by the fog on the processor
+static int RB_VBOAllowed( shader_t *shader, int fogNum ) {
+	int		capable;
+
+	if ( !R_VBOWorldActive() || backEnd.projection2D ) {
+		return 0;
+	}
+	capable = RB_ShaderVBOCapable( shader );
+	if ( !capable ) {
+		return 0;
+	}
+	if ( fogNum && r_drawfog->integer && !backEnd.viewParms.isPortal ) {
+		// only the OpenGL fog of RB_HardwareFogBegin, it works on the buffers as well
+		if ( r_drawfog->integer != 1 || !shader->fogPass || !tr.world || tr.world->fogs[fogNum].hasSurface ) {
+			return 0;
+		}
+	}
+	return capable;
+}
+
+void RB_AddVBORange( int firstIndex, int numIndexes ) {
+	const void	*offset = (const void *)( (size_t)firstIndex * sizeof( glIndex_t ) );
+
+	if ( tess.numVboRanges > 0 ) {
+		int		last = tess.numVboRanges - 1;
+		// joins the previous range when it goes straight on
+		if ( (const byte *)tess.vboOffsets[last] + tess.vboCounts[last] * sizeof( glIndex_t ) == (const byte *)offset ) {
+			tess.vboCounts[last] += numIndexes;
+			tess.vboIndexes += numIndexes;
+			return;
+		}
+	}
+	if ( tess.numVboRanges >= MAX_VBO_RANGES ) {
+		shader_t	*shader = tess.shader;
+		int			fogNum = tess.fogNum;
+		RB_EndSurface();
+		RB_BeginSurface( shader, fogNum );
+	}
+	tess.vboOffsets[tess.numVboRanges] = offset;
+	tess.vboCounts[tess.numVboRanges] = numIndexes;
+	tess.numVboRanges++;
+	tess.vboIndexes += numIndexes;
+}
+
+// one colour for the stage; qfalse: the colours of the vertexes
+static qboolean RB_VBOStageColor( shaderStage_t *stage, byte *color ) {
+	int		savedVertexes = tess.numVertexes;
+	byte	wave[4][4];
+
+	switch ( stage->rgbGen ) {
+	case CGEN_IDENTITY:
+		color[0] = color[1] = color[2] = color[3] = 255;
+		break;
+	case CGEN_IDENTITY_LIGHTING:
+		color[0] = color[1] = color[2] = color[3] = tr.identityLightByte;
+		break;
+	case CGEN_CONST:
+		*(int *)color = *(int *)stage->constantColor;
+		break;
+	case CGEN_WAVEFORM:
+		tess.numVertexes = 1;	// the same colour for every vertex: work it out once
+		RB_CalcWaveColor( &stage->rgbWave, wave[0] );
+		tess.numVertexes = savedVertexes;
+		*(int *)color = *(int *)wave[0];
+		break;
+	default:
+		return qfalse;
+	}
+	switch ( stage->alphaGen ) {
+	case AGEN_IDENTITY:
+		if ( stage->rgbGen != CGEN_IDENTITY ) {
+			color[3] = 255;
+		}
+		break;
+	case AGEN_CONST:
+		color[3] = stage->constantColor[3];
+		break;
+	case AGEN_WAVEFORM:
+		tess.numVertexes = 1;
+		*(int *)wave[0] = *(int *)color;
+		RB_CalcWaveAlpha( &stage->alphaWave, wave[0] );
+		tess.numVertexes = savedVertexes;
+		color[3] = wave[0][3];
+		break;
+	default:
+		break;
+	}
+	return qtrue;
+}
+
+// texture coordinates of a bundle on the selected unit: from the buffer or texgen,
+// the tcMods in the texture matrix; qtrue: the matrix was changed
+static qboolean RB_VBOTexCoords( textureBundle_t *bundle ) {
+	float	matrix[16];
+	float	a00 = 1, a01 = 0, a10 = 0, a11 = 1, tx = 0, ty = 0;
+	int		modNum;
+
+	if ( bundle->tcGen == TCGEN_VECTOR ) {
+		float	planeS[4], planeT[4];
+		VectorCopy( bundle->tcGenVectors[0], planeS );
+		VectorCopy( bundle->tcGenVectors[1], planeT );
+		planeS[3] = planeT[3] = 0;
+		qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		qglTexGeni( GL_S, GL_TEXTURE_GEN_MODE, GL_OBJECT_LINEAR );
+		qglTexGeni( GL_T, GL_TEXTURE_GEN_MODE, GL_OBJECT_LINEAR );
+		qglTexGenfv( GL_S, GL_OBJECT_PLANE, planeS );
+		qglTexGenfv( GL_T, GL_OBJECT_PLANE, planeT );
+		qglEnable( GL_TEXTURE_GEN_S );
+		qglEnable( GL_TEXTURE_GEN_T );
+	} else {
+		qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+		qglTexCoordPointer( 2, GL_FLOAT, sizeof( vboVertex_t ),
+			bundle->tcGen == TCGEN_LIGHTMAP ? (void *)offsetof( vboVertex_t, lightmap ) : (void *)offsetof( vboVertex_t, st ) );
+	}
+
+	if ( !bundle->numTexMods ) {
+		return qfalse;
+	}
+	// st' = A st + T after every tcMod in turn, as ComputeTexCoords does them
+	for ( modNum = 0; modNum < bundle->numTexMods; modNum++ ) {
+		texModInfo_t	*mod = &bundle->texMods[modNum];
+		float			m00, m01, m10, m11, mx, my, n00, n01, n10, n11, nx, ny;
+
+		if ( mod->type == TMOD_NONE ) {
+			break;
+		}
+		switch ( mod->type ) {
+		case TMOD_SCALE:
+			m00 = mod->scale[0]; m01 = 0; m10 = 0; m11 = mod->scale[1]; mx = my = 0;
+			break;
+		case TMOD_SCROLL:
+			mx = mod->scroll[0] * tess.shaderTime;
+			my = mod->scroll[1] * tess.shaderTime;
+			mx -= floor( mx );
+			my -= floor( my );
+			m00 = 1; m01 = 0; m10 = 0; m11 = 1;
+			break;
+		case TMOD_TRANSFORM:
+			// s' = s * m[0][0] + t * m[1][0] + trans[0], t' = s * m[0][1] + t * m[1][1] + trans[1]
+			m00 = mod->matrix[0][0]; m01 = mod->matrix[1][0]; mx = mod->translate[0];
+			m10 = mod->matrix[0][1]; m11 = mod->matrix[1][1]; my = mod->translate[1];
+			break;
+		case TMOD_ROTATE:
+			{
+				float	degs = -mod->rotateSpeed * tess.shaderTime;
+				int		tableIndex = degs * ( FUNCTABLE_SIZE / 360.0f );
+				float	sinValue = tr.sinTable[tableIndex & FUNCTABLE_MASK];
+				float	cosValue = tr.sinTable[( tableIndex + FUNCTABLE_SIZE / 4 ) & FUNCTABLE_MASK];
+				m00 = cosValue; m01 = -sinValue; mx = 0.5f - 0.5f * cosValue + 0.5f * sinValue;
+				m10 = sinValue; m11 = cosValue; my = 0.5f - 0.5f * sinValue - 0.5f * cosValue;
+			}
+			break;
+		default:
+			m00 = 1; m01 = 0; m10 = 0; m11 = 1; mx = my = 0;
+			break;
+		}
+		n00 = m00 * a00 + m01 * a10;	n01 = m00 * a01 + m01 * a11;
+		n10 = m10 * a00 + m11 * a10;	n11 = m10 * a01 + m11 * a11;
+		nx = m00 * tx + m01 * ty + mx;	ny = m10 * tx + m11 * ty + my;
+		a00 = n00; a01 = n01; a10 = n10; a11 = n11; tx = nx; ty = ny;
+	}
+
+	Com_Memset( matrix, 0, sizeof( matrix ) );
+	matrix[0] = a00;	matrix[4] = a01;	matrix[12] = tx;
+	matrix[1] = a10;	matrix[5] = a11;	matrix[13] = ty;
+	matrix[10] = 1;
+	matrix[15] = 1;
+	qglMatrixMode( GL_TEXTURE );
+	qglLoadMatrixf( matrix );
+	qglMatrixMode( GL_MODELVIEW );
+	return qtrue;
+}
+
+static void RB_VBOResetTexCoords( textureBundle_t *bundle, qboolean matrixChanged ) {
+	if ( bundle->tcGen == TCGEN_VECTOR ) {
+		qglDisable( GL_TEXTURE_GEN_S );
+		qglDisable( GL_TEXTURE_GEN_T );
+	}
+	if ( matrixChanged ) {
+		qglMatrixMode( GL_TEXTURE );
+		qglLoadIdentity();
+		qglMatrixMode( GL_MODELVIEW );
+	}
+}
+
+static void RB_DrawWorldVBO( void ) {
+	shader_t	*shader = tess.shader;
+	int			stageNum;
+	byte		color[4];
+
+	GL_Cull( shader->cullType );
+	if ( shader->polygonOffset ) {
+		qglEnable( GL_POLYGON_OFFSET_FILL );
+		qglPolygonOffset( r_offsetFactor->value, r_offsetUnits->value );
+	}
+
+	R_VBOBindWorld();
+	qglVertexPointer( 3, GL_FLOAT, sizeof( vboVertex_t ), (void *)offsetof( vboVertex_t, xyz ) );
+
+	RB_HardwareFogBegin();
+	for ( stageNum = 0; stageNum < MAX_SHADER_STAGES; stageNum++ ) {
+		shaderStage_t	*stage = tess.xstages[stageNum];
+		qboolean		matrix0, matrix1 = qfalse;
+
+		if ( !stage ) {
+			break;
+		}
+
+		if ( RB_VBOStageColor( stage, color ) ) {
+			qglDisableClientState( GL_COLOR_ARRAY );
+			qglColor4ubv( color );
+		} else {
+			qglEnableClientState( GL_COLOR_ARRAY );
+			qglColorPointer( 4, GL_UNSIGNED_BYTE, sizeof( vboVertex_t ), (void *)offsetof( vboVertex_t, color ) );
+		}
+		RB_HardwareFogStage( stage->stateBits );
+		GL_State( stage->stateBits );
+
+		GL_SelectTexture( 0 );
+		if ( stage->bundle[0].vertexLightmap && ( (r_vertexLight->integer && !r_uiFullScreen->integer) || glConfig.hardwareType == GLHW_PERMEDIA2 ) && r_lightmap->integer ) {
+			GL_Bind( tr.whiteImage );
+		} else {
+			R_BindAnimatedImage( &stage->bundle[0] );
+		}
+		matrix0 = RB_VBOTexCoords( &stage->bundle[0] );
+
+		if ( stage->bundle[1].image[0] ) {
+			GL_SelectTexture( 1 );
+			qglEnable( GL_TEXTURE_2D );
+			GL_TexEnv( r_lightmap->integer ? GL_REPLACE : shader->multitextureEnv );
+			R_BindAnimatedImage( &stage->bundle[1] );
+			matrix1 = RB_VBOTexCoords( &stage->bundle[1] );
+		}
+
+		R_VBODrawRanges( tess.numVboRanges, tess.vboCounts, tess.vboOffsets );
+
+		if ( stage->bundle[1].image[0] ) {
+			RB_VBOResetTexCoords( &stage->bundle[1], matrix1 );
+			qglTexCoordPointer( 2, GL_FLOAT, 0, tess.svars.texcoords[1] );	// not into the buffer once it is unbound
+			qglDisable( GL_TEXTURE_2D );
+			GL_SelectTexture( 0 );
+		}
+		RB_VBOResetTexCoords( &stage->bundle[0], matrix0 );
+
+		if ( r_lightmap->integer && ( stage->bundle[0].isLightmap || stage->bundle[1].isLightmap || stage->bundle[0].vertexLightmap ) ) {
+			break;
+		}
+	}
+	RB_HardwareFogEnd();
+
+	// the old way finds the arrays it expects, in its own memory
+	R_VBOUnbind();
+	qglVertexPointer( 3, GL_FLOAT, 16, tess.xyz );
+	qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+	qglTexCoordPointer( 2, GL_FLOAT, 0, tess.svars.texcoords[0] );
+	qglEnableClientState( GL_COLOR_ARRAY );
+	qglColorPointer( 4, GL_UNSIGNED_BYTE, 0, tess.svars.colors );
+
+	if ( shader->polygonOffset ) {
+		qglDisable( GL_POLYGON_OFFSET_FILL );
+	}
+}
+
+
 void RB_BeginSurface( shader_t *shader, int fogNum ) {
 
 	shader_t *state = (shader->remappedShader) ? shader->remappedShader : shader;
@@ -331,7 +735,10 @@ void RB_BeginSurface( shader_t *shader, int fogNum ) {
 		tess.shaderTime = tess.shader->clampTime;
 	}
 
-
+	// WALKER: map surfaces of this batch may come from the map's buffers
+	tess.numVboRanges = 0;
+	tess.vboIndexes = 0;
+	tess.vboAllowed = RB_VBOAllowed( state, fogNum );
 }
 
 /*
@@ -1557,7 +1964,7 @@ void RB_EndSurface( void ) {
 
 	input = &tess;
 
-	if (input->numIndexes == 0) {
+	if ( input->numIndexes == 0 && input->numVboRanges == 0 ) {
 		return;
 	}
 
@@ -1575,30 +1982,43 @@ void RB_EndSurface( void ) {
 
 	// for debugging of sort order issues, stop rendering after a given sort value
 	if ( r_debugSort->integer && r_debugSort->integer < tess.shader->sort ) {
+		tess.numVboRanges = 0;
 		return;
 	}
 
-	//
-	// update performance counters
-	//
-	backEnd.pc.c_shaders++;
-	backEnd.pc.c_vertexes += tess.numVertexes;
-	backEnd.pc.c_indexes += tess.numIndexes;
-	backEnd.pc.c_totalIndexes += tess.numIndexes * tess.numPasses;
-
-	//
-	// call off to shader specific tess end function
-	//
-	tess.currentStageIteratorFunc();
-
-	//
-	// draw debugging stuff
-	//
-	if ( r_showtris->integer ) {
-		DrawTris (input);
+	// WALKER: the part of the batch in the map's buffers
+	if ( input->numVboRanges ) {
+		backEnd.pc.c_shaders++;
+		backEnd.pc.c_indexes += tess.vboIndexes;
+		backEnd.pc.c_totalIndexes += tess.vboIndexes * tess.numPasses;
+		RB_DrawWorldVBO();
+		tess.numVboRanges = 0;
+		tess.vboIndexes = 0;
 	}
-	if ( r_shownormals->integer ) {
-		DrawNormals (input);
+
+	if ( input->numIndexes ) {
+		//
+		// update performance counters
+		//
+		backEnd.pc.c_shaders++;
+		backEnd.pc.c_vertexes += tess.numVertexes;
+		backEnd.pc.c_indexes += tess.numIndexes;
+		backEnd.pc.c_totalIndexes += tess.numIndexes * tess.numPasses;
+
+		//
+		// call off to shader specific tess end function
+		//
+		tess.currentStageIteratorFunc();
+
+		//
+		// draw debugging stuff
+		//
+		if ( r_showtris->integer ) {
+			DrawTris (input);
+		}
+		if ( r_shownormals->integer ) {
+			DrawNormals (input);
+		}
 	}
 	// clear shader so we can tell we don't have any unclosed surfaces
 	tess.numIndexes = 0;

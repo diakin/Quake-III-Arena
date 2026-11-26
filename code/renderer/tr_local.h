@@ -417,6 +417,7 @@ typedef struct shader_s {
   long expireTime;                                  // time in milliseconds this expires
 
   struct shader_s *remappedShader;                  // current shader this one is remapped too
+	int			vboCapable;				// WALKER: 0 not checked yet, 1 drawn from the map's buffers, -1 not (tr_shade.c)
 
   int shaderStates[MAX_STATES_PER_SHADER];          // index to valid shader states
 
@@ -617,6 +618,10 @@ typedef struct {
 	// dynamic lighting information
 	int			dlightBits[SMP_FRAMES];
 
+	// WALKER: the indexes in the map's index buffer (tr_vbo.c), 0: not there
+	int			vboFirstIndex;
+	int			vboNumIndexes;
+
 	// triangle definitions (no normals at points)
 	int			numPoints;
 	int			numIndices;
@@ -646,6 +651,10 @@ typedef struct {
 	drawVert_t		*verts;
 
 	qboolean		mergedFaces;	// WALKER: made of joined world faces (R_MergeWorldFaces)
+
+	// WALKER: the indexes in the map's index buffer (tr_vbo.c), 0: not there
+	int				vboFirstIndex;
+	int				vboNumIndexes;
 
 	// WALKER: triangles facing away from the sun (tr_sunshadow.c), kept until the sun moves
 	int				*awayIndexes;
@@ -1322,6 +1331,15 @@ typedef struct stageVars
 	vec2_t		texcoords[NUM_TEXTURE_BUNDLES][SHADER_MAX_VERTEXES];
 } stageVars_t;
 
+#define	MAX_VBO_RANGES	4096	// WALKER
+
+typedef struct {						// WALKER: a vertex of the map's buffer
+	float		xyz[3];
+	float		st[2];
+	float		lightmap[2];
+	byte		color[4];
+} vboVertex_t;
+
 typedef struct shaderCommands_s 
 {
 	glIndex_t	indexes[SHADER_MAX_INDEXES];
@@ -1348,6 +1366,13 @@ typedef struct shaderCommands_s
 	int			numPasses;
 	void		(*currentStageIteratorFunc)( void );
 	shaderStage_t	**xstages;
+
+	// WALKER: surfaces of this batch drawn from the map's buffers (tr_vbo.c)
+	int			vboAllowed;		// 0 no, 1 yes, 2 yes where deformVertexes lodshift moves nothing
+	int			numVboRanges;
+	int			vboIndexes;
+	GLsizei		vboCounts[MAX_VBO_RANGES];
+	const void	*vboOffsets[MAX_VBO_RANGES];
 } shaderCommands_t;
 
 extern	shaderCommands_t	tess;
@@ -1358,6 +1383,18 @@ void RB_CheckOverflow( int verts, int indexes );
 #define RB_CHECKOVERFLOW(v,i) if (tess.numVertexes + (v) >= SHADER_MAX_VERTEXES || tess.numIndexes + (i) >= SHADER_MAX_INDEXES ) {RB_CheckOverflow(v,i);}
 
 void RB_StageIteratorGeneric( void );
+
+// WALKER: tr_vbo.c
+extern cvar_t	*r_vbo;
+void		R_VBOInit( void );
+void		R_VBOShutdown( void );
+void		R_VBOBuildWorld( void );
+qboolean	R_VBOWorldActive( void );
+void		R_VBOBindWorld( void );
+void		R_VBOUnbind( void );
+void		R_VBODrawRanges( int count, const GLsizei *counts, const void **offsets );
+void		RB_AddVBORange( int firstIndex, int numIndexes );
+qboolean	RB_VBOLodShiftStill( vec3_t bounds[2] );
 void RB_StageIteratorSky( void );
 void RB_StageIteratorVertexLitTexture( void );
 void RB_StageIteratorLightmappedMultitexture( void );

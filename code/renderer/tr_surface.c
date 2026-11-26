@@ -229,6 +229,14 @@ void RB_SurfaceTriangles( srfTriangles_t *srf ) {
 	qboolean	needsNormal;
 
 	dlightBits = srf->dlightBits[backEnd.smpFrame];
+
+	// WALKER: in the map's buffers (tr_vbo.c): only the range of indexes, unless lit
+	// by a dynamic light (that pass needs the triangles here)
+	if ( tess.vboAllowed && srf->vboNumIndexes && !dlightBits
+		&& ( tess.vboAllowed == 1 || RB_VBOLodShiftStill( srf->bounds ) ) ) {
+		RB_AddVBORange( srf->vboFirstIndex, srf->vboNumIndexes );
+		return;
+	}
 	tess.dlightBits |= dlightBits;
 
 	RB_CHECKOVERFLOW( srf->numVerts, srf->numIndexes );
@@ -824,9 +832,15 @@ void RB_SurfaceFace( srfSurfaceFace_t *surf ) {
 	int			numPoints;
 	int			dlightBits;
 
-	RB_CHECKOVERFLOW( surf->numPoints, surf->numIndices );
-
 	dlightBits = surf->dlightBits[backEnd.smpFrame];
+
+	// WALKER: in the map's buffers (tr_vbo.c), see RB_SurfaceTriangles
+	if ( tess.vboAllowed == 1 && surf->vboNumIndexes && !dlightBits ) {
+		RB_AddVBORange( surf->vboFirstIndex, surf->vboNumIndexes );
+		return;
+	}
+
+	RB_CHECKOVERFLOW( surf->numPoints, surf->numIndices );
 	tess.dlightBits |= dlightBits;
 
 	indices = ( unsigned * ) ( ( ( char  * ) surf ) + surf->ofsIndices );

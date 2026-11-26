@@ -61,6 +61,7 @@ dlights_off: r_dynamiclight 0
 model_lod_near: r_lodDistance 300
 nothing_drawn: bot_hold 2; r_drawworld 0; r_drawentities 0     // only the sky and the HUD
 base_again:                             // against base: how much the battle itself varies
+vbo_off: r_vbo 0; vid_restart           // last (a restart may change what follows): the map the old way, not from video memory
 """
 
 

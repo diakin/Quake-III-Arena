@@ -1121,6 +1121,7 @@ void R_Init( void ) {
 	InitOpenGL();
 
 	GLSL_Init();		// WALKER: programs, after every start of OpenGL
+	R_VBOInit();		// WALKER: buffer functions (tr_vbo.c)
 
 	R_InitImages();
 
@@ -1164,6 +1165,7 @@ void RE_Shutdown( qboolean destroyWindow ) {
 		R_SyncRenderThread();
 		R_ShutdownCommandBuffers();
 		R_DeleteTextures();
+		R_VBOShutdown();	// WALKER: the map's buffers
 	}
 
 	R_DoneFreeType();

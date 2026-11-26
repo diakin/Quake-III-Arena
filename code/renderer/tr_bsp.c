@@ -2240,6 +2240,9 @@ void RE_LoadWorldMap( const char *name ) {
 	// WALKER: shapes for the sun shadows of the buildings
 	R_LoadSunCasters( name );
 
+	// WALKER: the map's faces and triangles into video memory (tr_vbo.c)
+	R_VBOBuildWorld();
+
 	// WALKER: the game needs the sun direction to know whether a robot stands in the shade
 	// (cg_players.c, CG_PlayerShadow); empty on a map without sun
 	if ( VectorLength( tr.sunLight ) > 0 ) {
