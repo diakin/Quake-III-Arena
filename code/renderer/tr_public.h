@@ -99,7 +99,7 @@ typedef struct {
 	qboolean (*inPVS)( const vec3_t p1, const vec3_t p2 );
 
 	// WALKER: the last frame drawn: batches (shader passes over surfaces) and triangles
-	void	(*GetFrameStats)( int *batches, int *triangles );
+	void	(*GetFrameStats)( int *batches, int *flushes, int *draws, int *triangles );
 } refexport_t;
 
 //

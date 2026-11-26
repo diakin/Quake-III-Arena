@@ -520,6 +520,7 @@ qboolean RB_SunShadowVolumes( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 	qglCullFace( GL_FRONT );
 	qglStencilOp( GL_KEEP, stencilWrap ? GL_INCR_WRAP_EXT : GL_INCR, GL_KEEP );
 	qglDrawElements( GL_TRIANGLES, numIndexes, GL_INDEX_TYPE, frameIndexes );
+	backEnd.pc.c_drawCalls += 2;
 	qglCullFace( GL_BACK );
 	qglStencilOp( GL_KEEP, stencilWrap ? GL_DECR_WRAP_EXT : GL_DECR, GL_KEEP );
 	qglDrawElements( GL_TRIANGLES, numIndexes, GL_INDEX_TYPE, frameIndexes );

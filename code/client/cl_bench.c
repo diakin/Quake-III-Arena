@@ -55,7 +55,7 @@ typedef struct {
 	int			frames;
 	int			msec;			// measured wall time
 	double		bots, server, game, client, front, back;	// msec summed over the frames
-	double		batches, triangles;
+	double		batches, flushes, draws, triangles;	// batches: surfaces drawn; flushes: shader runs; draws: GL draw calls
 	int			low;			// 99th percentile frame time, msec
 	int			median;			// half of the frames are faster
 	int			worst;
@@ -220,8 +220,10 @@ Bench_Apply / Bench_Restore
 static void Bench_Apply( benchStep_t *step ) {
 	int		index;
 
+	// WALKER: the values to restore were taken at the start (Bench_Start). Read here,
+	// a latched cvar (r_smp) still showed the previous step's value while its restore
+	// waited for the vid_restart, and stayed changed for all the following steps
 	for ( index = 0; index < step->numSets; index++ ) {
-		Q_strncpyz( step->sets[index].saved, Cvar_VariableString( step->sets[index].name ), sizeof( step->sets[0].saved ) );
 		Cvar_Set( step->sets[index].name, step->sets[index].value );
 	}
 	if ( step->restart ) {
@@ -371,12 +373,12 @@ static void Bench_Line( benchStep_t *step, float baseFps, char *line, int size )
 	}
 	frames = step->frames;
 	fps = step->frames * 1000.0f / step->msec;
-	Com_sprintf( line, size, "%-20s %5.1f  %5.1f  %5.1f  %5.1f  %5i  %5i  %4i %%  %5.1f  %5.1f  %5.1f  %5.1f  %5.1f  %7.0f  %5.0f  %+7.0f %%  %s\n",
+	Com_sprintf( line, size, "%-20s %5.1f  %5.1f  %5.1f  %5.1f  %5i  %5i  %4i %%  %5.1f  %5.1f  %5.1f  %5.1f  %5.1f  %6.0f  %6.0f  %6.0f  %5.0f  %+7.0f %%  %s\n",
 		step->name, fps, step->median > 0 ? 1000.0f / step->median : 0.0f, step->low > 0 ? 1000.0f / step->low : 0.0f, step->msec / frames,
 		step->worst, step->maxLag, step->lagFrames * 100 / step->frames,
 		step->bots / frames, ( step->server - step->bots ) / frames,
 		( step->client - step->front - step->back ) / frames, step->front / frames, step->back / frames,
-		step->batches / frames, step->triangles / frames / 1000.0f,
+		step->batches / frames, step->flushes / frames, step->draws / frames, step->triangles / frames / 1000.0f,
 		baseFps > 0 ? ( fps / baseFps - 1.0f ) * 100.0f : 0.0f,
 		step->deadFrames ? va( "dead %i %%", step->deadFrames * 100 / step->frames )
 		: ( step->spectatorFrames * 2 > step->frames ? "spect" : "" ) );
@@ -425,7 +427,7 @@ static void Bench_Report( void ) {
 	if ( benchNumRamp > 0 ) {
 		float	rampBase = 0;
 		Q_strcat( report, sizeof( report ), "bots entering the battle, two at a time (vs base = against no bots):\n" );
-		Q_strcat( report, sizeof( report ), "robots in battle      fps median  1%low  frame  worst    lag lag>1s   bots server client  front   back  batches  ktris   vs base  view\n" );
+		Q_strcat( report, sizeof( report ), "robots in battle      fps median  1%low  frame  worst    lag lag>1s   bots server client  front   back   surfs shader  draws  ktris   vs base  view\n" );
 		for ( index = 0; index < benchNumRamp; index++ ) {
 			Bench_Line( &benchRamp[index], index == 0 ? 0 : rampBase, line, sizeof( line ) );
 			if ( index == 0 && benchRamp[0].frames && benchRamp[0].msec ) {
@@ -435,7 +437,7 @@ static void Bench_Report( void ) {
 		}
 		Q_strcat( report, sizeof( report ), "then the steps, with all the bots:\n" );
 	}
-	Q_strcat( report, sizeof( report ), "step                  fps median  1%low  frame  worst    lag lag>1s   bots server client  front   back  batches  ktris   vs base  view\n" );
+	Q_strcat( report, sizeof( report ), "step                  fps median  1%low  frame  worst    lag lag>1s   bots server client  front   back   surfs shader  draws  ktris   vs base  view\n" );
 
 	for ( index = 0; index < benchNumSteps; index++ ) {
 		benchStep_t	*step = &benchSteps[index];
@@ -530,11 +532,13 @@ static void Bench_Accumulate( benchStep_t *step, int frameMsec, int serverMsec, 
 	step->front += time_frontend;
 	step->back += time_backend;
 	{
-		int		batches = 0, triangles = 0;
+		int		batches = 0, flushes = 0, draws = 0, triangles = 0;
 		if ( re.GetFrameStats ) {
-			re.GetFrameStats( &batches, &triangles );
+			re.GetFrameStats( &batches, &flushes, &draws, &triangles );
 		}
 		step->batches += batches;
+		step->flushes += flushes;
+		step->draws += draws;
 		step->triangles += triangles;
 	}
 }
@@ -713,7 +717,7 @@ void CL_BenchFrame( int frameMsec, int serverMsec, int clientMsec ) {
 		if ( benchState == BENCH_MEASURE ) {
 			step->frames = step->msec = 0;
 			step->bots = step->server = step->game = step->client = step->front = step->back = 0;
-			step->batches = step->triangles = 0;
+			step->batches = step->flushes = step->draws = step->triangles = 0;
 			step->worst = step->deadFrames = step->spectatorFrames = 0;
 			step->maxLag = step->lagFrames = 0;
 			benchState = BENCH_WARMUP_STATE;
@@ -818,6 +822,13 @@ static void Bench_Start( int seconds ) {
 		return;
 	}
 	Bench_ApplyGlobals();
+	for ( index = 0; index < benchNumSteps; index++ ) {
+		int		setIndex;
+		for ( setIndex = 0; setIndex < benchSteps[index].numSets; setIndex++ ) {
+			benchSet_t	*set = &benchSteps[index].sets[setIndex];
+			Q_strncpyz( set->saved, Cvar_VariableString( set->name ), sizeof( set->saved ) );
+		}
+	}
 	Com_Printf( "benchmark: %i steps, about %i s; do not touch the game; \"benchmark stop\" stops\n",
 		benchNumSteps, benchNumSteps * ( benchSeconds + BENCH_WARMUP / 1000 ) );
 	benchStep = 0;

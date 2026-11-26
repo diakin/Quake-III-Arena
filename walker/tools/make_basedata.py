@@ -51,8 +51,6 @@ BENCHMARK_TXT = r"""// WALKER benchmark: in a battle (best 5 x 5 with bots) "ben
 // lights, fast sky, marks, textures off / small, vertex light, 640x480, bots holding.
 base:
 real_fps: r_finish 0                    // the frame rate without waiting for the card every frame
-render_thread: r_smp 1; vid_restart     // the renderer's GL calls in a second thread (Q3 SMP)
-render_thread_real: r_smp 1; r_finish 0; vid_restart
 no_robots: r_drawentities 0             // robots, weapons, shells and effects not drawn
 no_world: r_drawworld 0                 // the map not drawn
 robot_shadows_off: cg_shadows 0

@@ -177,6 +177,7 @@ void R_RenderShadowEdges( void ) {
 	}
 
 	// edge indexes are welded ones: draw with the original vertex of the same position
+	backEnd.pc.c_drawCalls++;	// WALKER: counted for the benchmark
 	qglBegin( GL_QUADS );
 	for ( i = 0 ; i < numSilhouette ; i++ ) {
 		int		first = silhouette[i][0], second = silhouette[i][1];
@@ -352,6 +353,7 @@ void RB_ShadowFinish( qboolean sunShadows ) {
 //	qglColor3f( 1, 0, 0 );
 //	GL_State( GLS_DEPTHMASK_TRUE | GLS_SRCBLEND_ONE | GLS_DSTBLEND_ZERO );
 
+	backEnd.pc.c_drawCalls++;	// WALKER: counted for the benchmark
 	qglBegin( GL_QUADS );
 	qglVertex3f( -100, 100, -10 );
 	qglVertex3f( 100, 100, -10 );

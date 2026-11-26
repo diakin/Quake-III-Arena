@@ -870,6 +870,7 @@ typedef struct {
 
 typedef struct {
 	int		c_surfaces, c_shaders, c_vertexes, c_indexes, c_totalIndexes;
+	int		c_drawCalls;	// WALKER: glDrawElements / glDrawArrays calls
 	float	c_overDraw;
 	
 	int		c_dlightVertexes;
@@ -1086,7 +1087,7 @@ void		GLSL_Init( void );
 qboolean	GLSL_DlightsAvailable( void );
 void		GLSL_DlightsBegin( int count, const float *lights, const float *colors, float fogDensity );
 void		GLSL_DlightsEnd( void );
-void	R_GetFrameStats( int *batches, int *triangles );
+void	R_GetFrameStats( int *batches, int *flushes, int *draws, int *triangles );
 extern	cvar_t	*r_finish;
 extern	cvar_t	*r_drawBuffer;
 extern  cvar_t  *r_glDriver;
