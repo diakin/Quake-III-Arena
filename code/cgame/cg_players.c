@@ -2173,7 +2173,37 @@ WALKER: 1 when the robot stands in the shade of a building (the way to the sun i
 ===============
 */
 #define	SHADE_SPOT_ALPHA	0.75f
-#define	ROBOT_SPOT_RADIUS	36		// WALKER: the round shadow, about the robot's own width (was 60)
+#define	ROBOT_SPOT_RADIUS	36		// WALKER: without models (was 60)
+#define	SPOT_MAX( first, second )	( ( first ) > ( second ) ? ( first ) : ( second ) )
+
+/*
+===============
+CG_RobotSpotRadius
+
+WALKER: radius of the round shadow: half the robot's width from the bounds of its
+legs and torso models (the guns stick out forward, so the torso's length is not
+counted). The shadow texture fades out towards its edge, so the whole spot is
+about as wide as the robot.
+===============
+*/
+static float CG_RobotSpotRadius( const clientInfo_t *ci ) {
+	vec3_t	mins, maxs;
+	float	half = 0;
+
+	if ( ci->legsModel ) {
+		trap_R_ModelBounds( ci->legsModel, mins, maxs );
+		half = SPOT_MAX( half, SPOT_MAX( maxs[1], -mins[1] ) );
+		half = SPOT_MAX( half, SPOT_MAX( maxs[0], -mins[0] ) );
+	}
+	if ( ci->torsoModel ) {
+		trap_R_ModelBounds( ci->torsoModel, mins, maxs );
+		half = SPOT_MAX( half, SPOT_MAX( maxs[1], -mins[1] ) );
+	}
+	if ( half < 8 ) {
+		return ROBOT_SPOT_RADIUS;
+	}
+	return half;
+}
 #define	SHADE_FADE_TIME		250
 #define	SHADE_TRACE_TIME	120		// msec between traces toward the sun (the fade hides it)
 #define	SHADE_TRACE_MOVE	24		// or after the robot moved this far
@@ -2324,7 +2354,7 @@ static qboolean CG_PlayerShadow( centity_t *cent, float *shadowPlane, qboolean *
 		if ( shade > 0.01f ) {
 			alpha *= shade * SHADE_SPOT_ALPHA;
 			CG_ShadowMark( cent->currentState.number, cgs.media.shadowMarkShader, trace.endpos, trace.plane.normal,
-				cent->pe.legs.yawAngle, alpha, ROBOT_SPOT_RADIUS );
+				cent->pe.legs.yawAngle, alpha, CG_RobotSpotRadius( &cgs.clientinfo[cent->currentState.clientNum] ) );
 		}
 		return qtrue;
 	}
@@ -2335,7 +2365,7 @@ static qboolean CG_PlayerShadow( centity_t *cent, float *shadowPlane, qboolean *
 	// add the mark as a temporary, so it goes directly to the renderer
 	// without taking a spot in the cg_marks array
 	CG_ShadowMark( cent->currentState.number, cgs.media.shadowMarkShader, trace.endpos, trace.plane.normal,
-		cent->pe.legs.yawAngle, alpha, ROBOT_SPOT_RADIUS );	// WALKER: the robot is wider than a Q3 player (was 24); cached fragments
+		cent->pe.legs.yawAngle, alpha, CG_RobotSpotRadius( &cgs.clientinfo[cent->currentState.clientNum] ) );	// WALKER: the robot is wider than a Q3 player (was 24); cached fragments
 
 	return qtrue;
 }
