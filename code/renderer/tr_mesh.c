@@ -440,6 +440,12 @@ void R_AddMD3Surfaces( trRefEntity_t *ent ) {
 			shader = tr.shaders[ md3Shader->shaderIndex ];
 		}
 
+		// WALKER: all material classes of the part in one pass (tr_glsl.c); the shader of
+		// the part sorts the same for every class, so the classes go into one batch
+		if ( shader->materialPass && !ent->e.customShader && GLSL_MaterialAvailable() && r_vbo->integer ) {
+			shader = shader->materialPass;
+		}
+
 
 		// projection shadows work fine with personal models
 		if ( r_shadows->integer == 3

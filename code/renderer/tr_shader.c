@@ -1549,6 +1549,32 @@ static qboolean ParseShader( char **text )
 			shader.polygonOffset = qtrue;
 			continue;
 		}
+		// WALKER: materialPass <shader of the part>: drawn by it in one pass (tr_glsl.c)
+		else if ( !Q_stricmp( token, "materialPass" ) )
+		{
+			token = COM_ParseExt( text, qfalse );
+			Q_strncpyz( shader.materialPassName, token, sizeof( shader.materialPassName ) );
+			continue;
+		}
+		// WALKER: materialImages <mask> <reflection> <glow base> <amplitude> <phase> <frequency>
+		else if ( !Q_stricmp( token, "materialImages" ) )
+		{
+			int		index;
+
+			token = COM_ParseExt( text, qfalse );
+			shader.materialMask = R_FindImageFile( token, qtrue, qtrue, GL_CLAMP );
+			token = COM_ParseExt( text, qfalse );
+			shader.materialEnv = R_FindImageFile( token, qtrue, qtrue, GL_REPEAT );
+			for ( index = 0; index < 4; index++ ) {
+				token = COM_ParseExt( text, qfalse );
+				shader.materialGlow[index] = token[0] ? atof( token ) : ( index == 0 ? 1.0f : 0.0f );
+			}
+			if ( !shader.materialMask || !shader.materialEnv ) {
+				ri.Printf( PRINT_WARNING, "WARNING: materialImages in shader '%s': image not found\n", shader.name );
+				shader.materialMask = shader.materialEnv = NULL;
+			}
+			continue;
+		}
 		// entityMergable, allowing sprite surfaces from multiple entities
 		// to be merged into one batch.  This is a savings for smoke
 		// puffs and blood, but can't be used for anything where the
@@ -2514,6 +2540,11 @@ shader_t *R_FindShader( const char *name, int lightmapIndex, qboolean mipRawImag
 			shader.defaultShader = qtrue;
 		}
 		sh = FinishShader();
+		// WALKER: the shader of the part that draws this material class in one pass
+		if ( sh->materialPassName[0] ) {
+			shader_t	*pass = R_FindShader( sh->materialPassName, lightmapIndex, mipRawImage );
+			sh->materialPass = ( pass && !pass->defaultShader && pass->materialMask ) ? pass : NULL;
+		}
 		return sh;
 	}
 

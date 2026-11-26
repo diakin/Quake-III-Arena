@@ -927,6 +927,30 @@ static void RB_DrawMeshVBO( void ) {
 	qglDisableClientState( GL_VERTEX_ARRAY );	// the position comes from generic attribute 0
 
 	R_VBOBindMesh( model );
+
+	// WALKER: a part with all its material classes in one pass (tr_glsl.c)
+	if ( shader->materialMask && tess.xstages[0] && GLSL_MaterialAvailable() ) {
+		float	*wave = shader->materialGlow;
+		float	glow = wave[0] + wave[1] * sin( ( wave[2] + wave[3] * tess.shaderTime ) * 2.0 * M_PI );
+
+		RB_HardwareFogBegin();
+		RB_HardwareFogStage( tess.xstages[0]->stateBits );
+		GL_State( tess.xstages[0]->stateBits );
+		GL_SelectTexture( 1 );
+		GL_Bind( shader->materialEnv );
+		GL_SelectTexture( 0 );
+		qglActiveTextureARB( GL_TEXTURE0_ARB + 2 );		// unit 2: not tracked by GL_Bind
+		qglBindTexture( GL_TEXTURE_2D, shader->materialMask->texnum );
+		qglActiveTextureARB( GL_TEXTURE0_ARB );
+		R_BindAnimatedImage( &tess.xstages[0]->bundle[0] );
+		GLSL_MaterialBegin( model, frame, oldFrame, backLerp, glow, RB_HardwareFogOn() );
+		R_VBODrawRanges( tess.numVboRanges, tess.vboCounts, tess.vboOffsets );
+		RB_HardwareFogEnd();
+		GLSL_MaterialEnd();
+		R_VBOUnbind();
+		goto restore;
+	}
+
 	GLSL_MeshBegin( model, frame, oldFrame, backLerp );
 	RB_HardwareFogBegin();
 	for ( stageNum = 0; stageNum < MAX_SHADER_STAGES; stageNum++ ) {
@@ -947,6 +971,7 @@ static void RB_DrawMeshVBO( void ) {
 	GLSL_MeshEnd();
 	R_VBOUnbind();
 
+restore:
 	// back to the arrays the old way expects, in its own memory
 	qglEnableClientState( GL_VERTEX_ARRAY );
 	qglVertexPointer( 3, GL_FLOAT, 16, tess.xyz );

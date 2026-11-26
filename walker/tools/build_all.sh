@@ -40,6 +40,9 @@ for robot in strizh molot; do
   python3 "$TOOLS/bake_walker.py" "$STAGE/base/models/players/$robot"
   python3 "$TOOLS/make_lods.py" "$STAGE/base/models/players/$robot"
 done
+# the material classes of every robot part and the weapons in one pass: class masks,
+# the weapons' atlas, pass shaders (renderer/tr_glsl.c, program "materials")
+python3 "$TOOLS/make_material_pass.py" "$STAGE/base"
 
 echo "== QVM"
 cd "$ROOT"

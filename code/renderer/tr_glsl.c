@@ -47,6 +47,7 @@ static void		( APIENTRY *qglEnableVertexAttribArray )( GLuint index );
 static void		( APIENTRY *qglDisableVertexAttribArray )( GLuint index );
 
 cvar_t			*r_glsl;
+cvar_t			*r_materialPass;	// WALKER: 0: the material classes of a robot part each with its own shader
 
 static qboolean	glslAvailable;
 
@@ -57,6 +58,11 @@ static qboolean	glslAvailable;
 static GLuint	meshProgram;
 static GLint	meshBackLerp, meshLightDir, meshAmbient, meshDirected, meshViewOrigin, meshSpecularOrigin;
 static GLint	meshColorMode, meshAlphaMode, meshTcMode, meshColor, meshFogOn, meshTexture;
+
+// the material program: all material classes of a robot part in one pass
+static GLuint	materialProgram;
+static GLint	matBackLerp, matLightDir, matAmbient, matDirected, matViewOrigin, matSpecularOrigin;
+static GLint	matGlow, matFogOn, matBaseMap, matEnvMap, matMaskMap;
 
 // the vertex program of map surfaces with deformVertexes lodshift (tr_shade.c)
 static GLuint	shiftProgram;
@@ -276,6 +282,98 @@ static const char *meshVertexSource =
 
 /*
 ===========================================================================
+Materials in one pass
+
+A robot part has one atlas; its material classes were shaders of up to three
+stages each on the same atlas (bake_walker.py):
+  paint  base * diffuse + reflection * 0.40 * shine        (blend src_alpha, one)
+  metal  base * diffuse, * ( 1 + reflection * 0.55 ),      (blend dst_color, one)
+         + reflection * 0.55 * shine
+  glass  base * diffuse + reflection * 0.35                (blend one, one)
+  glow   base * wave, unlit
+Each stage a draw call, and every class its own batch: up to eight draws for
+a part. Here the class of every texel comes from a mask (r: multiplied in,
+g: added, b: added with the shine, a: glow), the stages are summed in the same
+order with the same clamps the frame buffer gave between them.
+===========================================================================
+*/
+static const char *materialVertexSource =
+	"attribute vec4 frameNew;\n"
+	"attribute vec4 frameOld;\n"
+	"attribute vec2 texCoord;\n"
+	"uniform float backLerp;\n"
+	"uniform vec3 lightDir;\n"
+	"uniform vec3 ambientLight;\n"
+	"uniform vec3 directedLight;\n"
+	"uniform vec3 viewOrigin;\n"
+	"uniform vec3 specularOrigin;\n"
+	"varying vec2 tc;\n"
+	"varying vec2 envTc;\n"
+	"varying vec3 diffuse;\n"
+	"varying float shine;\n"
+	"varying float eyeDistance;\n"
+	"vec3 unpackNormal( float latLong ) {\n"
+	"	float value = latLong < 0.0 ? latLong + 65536.0 : latLong;\n"
+	"	float lat = floor( value / 256.0 );\n"
+	"	float lng = value - lat * 256.0;\n"
+	"	lat *= 6.28318530718 / 256.0;\n"
+	"	lng *= 6.28318530718 / 256.0;\n"
+	"	return vec3( cos( lat ) * sin( lng ), sin( lat ) * sin( lng ), cos( lng ) );\n"
+	"}\n"
+	"void main() {\n"
+	"	vec3 position = mix( frameNew.xyz, frameOld.xyz, backLerp ) * ( 1.0 / 64.0 );\n"
+	"	vec3 normal = mix( unpackNormal( frameNew.w ), unpackNormal( frameOld.w ), backLerp );\n"
+	"	if ( backLerp > 0.0 ) {\n"
+	"		normal = normalize( normal );\n"
+	"	}\n"
+	"	vec4 vertex = vec4( position, 1.0 );\n"
+	"	vec4 eye = gl_ModelViewMatrix * vertex;\n"
+	"	gl_Position = gl_ModelViewProjectionMatrix * vertex;\n"
+	"	gl_ClipVertex = eye;\n"
+	"	eyeDistance = length( eye.xyz );\n"
+	"	float incoming = dot( normal, lightDir );\n"
+	"	diffuse = min( incoming <= 0.0 ? ambientLight : ambientLight + incoming * directedLight, vec3( 1.0 ) );\n"
+	"	vec3 toLight = normalize( specularOrigin - position );\n"
+	"	vec3 reflected = normal * 2.0 * dot( normal, toLight ) - toLight;\n"
+	"	vec3 viewer = viewOrigin - position;\n"
+	"	float lit = max( dot( reflected, viewer ) * inversesqrt( dot( viewer, viewer ) ), 0.0 );\n"
+	"	lit *= lit;\n"
+	"	shine = min( lit * lit, 1.0 );\n"
+	"	vec3 toViewer = normalize( viewer );\n"
+	"	vec3 mirrored = normal * 2.0 * dot( normal, toViewer ) - toViewer;\n"
+	"	envTc = vec2( 0.5 + mirrored.y * 0.5, 0.5 - mirrored.z * 0.5 );\n"
+	"	tc = texCoord;\n"
+	"}\n";
+
+static const char *materialFragmentSource =
+	"uniform sampler2D baseMap;\n"
+	"uniform sampler2D envMap;\n"
+	"uniform sampler2D maskMap;\n"
+	"uniform float glow;\n"
+	"uniform float fogOn;\n"
+	"varying vec2 tc;\n"
+	"varying vec2 envTc;\n"
+	"varying vec3 diffuse;\n"
+	"varying float shine;\n"
+	"varying float eyeDistance;\n"
+	"void main() {\n"
+	"	vec3 base = texture2D( baseMap, tc ).rgb;\n"
+	"	vec4 mask = texture2D( maskMap, tc );\n"
+	"	vec3 env = texture2D( envMap, envTc ).rgb;\n"
+	"	vec3 lit = clamp( base * diffuse, 0.0, 1.0 );\n"
+	"	lit = clamp( lit + lit * env * mask.r, 0.0, 1.0 );\n"
+	"	lit = clamp( lit + env * mask.g, 0.0, 1.0 );\n"
+	"	lit = clamp( lit + env * ( mask.b * shine ), 0.0, 1.0 );\n"
+	"	vec3 result = mix( lit, clamp( base * glow, 0.0, 1.0 ), mask.a );\n"
+	"	if ( fogOn > 0.5 ) {\n"
+	"		float visible = clamp( exp( -gl_Fog.density * eyeDistance ), 0.0, 1.0 );\n"
+	"		result = mix( gl_Fog.color.rgb, result, visible );\n"
+	"	}\n"
+	"	gl_FragColor = vec4( result, 1.0 );\n"
+	"}\n";
+
+/*
+===========================================================================
 Map surfaces in two detail levels (deformVertexes lodshift)
 
 RB_CalcLodShift moves every vertex on the processor while the surface is in the
@@ -347,10 +445,12 @@ void GLSL_Init( void ) {
 	qboolean	ok = qtrue;
 
 	r_glsl = ri.Cvar_Get( "r_glsl", "1", CVAR_ARCHIVE );
+	r_materialPass = ri.Cvar_Get( "r_materialPass", "1", CVAR_ARCHIVE );
 	glslAvailable = qfalse;
 	dlightProgram = 0;
 	meshProgram = 0;
 	shiftProgram = 0;
+	materialProgram = 0;
 
 	qglCreateShader = GLSL_Proc( "glCreateShader", &ok );
 	qglShaderSource = GLSL_Proc( "glShaderSource", &ok );
@@ -405,6 +505,24 @@ void GLSL_Init( void ) {
 		meshFogOn = qglGetUniformLocation( meshProgram, "fogOn" );
 		meshTexture = qglGetUniformLocation( meshProgram, "texture0" );
 	}
+	{
+		static const char	*attribs[3] = { "frameNew", "frameOld", "texCoord" };
+		static const int	locations[3] = { MESH_ATTRIB_FRAME, MESH_ATTRIB_OLDFRAME, MESH_ATTRIB_TEXCOORD };
+		materialProgram = GLSL_ProgramAttribs( materialVertexSource, materialFragmentSource, "materials", attribs, locations, 3 );
+	}
+	if ( materialProgram ) {
+		matBackLerp = qglGetUniformLocation( materialProgram, "backLerp" );
+		matLightDir = qglGetUniformLocation( materialProgram, "lightDir" );
+		matAmbient = qglGetUniformLocation( materialProgram, "ambientLight" );
+		matDirected = qglGetUniformLocation( materialProgram, "directedLight" );
+		matViewOrigin = qglGetUniformLocation( materialProgram, "viewOrigin" );
+		matSpecularOrigin = qglGetUniformLocation( materialProgram, "specularOrigin" );
+		matGlow = qglGetUniformLocation( materialProgram, "glow" );
+		matFogOn = qglGetUniformLocation( materialProgram, "fogOn" );
+		matBaseMap = qglGetUniformLocation( materialProgram, "baseMap" );
+		matEnvMap = qglGetUniformLocation( materialProgram, "envMap" );
+		matMaskMap = qglGetUniformLocation( materialProgram, "maskMap" );
+	}
 	shiftProgram = GLSL_Program( shiftVertexSource, NULL, "lodshift" );
 	if ( shiftProgram ) {
 		shiftEye = qglGetUniformLocation( shiftProgram, "eye" );
@@ -420,8 +538,8 @@ void GLSL_Init( void ) {
 		shiftPlaneT[1] = qglGetUniformLocation( shiftProgram, "planeT1" );
 	}
 	glslAvailable = qtrue;
-	ri.Printf( PRINT_ALL, "GLSL: on%s%s\n", dlightProgram ? ", dynamic lights in one pass" : "",
-		meshProgram ? ", models in video memory" : "" );
+	ri.Printf( PRINT_ALL, "GLSL: on%s%s%s\n", dlightProgram ? ", dynamic lights in one pass" : "",
+		meshProgram ? ", models in video memory" : "", materialProgram ? ", materials in one pass" : "" );
 }
 
 
@@ -509,6 +627,52 @@ void GLSL_MeshEnd( void ) {
 	qglUseProgram( 0 );
 }
 
+
+
+/*
+=================
+GLSL_MaterialAvailable / GLSL_MaterialBegin / GLSL_MaterialEnd
+
+one pass of a part with "materialImages" (tr_shade.c, RB_DrawMeshVBO); the
+caller binds the atlas to unit 0, the reflection to unit 1, the mask to unit 2
+=================
+*/
+qboolean GLSL_MaterialAvailable( void ) {
+	return glslAvailable && meshProgram && materialProgram && r_glsl->integer && r_materialPass->integer
+		&& glConfig.maxActiveTextures >= 3;
+}
+
+void GLSL_MaterialBegin( const meshModelVBO_t *model, int frame, int oldFrame, float backLerp, float glow, qboolean fogOn ) {
+	trRefEntity_t	*ent = backEnd.currentEntity;
+	int				frameSize = model->numVerts * sizeof( md3XyzNormal_t );
+
+	qglUseProgram( materialProgram );
+	qglUniform1f( matBackLerp, backLerp );
+	qglUniform3f( matLightDir, ent->lightDir[0], ent->lightDir[1], ent->lightDir[2] );
+	qglUniform3f( matAmbient, ent->ambientLight[0] / 255.0f, ent->ambientLight[1] / 255.0f, ent->ambientLight[2] / 255.0f );
+	qglUniform3f( matDirected, ent->directedLight[0] / 255.0f, ent->directedLight[1] / 255.0f, ent->directedLight[2] / 255.0f );
+	qglUniform3f( matViewOrigin, backEnd.or.viewOrigin[0], backEnd.or.viewOrigin[1], backEnd.or.viewOrigin[2] );
+	qglUniform3f( matSpecularOrigin, lightOrigin[0], lightOrigin[1], lightOrigin[2] );
+	qglUniform1f( matGlow, glow );
+	qglUniform1f( matFogOn, fogOn ? 1.0f : 0.0f );
+	qglUniform1i( matBaseMap, 0 );
+	qglUniform1i( matEnvMap, 1 );
+	qglUniform1i( matMaskMap, 2 );
+
+	qglVertexAttribPointer( MESH_ATTRIB_FRAME, 4, GL_SHORT, GL_FALSE, sizeof( md3XyzNormal_t ),
+		(const void *)(size_t)( model->framesOffset + frame * frameSize ) );
+	qglVertexAttribPointer( MESH_ATTRIB_OLDFRAME, 4, GL_SHORT, GL_FALSE, sizeof( md3XyzNormal_t ),
+		(const void *)(size_t)( model->framesOffset + oldFrame * frameSize ) );
+	qglVertexAttribPointer( MESH_ATTRIB_TEXCOORD, 2, GL_FLOAT, GL_FALSE, 2 * sizeof( float ),
+		(const void *)(size_t)model->stOffset );
+	qglEnableVertexAttribArray( MESH_ATTRIB_FRAME );
+	qglEnableVertexAttribArray( MESH_ATTRIB_OLDFRAME );
+	qglEnableVertexAttribArray( MESH_ATTRIB_TEXCOORD );
+}
+
+void GLSL_MaterialEnd( void ) {
+	GLSL_MeshEnd();
+}
 
 
 /*

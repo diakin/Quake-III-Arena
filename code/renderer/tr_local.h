@@ -420,6 +420,16 @@ typedef struct shader_s {
 	int			vboCapable;				// WALKER: 0 not checked yet, 1 drawn from the map's buffers, -1 not (tr_shade.c)
 	int			meshCapable;			// WALKER: 0 not checked yet, 1 the model program can draw it, -1 not
 
+	// WALKER: one pass for all material classes of a robot part (tr_glsl.c, the material
+	// program). A class shader (paint, metal, glass, glow of one atlas) names the shader
+	// of its part with "materialPass"; that one has "materialImages": the class of every
+	// texel in a mask (r: reflection multiplied in, g: reflection added, b: shine with the
+	// specular light, a: glow, unlit) and the reflection map
+	char		materialPassName[MAX_QPATH];
+	struct shader_s	*materialPass;
+	image_t		*materialMask, *materialEnv;
+	float		materialGlow[4];		// base, amplitude, phase, frequency of the glow (sin)
+
   int shaderStates[MAX_STATES_PER_SHADER];          // index to valid shader states
 
 	struct	shader_s	*next;
@@ -1438,6 +1448,9 @@ int			R_VBOMeshMemory( void );
 
 // WALKER: tr_glsl.c, the program of models in video memory
 qboolean	GLSL_MeshAvailable( void );
+qboolean	GLSL_MaterialAvailable( void );		// WALKER: material classes of a part in one pass
+void		GLSL_MaterialBegin( const meshModelVBO_t *model, int frame, int oldFrame, float backLerp, float glow, qboolean fogOn );
+void		GLSL_MaterialEnd( void );
 void		GLSL_MeshBegin( const meshModelVBO_t *model, int frame, int oldFrame, float backLerp );
 void		GLSL_MeshStage( qboolean diffuse, qboolean specular, qboolean environment, const byte *color, qboolean fogOn );
 void		GLSL_MeshEnd( void );
