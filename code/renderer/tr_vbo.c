@@ -40,7 +40,10 @@ static void	( APIENTRY *qglMultiDrawElementsEXT )( GLenum mode, const GLsizei *c
 
 cvar_t			*r_vbo;
 
+static void		R_VBOResetMeshTables( void );
+
 static qboolean	vboFunctions;		// the OpenGL functions were found
+qboolean		R_VBOFunctionsAvailable( void ) { return vboFunctions; }
 static GLuint	worldVertexBuffer;
 static GLuint	worldIndexBuffer;
 static int		worldVBOVertexes, worldVBOIndexes;
@@ -81,6 +84,7 @@ void R_VBOInit( void ) {
 	vboFunctions = qfalse;
 	worldVertexBuffer = worldIndexBuffer = 0;
 	worldVBOVertexes = worldVBOIndexes = 0;
+	R_VBOResetMeshTables();
 
 	qglGenBuffersARB = R_VBOProc( "glGenBuffers", "glGenBuffersARB", &ok );
 	qglDeleteBuffersARB = R_VBOProc( "glDeleteBuffers", "glDeleteBuffersARB", &ok );
@@ -320,4 +324,208 @@ void R_VBOBuildWorld( void ) {
 	ri.Printf( PRINT_ALL, "VBO: map in video memory, %i vertexes, %i triangles (%i KB)%s\n",
 		vertexBase, indexBase / 3, ( vertexBase * (int)sizeof( vboVertex_t ) + indexBase * (int)sizeof( glIndex_t ) ) / 1024,
 		qglMultiDrawElementsEXT ? "" : ", no glMultiDrawElements" );
+}
+
+
+
+/*
+===========================================================================
+WALKER: models in video memory
+
+Every frame of an MD3 model (and of a GLB one, turned into MD3 at load) goes
+into one buffer per model and level of detail: the texture coordinates once,
+then frame after frame the vertexes of all its surfaces, as MD3 keeps them
+(three shorts and the packed normal, 8 bytes). The indexes of all surfaces
+point into that, so the surfaces of one entity with one shader are drawn with
+one glMultiDrawElements a stage. The blend of two frames, the light, the
+environment map and the specular alpha are computed by the GLSL program of
+tr_glsl.c (GLSL_Mesh*) instead of the processor (LerpMeshVertexes,
+RB_CalcDiffuseColor, ...). A surface is found by its address in a table.
+===========================================================================
+*/
+
+#define	MAX_MESH_MODELS		1024
+#define	MESH_TABLE_SIZE		8192		// power of two
+
+static meshModelVBO_t	meshModels[MAX_MESH_MODELS];
+static int				numMeshModels;
+
+typedef struct {
+	const md3Surface_t	*surface;
+	meshSurfaceVBO_t	mesh;
+} meshTableEntry_t;
+
+static meshTableEntry_t	meshTable[MESH_TABLE_SIZE];
+static int				meshBytes;
+
+static unsigned R_MeshHash( const void *pointer ) {
+	size_t	value = (size_t)pointer;
+	return (unsigned)( ( value >> 4 ) ^ ( value >> 13 ) ) & ( MESH_TABLE_SIZE - 1 );
+}
+
+const meshSurfaceVBO_t *R_VBOMeshSurface( const md3Surface_t *surface ) {
+	unsigned	slot = R_MeshHash( surface );
+	int			probe;
+
+	for ( probe = 0; probe < MESH_TABLE_SIZE; probe++, slot = ( slot + 1 ) & ( MESH_TABLE_SIZE - 1 ) ) {
+		if ( meshTable[slot].surface == surface ) {
+			return &meshTable[slot].mesh;
+		}
+		if ( !meshTable[slot].surface ) {
+			return NULL;
+		}
+	}
+	return NULL;
+}
+
+static qboolean R_MeshTableAdd( const md3Surface_t *surface, meshModelVBO_t *model, int firstIndex, int numIndexes ) {
+	unsigned	slot = R_MeshHash( surface );
+	int			probe;
+
+	for ( probe = 0; probe < MESH_TABLE_SIZE / 2; probe++, slot = ( slot + 1 ) & ( MESH_TABLE_SIZE - 1 ) ) {
+		if ( !meshTable[slot].surface || meshTable[slot].surface == surface ) {
+			meshTable[slot].surface = surface;
+			meshTable[slot].mesh.model = model;
+			meshTable[slot].mesh.firstIndex = firstIndex;
+			meshTable[slot].mesh.numIndexes = numIndexes;
+			return qtrue;
+		}
+	}
+	return qfalse;		// full enough: the rest the old way
+}
+
+/*
+=================
+R_VBOBuildMesh
+
+after an MD3 level of detail is loaded
+=================
+*/
+void R_VBOBuildMesh( md3Header_t *header ) {
+	md3Surface_t	*surface;
+	meshModelVBO_t	*model;
+	byte			*data;
+	glIndex_t		*indexes;
+	int				surfaceNum, frame, numVerts = 0, numIndexes = 0, vertexBase, indexBase, size, offset;
+
+	if ( !vboFunctions || !r_vbo->integer || !GLSL_MeshAvailable() || !header ) {
+		return;
+	}
+	if ( header->numSurfaces <= 0 || header->numFrames <= 0 || numMeshModels >= MAX_MESH_MODELS ) {
+		return;
+	}
+	surface = (md3Surface_t *)( (byte *)header + header->ofsSurfaces );
+	if ( R_VBOMeshSurface( surface ) ) {
+		return;		// the same level loaded twice
+	}
+	for ( surfaceNum = 0; surfaceNum < header->numSurfaces; surfaceNum++ ) {
+		if ( surface->numFrames != header->numFrames ) {
+			return;
+		}
+		numVerts += surface->numVerts;
+		numIndexes += surface->numTriangles * 3;
+		surface = (md3Surface_t *)( (byte *)surface + surface->ofsEnd );
+	}
+	if ( !numVerts || !numIndexes ) {
+		return;
+	}
+
+	model = &meshModels[numMeshModels];
+	model->numVerts = numVerts;
+	model->numFrames = header->numFrames;
+	model->stOffset = 0;
+	model->framesOffset = numVerts * 2 * sizeof( float );
+	size = model->framesOffset + header->numFrames * numVerts * sizeof( md3XyzNormal_t );
+
+	data = ri.Hunk_AllocateTempMemory( size );
+	indexes = ri.Hunk_AllocateTempMemory( numIndexes * sizeof( glIndex_t ) );
+
+	vertexBase = indexBase = 0;
+	surface = (md3Surface_t *)( (byte *)header + header->ofsSurfaces );
+	for ( surfaceNum = 0; surfaceNum < header->numSurfaces; surfaceNum++ ) {
+		int		*triangles = (int *)( (byte *)surface + surface->ofsTriangles );
+		int		index;
+
+		Com_Memcpy( data + model->stOffset + vertexBase * 2 * sizeof( float ),
+			(byte *)surface + surface->ofsSt, surface->numVerts * 2 * sizeof( float ) );
+		for ( frame = 0; frame < header->numFrames; frame++ ) {
+			offset = model->framesOffset + ( frame * numVerts + vertexBase ) * sizeof( md3XyzNormal_t );
+			Com_Memcpy( data + offset, (byte *)surface + surface->ofsXyzNormals + frame * surface->numVerts * sizeof( md3XyzNormal_t ),
+				surface->numVerts * sizeof( md3XyzNormal_t ) );
+		}
+		for ( index = 0; index < surface->numTriangles * 3; index++ ) {
+			indexes[indexBase + index] = vertexBase + triangles[index];
+		}
+		if ( !R_MeshTableAdd( surface, model, indexBase, surface->numTriangles * 3 ) ) {
+			ri.Printf( PRINT_WARNING, "VBO: the model table is full\n" );
+		}
+		vertexBase += surface->numVerts;
+		indexBase += surface->numTriangles * 3;
+		surface = (md3Surface_t *)( (byte *)surface + surface->ofsEnd );
+	}
+
+	qglGenBuffersARB( 1, &model->vertexBuffer );
+	qglGenBuffersARB( 1, &model->indexBuffer );
+	qglBindBufferARB( GL_ARRAY_BUFFER_ARB, model->vertexBuffer );
+	qglBufferDataARB( GL_ARRAY_BUFFER_ARB, size, data, GL_STATIC_DRAW_ARB );
+	qglBindBufferARB( GL_ELEMENT_ARRAY_BUFFER_ARB, model->indexBuffer );
+	qglBufferDataARB( GL_ELEMENT_ARRAY_BUFFER_ARB, numIndexes * sizeof( glIndex_t ), indexes, GL_STATIC_DRAW_ARB );
+	R_VBOUnbind();
+
+	ri.Hunk_FreeTempMemory( indexes );
+	ri.Hunk_FreeTempMemory( data );
+
+	if ( qglGetError() != GL_NO_ERROR ) {
+		// out of video memory, most likely: this model the old way
+		ri.Printf( PRINT_WARNING, "VBO: a model buffer could not be made (%i KB), it is drawn the old way\n", size / 1024 );
+		qglDeleteBuffersARB( 1, &model->vertexBuffer );
+		qglDeleteBuffersARB( 1, &model->indexBuffer );
+		model->vertexBuffer = model->indexBuffer = 0;
+		model->numVerts = 0;		// R_VBOMeshSurface finds it, RB_SurfaceMesh checks this
+		numMeshModels++;
+		return;
+	}
+	numMeshModels++;
+	meshBytes += size + numIndexes * sizeof( glIndex_t );
+	ri.Printf( PRINT_DEVELOPER, "VBO: model %i surfaces, %i vertexes, %i frames, %i KB (models %i KB)\n",
+		header->numSurfaces, numVerts, header->numFrames, ( size + numIndexes * (int)sizeof( glIndex_t ) ) / 1024, meshBytes / 1024 );
+}
+
+void R_VBOBindMesh( const meshModelVBO_t *model ) {
+	qglBindBufferARB( GL_ARRAY_BUFFER_ARB, model->vertexBuffer );
+	qglBindBufferARB( GL_ELEMENT_ARRAY_BUFFER_ARB, model->indexBuffer );
+}
+
+/*
+=================
+R_VBOShutdownMeshes
+
+before OpenGL goes
+=================
+*/
+void R_VBOShutdownMeshes( void ) {
+	int		index;
+
+	if ( vboFunctions ) {
+		for ( index = 0; index < numMeshModels; index++ ) {
+			if ( meshModels[index].vertexBuffer ) {
+				qglDeleteBuffersARB( 1, &meshModels[index].vertexBuffer );
+			}
+			if ( meshModels[index].indexBuffer ) {
+				qglDeleteBuffersARB( 1, &meshModels[index].indexBuffer );
+			}
+		}
+	}
+	R_VBOResetMeshTables();
+}
+
+static void R_VBOResetMeshTables( void ) {
+	Com_Memset( meshModels, 0, sizeof( meshModels ) );
+	Com_Memset( meshTable, 0, sizeof( meshTable ) );
+	numMeshModels = 0;
+	meshBytes = 0;
+}
+
+int R_VBOMeshMemory( void ) {
+	return meshBytes;
 }

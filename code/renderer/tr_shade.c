@@ -725,6 +725,222 @@ static void RB_DrawWorldVBO( void ) {
 }
 
 
+/*
+===================
+WALKER: models in video memory (tr_vbo.c, tr_glsl.c GLSL_Mesh*)
+===================
+*/
+static qboolean	RB_HardwareFogOn( void );
+
+// a stage of a model shader the program can draw
+static qboolean RB_StageMeshCapable( shaderStage_t *stage ) {
+	int		modNum;
+
+	if ( stage->bundle[1].image[0] || stage->bundle[0].vertexLightmap || stage->bundle[0].isVideoMap ) {
+		return qfalse;
+	}
+	if ( stage->bundle[0].tcGen != TCGEN_TEXTURE && stage->bundle[0].tcGen != TCGEN_ENVIRONMENT_MAPPED ) {
+		return qfalse;
+	}
+	for ( modNum = 0; modNum < stage->bundle[0].numTexMods; modNum++ ) {
+		if ( stage->bundle[0].texMods[modNum].type != TMOD_NONE ) {
+			return qfalse;
+		}
+	}
+	switch ( stage->rgbGen ) {
+	case CGEN_LIGHTING_DIFFUSE:
+	case CGEN_IDENTITY:
+	case CGEN_IDENTITY_LIGHTING:
+	case CGEN_CONST:
+	case CGEN_WAVEFORM:
+	case CGEN_ENTITY:
+		break;
+	default:
+		return qfalse;
+	}
+	switch ( stage->alphaGen ) {
+	case AGEN_SKIP:
+	case AGEN_IDENTITY:
+	case AGEN_CONST:
+	case AGEN_WAVEFORM:
+	case AGEN_ENTITY:
+	case AGEN_LIGHTING_SPECULAR:
+		break;
+	default:
+		return qfalse;
+	}
+	return qtrue;
+}
+
+static qboolean RB_ShaderMeshCapable( shader_t *shader ) {
+	int		stageNum, numStages = 0;
+
+	if ( shader->meshCapable ) {
+		return shader->meshCapable > 0;
+	}
+	shader->meshCapable = -1;
+	if ( shader == tr.shadowShader || shader->isSky || shader->numDeforms || shader->numUnfoggedPasses <= 0
+		|| shader->optimalStageIteratorFunc == RB_StageIteratorSky ) {
+		return qfalse;
+	}
+	for ( stageNum = 0; stageNum < MAX_SHADER_STAGES; stageNum++ ) {
+		if ( !shader->stages[stageNum] ) {
+			break;
+		}
+		if ( !RB_StageMeshCapable( shader->stages[stageNum] ) ) {
+			if ( r_vbo->integer == 2 ) {
+				ri.Printf( PRINT_ALL, "VBO: model shader the old way: %s\n", shader->name );
+			}
+			return qfalse;
+		}
+		numStages++;
+	}
+	if ( !numStages ) {
+		return qfalse;
+	}
+	shader->meshCapable = 1;
+	return qtrue;
+}
+
+static qboolean RB_MeshAllowed( shader_t *shader, int fogNum ) {
+	if ( !r_vbo->integer || backEnd.projection2D || !GLSL_MeshAvailable() || !RB_ShaderMeshCapable( shader ) ) {
+		return qfalse;
+	}
+	if ( fogNum && r_drawfog->integer && !backEnd.viewParms.isPortal ) {
+		if ( r_drawfog->integer != 1 || !shader->fogPass || !tr.world || tr.world->fogs[fogNum].hasSurface ) {
+			return qfalse;		// the fog pass needs the vertexes
+		}
+	}
+	return qtrue;
+}
+
+// the colour of a stage for the program; *diffuse / *specular: computed per vertex instead
+static void RB_MeshStageColor( shaderStage_t *stage, byte *color, qboolean *diffuse, qboolean *specular ) {
+	int		savedVertexes = tess.numVertexes;
+	byte	wave[4];
+
+	*diffuse = qfalse;
+	*specular = qfalse;
+	switch ( stage->rgbGen ) {
+	case CGEN_LIGHTING_DIFFUSE:
+		*diffuse = qtrue;
+		color[0] = color[1] = color[2] = color[3] = 255;
+		break;
+	case CGEN_IDENTITY:
+		color[0] = color[1] = color[2] = color[3] = 255;
+		break;
+	case CGEN_IDENTITY_LIGHTING:
+		color[0] = color[1] = color[2] = color[3] = tr.identityLightByte;
+		break;
+	case CGEN_CONST:
+		*(int *)color = *(int *)stage->constantColor;
+		break;
+	case CGEN_WAVEFORM:
+		tess.numVertexes = 1;
+		RB_CalcWaveColor( &stage->rgbWave, wave );
+		tess.numVertexes = savedVertexes;
+		*(int *)color = *(int *)wave;
+		break;
+	case CGEN_ENTITY:
+		*(int *)color = *(int *)backEnd.currentEntity->e.shaderRGBA;
+		break;
+	default:
+		color[0] = color[1] = color[2] = color[3] = 255;
+		break;
+	}
+	switch ( stage->alphaGen ) {
+	case AGEN_IDENTITY:
+		if ( stage->rgbGen != CGEN_IDENTITY ) {
+			color[3] = 255;
+		}
+		break;
+	case AGEN_CONST:
+		if ( stage->rgbGen != CGEN_CONST ) {
+			color[3] = stage->constantColor[3];
+		}
+		break;
+	case AGEN_WAVEFORM:
+		tess.numVertexes = 1;
+		*(int *)wave = *(int *)color;
+		RB_CalcWaveAlpha( &stage->alphaWave, wave );
+		tess.numVertexes = savedVertexes;
+		color[3] = wave[3];
+		break;
+	case AGEN_ENTITY:
+		color[3] = backEnd.currentEntity->e.shaderRGBA[3];
+		break;
+	case AGEN_LIGHTING_SPECULAR:
+		*specular = qtrue;
+		break;
+	default:
+		break;
+	}
+}
+
+static void RB_DrawMeshVBO( void ) {
+	shader_t		*shader = tess.shader;
+	meshModelVBO_t	*model = tess.meshModel;
+	trRefEntity_t	*ent = backEnd.currentEntity;
+	int				frame = ent->e.frame, oldFrame = ent->e.oldframe, stageNum;
+	float			backLerp = frame == oldFrame ? 0 : ent->e.backlerp;
+	byte			color[4];
+
+	if ( frame < 0 || frame >= model->numFrames ) {
+		frame = 0;
+	}
+	if ( oldFrame < 0 || oldFrame >= model->numFrames ) {
+		oldFrame = 0;
+	}
+
+	GL_Cull( shader->cullType );
+	if ( shader->polygonOffset ) {
+		qglEnable( GL_POLYGON_OFFSET_FILL );
+		qglPolygonOffset( r_offsetFactor->value, r_offsetUnits->value );
+	}
+
+	// no fixed array may be read with the model's indexes (they point into tess memory)
+	GL_SelectTexture( 1 );
+	qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+	GL_SelectTexture( 0 );
+	qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+	qglDisableClientState( GL_COLOR_ARRAY );
+	qglDisableClientState( GL_VERTEX_ARRAY );	// the position comes from generic attribute 0
+
+	R_VBOBindMesh( model );
+	GLSL_MeshBegin( model, frame, oldFrame, backLerp );
+	RB_HardwareFogBegin();
+	for ( stageNum = 0; stageNum < MAX_SHADER_STAGES; stageNum++ ) {
+		shaderStage_t	*stage = tess.xstages[stageNum];
+		qboolean		diffuse, specular;
+
+		if ( !stage ) {
+			break;
+		}
+		RB_MeshStageColor( stage, color, &diffuse, &specular );
+		RB_HardwareFogStage( stage->stateBits );
+		GL_State( stage->stateBits );
+		R_BindAnimatedImage( &stage->bundle[0] );
+		GLSL_MeshStage( diffuse, specular, stage->bundle[0].tcGen == TCGEN_ENVIRONMENT_MAPPED, color, RB_HardwareFogOn() );
+		R_VBODrawRanges( tess.numVboRanges, tess.vboCounts, tess.vboOffsets );
+	}
+	RB_HardwareFogEnd();
+	GLSL_MeshEnd();
+	R_VBOUnbind();
+
+	// back to the arrays the old way expects, in its own memory
+	qglEnableClientState( GL_VERTEX_ARRAY );
+	qglVertexPointer( 3, GL_FLOAT, 16, tess.xyz );
+	qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+	qglTexCoordPointer( 2, GL_FLOAT, 0, tess.svars.texcoords[0] );
+	qglEnableClientState( GL_COLOR_ARRAY );
+	qglColorPointer( 4, GL_UNSIGNED_BYTE, 0, tess.svars.colors );
+
+	if ( shader->polygonOffset ) {
+		qglDisable( GL_POLYGON_OFFSET_FILL );
+	}
+}
+
+
 void RB_BeginSurface( shader_t *shader, int fogNum ) {
 
 	shader_t *state = (shader->remappedShader) ? shader->remappedShader : shader;
@@ -747,6 +963,8 @@ void RB_BeginSurface( shader_t *shader, int fogNum ) {
 	tess.numVboRanges = 0;
 	tess.vboIndexes = 0;
 	tess.vboAllowed = RB_VBOAllowed( state, fogNum );
+	tess.meshModel = NULL;
+	tess.meshAllowed = RB_MeshAllowed( state, fogNum );
 }
 
 /*
@@ -1090,6 +1308,10 @@ static void RB_HardwareFogStage( int stateBits ) {
 		VectorCopy( hardwareFogColor, color );
 	}
 	qglFogfv( GL_FOG_COLOR, color );
+}
+
+static qboolean RB_HardwareFogOn( void ) {
+	return hardwareFog;
 }
 
 static void RB_HardwareFogEnd( void ) {
@@ -1991,6 +2213,7 @@ void RB_EndSurface( void ) {
 	// for debugging of sort order issues, stop rendering after a given sort value
 	if ( r_debugSort->integer && r_debugSort->integer < tess.shader->sort ) {
 		tess.numVboRanges = 0;
+		tess.meshModel = NULL;
 		return;
 	}
 
@@ -1999,9 +2222,14 @@ void RB_EndSurface( void ) {
 		backEnd.pc.c_shaders++;
 		backEnd.pc.c_indexes += tess.vboIndexes;
 		backEnd.pc.c_totalIndexes += tess.vboIndexes * tess.numPasses;
-		RB_DrawWorldVBO();
+		if ( tess.meshModel ) {
+			RB_DrawMeshVBO();
+		} else {
+			RB_DrawWorldVBO();
+		}
 		tess.numVboRanges = 0;
 		tess.vboIndexes = 0;
+		tess.meshModel = NULL;
 	}
 
 	if ( input->numIndexes ) {

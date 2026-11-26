@@ -214,6 +214,9 @@ qhandle_t RE_RegisterModel( const char *name ) {
 		} else {
 			mod->numLods++;
 			numLoaded++;
+			if ( mod->type == MOD_MESH ) {
+				R_VBOBuildMesh( mod->md3[lod] );	// WALKER: its frames into video memory (tr_vbo.c)
+			}
 			// if we have a valid model and are biased
 			// so that we won't see any higher detail ones,
 			// stop loading them

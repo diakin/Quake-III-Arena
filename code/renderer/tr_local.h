@@ -418,6 +418,7 @@ typedef struct shader_s {
 
   struct shader_s *remappedShader;                  // current shader this one is remapped too
 	int			vboCapable;				// WALKER: 0 not checked yet, 1 drawn from the map's buffers, -1 not (tr_shade.c)
+	int			meshCapable;			// WALKER: 0 not checked yet, 1 the model program can draw it, -1 not
 
   int shaderStates[MAX_STATES_PER_SHADER];          // index to valid shader states
 
@@ -1340,6 +1341,21 @@ typedef struct {						// WALKER: a vertex of the map's buffer
 	byte		color[4];
 } vboVertex_t;
 
+typedef struct {						// WALKER: an MD3 level of detail in video memory (tr_vbo.c)
+	unsigned int	vertexBuffer;
+	unsigned int	indexBuffer;
+	int				numVerts;			// of all surfaces, in one frame; 0: not in video memory
+	int				numFrames;
+	int				stOffset;			// texture coordinates, 2 floats a vertex
+	int				framesOffset;		// then the frames, md3XyzNormal_t a vertex
+} meshModelVBO_t;
+
+typedef struct {
+	meshModelVBO_t	*model;
+	int				firstIndex;
+	int				numIndexes;
+} meshSurfaceVBO_t;
+
 typedef struct shaderCommands_s 
 {
 	glIndex_t	indexes[SHADER_MAX_INDEXES];
@@ -1366,6 +1382,10 @@ typedef struct shaderCommands_s
 	int			numPasses;
 	void		(*currentStageIteratorFunc)( void );
 	shaderStage_t	**xstages;
+
+	// WALKER: model surfaces of this batch in video memory (tr_vbo.c, tr_glsl.c)
+	qboolean		meshAllowed;
+	meshModelVBO_t	*meshModel;		// set: the ranges below are of this model, not of the map
 
 	// WALKER: surfaces of this batch drawn from the map's buffers (tr_vbo.c)
 	int			vboAllowed;		// 0 no, 1 yes, 2 yes where deformVertexes lodshift moves nothing
@@ -1395,6 +1415,18 @@ void		R_VBOUnbind( void );
 void		R_VBODrawRanges( int count, const GLsizei *counts, const void **offsets );
 void		RB_AddVBORange( int firstIndex, int numIndexes );
 qboolean	RB_VBOLodShiftStill( vec3_t bounds[2] );
+qboolean	R_VBOFunctionsAvailable( void );
+void		R_VBOBuildMesh( md3Header_t *header );
+const meshSurfaceVBO_t *R_VBOMeshSurface( const md3Surface_t *surface );
+void		R_VBOBindMesh( const meshModelVBO_t *model );
+void		R_VBOShutdownMeshes( void );
+int			R_VBOMeshMemory( void );
+
+// WALKER: tr_glsl.c, the program of models in video memory
+qboolean	GLSL_MeshAvailable( void );
+void		GLSL_MeshBegin( const meshModelVBO_t *model, int frame, int oldFrame, float backLerp );
+void		GLSL_MeshStage( qboolean diffuse, qboolean specular, qboolean environment, const byte *color, qboolean fogOn );
+void		GLSL_MeshEnd( void );
 void RB_StageIteratorSky( void );
 void RB_StageIteratorVertexLitTexture( void );
 void RB_StageIteratorLightmappedMultitexture( void );

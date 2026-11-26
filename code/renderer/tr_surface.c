@@ -784,6 +784,23 @@ void RB_SurfaceMesh(md3Surface_t *surface) {
 	int				Bob, Doug;
 	int				numVerts;
 
+	// WALKER: in video memory (tr_vbo.c): only the range of indexes; the frames are
+	// blended by the program at the end of the batch (tr_shade.c, RB_DrawMeshVBO)
+	if ( tess.meshAllowed ) {
+		const meshSurfaceVBO_t	*mesh = R_VBOMeshSurface( surface );
+		if ( mesh && mesh->model->numVerts ) {
+			if ( tess.numVboRanges && tess.meshModel != mesh->model ) {
+				shader_t	*shader = tess.shader;
+				int			fogNum = tess.fogNum;
+				RB_EndSurface();
+				RB_BeginSurface( shader, fogNum );
+			}
+			RB_AddVBORange( mesh->firstIndex, mesh->numIndexes );
+			tess.meshModel = mesh->model;
+			return;
+		}
+	}
+
 	if (  backEnd.currentEntity->e.oldframe == backEnd.currentEntity->e.frame ) {
 		backlerp = 0;
 	} else  {

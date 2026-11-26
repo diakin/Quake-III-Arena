@@ -1166,6 +1166,7 @@ void RE_Shutdown( qboolean destroyWindow ) {
 		R_ShutdownCommandBuffers();
 		R_DeleteTextures();
 		R_VBOShutdown();	// WALKER: the map's buffers
+		R_VBOShutdownMeshes();	// and the models'
 	}
 
 	R_DoneFreeType();
@@ -1190,6 +1191,9 @@ void RE_EndRegistration( void ) {
 	R_SyncRenderThread();
 	if (!Sys_LowPhysicalMemory()) {
 		RB_ShowImages();
+	}
+	if ( R_VBOMeshMemory() ) {
+		ri.Printf( PRINT_ALL, "VBO: models in video memory, %i KB\n", R_VBOMeshMemory() / 1024 );	// WALKER
 	}
 }
 
