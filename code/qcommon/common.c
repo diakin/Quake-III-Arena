@@ -196,7 +196,33 @@ void QDECL Com_Printf( const char *fmt, ... ) {
       opening_qconsole = qfalse;
 		}
 		if ( logfile && FS_Initialized()) {
-			FS_Write(msg, strlen(msg), logfile);
+			// WALKER: every line with the seconds since the log was opened, so a hang
+			// shows where it happened (the last line and its time)
+			static qboolean	lineStart = qtrue;
+			static int		startTime = -1;
+			const char		*line = msg, *end;
+			char			stamp[32];
+
+			if ( startTime < 0 ) {
+				startTime = Sys_Milliseconds();
+			}
+			while ( *line ) {
+				if ( lineStart ) {
+					int		elapsed = Sys_Milliseconds() - startTime;
+					Com_sprintf( stamp, sizeof( stamp ), "%5i.%03i  ", elapsed / 1000, elapsed % 1000 );
+					FS_Write( stamp, strlen( stamp ), logfile );
+					lineStart = qfalse;
+				}
+				end = strchr( line, '\n' );
+				if ( end ) {
+					FS_Write( line, end - line + 1, logfile );
+					line = end + 1;
+					lineStart = qtrue;
+				} else {
+					FS_Write( line, strlen( line ), logfile );
+					break;
+				}
+			}
 		}
 	}
 }
@@ -2430,6 +2456,11 @@ void Com_Init( char *commandLine ) {
 
 	com_developer = Cvar_Get ("developer", "0", CVAR_TEMP );
 	com_logfile = Cvar_Get ("logfile", "0", CVAR_TEMP );
+	if ( com_benchExe ) {
+		// WALKER: the benchmark exe writes qconsole.log from the start, every line at once
+		// (a hang or a crash leaves the last line in the file)
+		Cvar_Set( "logfile", "2" );
+	}
 
 	com_timescale = Cvar_Get ("timescale", "1", CVAR_CHEAT | CVAR_SYSTEMINFO );
 	com_fixedtime = Cvar_Get ("fixedtime", "0", CVAR_CHEAT);

@@ -188,6 +188,7 @@ void R_VBOBuildWorld( void ) {
 	if ( !vboFunctions || !r_vbo->integer || !tr.world ) {
 		return;
 	}
+	ri.Printf( PRINT_ALL, "VBO: building the map buffers\n" );
 
 	// the surfaces drawn: those the leaves list (the faces R_MergeWorldFaces joined
 	// stay in the array, unused) and those of the brush models after the world's

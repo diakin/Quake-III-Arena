@@ -649,6 +649,13 @@ static void RB_DrawWorldVBO( void ) {
 		qglPolygonOffset( r_offsetFactor->value, r_offsetUnits->value );
 	}
 
+	// the second unit's texture coordinates may still be on (DrawMultitextured leaves
+	// them on) with tess memory behind them: with indexes up to the size of the whole map
+	// the driver would read far past that array
+	GL_SelectTexture( 1 );
+	qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+	GL_SelectTexture( 0 );
+
 	R_VBOBindWorld();
 	qglVertexPointer( 3, GL_FLOAT, sizeof( vboVertex_t ), (void *)offsetof( vboVertex_t, xyz ) );
 
@@ -692,6 +699,7 @@ static void RB_DrawWorldVBO( void ) {
 		if ( stage->bundle[1].image[0] ) {
 			RB_VBOResetTexCoords( &stage->bundle[1], matrix1 );
 			qglTexCoordPointer( 2, GL_FLOAT, 0, tess.svars.texcoords[1] );	// not into the buffer once it is unbound
+			qglDisableClientState( GL_TEXTURE_COORD_ARRAY );	// see above; DrawMultitextured turns it on itself
 			qglDisable( GL_TEXTURE_2D );
 			GL_SelectTexture( 0 );
 		}
