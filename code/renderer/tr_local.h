@@ -1136,6 +1136,8 @@ extern	cvar_t	*r_mirrorEntities;
 extern	cvar_t	*r_sunShadows;		// WALKER: 0 off, 1 simple, 2 full
 extern	cvar_t	*r_lodDistance;		// WALKER: models switch to the far detail level beyond this
 extern	cvar_t	*r_lodBand;			// WALKER: width of the band where both levels blend
+extern	cvar_t	*r_simpleModels;	// WALKER: 0: models in two detail levels always detailed (the reflection keeps the simple level)
+float	R_LodShiftDepth( const deformStage_t *deform );
 extern	cvar_t	*r_portalOnly;
 
 extern	cvar_t	*r_subdivisions;

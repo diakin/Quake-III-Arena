@@ -1248,7 +1248,10 @@ void CG_AddRobotWeapons( refEntity_t *parent, centity_t *cent ) {
 		// WALKER: guns flash longer and bigger (a flame forward out of the barrel)
 		// the time of the shot is kept on the entity of the snapshot: the own robot is
 		// drawn from cg.predictedPlayerEntity, which never got it (no flash on it before)
-		if ( cg.time - cg_entities[cent->currentState.clientNum].pe.slotFlashTime[slot] > ( bg_robotWeapons[type].fire == WFIRE_BULLET ? GUN_FLASH_TIME : MUZZLE_FLASH_TIME )
+		// (only the own robot: a wreck carries the clientNum of its player too, and
+		// flashed with every shot of the robot that player has now)
+		if ( cg.time - ( cent == &cg.predictedPlayerEntity ? cg_entities[cent->currentState.clientNum].pe.slotFlashTime[slot]
+				: cent->pe.slotFlashTime[slot] ) > ( bg_robotWeapons[type].fire == WFIRE_BULLET ? GUN_FLASH_TIME : MUZZLE_FLASH_TIME )
 			|| bg_robotWeapons[type].fire == WFIRE_RAIL ) {
 			continue;
 		}

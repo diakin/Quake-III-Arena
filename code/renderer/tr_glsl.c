@@ -530,7 +530,7 @@ void GLSL_LodShiftBegin( const deformStage_t *deform ) {
 	qglUniform3f( shiftEye, backEnd.viewParms.or.origin[0], backEnd.viewParms.or.origin[1], backEnd.viewParms.or.origin[2] );
 	qglUniform1f( shiftBandStart, r_lodDistance->value - band * 0.5f );
 	qglUniform1f( shiftBand, band );
-	qglUniform1f( shiftDepth, deform->bulgeHeight );
+	qglUniform1f( shiftDepth, R_LodShiftDepth( deform ) );
 	qglUniform1f( shiftFar, deform->moveVector[0] ? 1.0f : 0.0f );
 	qglUniform1f( shiftTcMode[0], 0 );
 	qglUniform1f( shiftTcMode[1], 0 );

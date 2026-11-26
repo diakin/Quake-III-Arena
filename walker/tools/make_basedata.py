@@ -58,8 +58,7 @@ robot_shadows_round: cg_shadows 1
 sun_shadows_off: r_sunShadows 0
 haze_off: r_drawfog 0
 dlights_off: r_dynamiclight 0
-model_lod_near: r_lodDistance 300
-lod_band_narrow: r_lodBand 1            // the change of detail level at once, no band where buildings are moved on the processor
+simple_models: r_simpleModels 1         // buildings far away in their simple level (off by default since 26.11.2026)
 nothing_drawn: bot_hold 2; r_drawworld 0; r_drawentities 0     // only the sky and the HUD
 base_again:                             // against base: how much the battle itself varies
 models_old: r_glsl 0                    // robots the old way (frames blended on the processor); also the old dynamic lights

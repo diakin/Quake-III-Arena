@@ -764,6 +764,10 @@ void R_AddWorldSurfaces (void) {
 			}
 			lodGroupDraw[group][0] = !tr.viewParms.isPortal && nearest < farEdge * farEdge;
 			lodGroupDraw[group][1] = tr.viewParms.isPortal || farthest > nearEdge * nearEdge;
+			if ( !r_simpleModels->integer && !tr.viewParms.isPortal ) {
+				lodGroupDraw[group][0] = 1;		// always the detailed level, never moved (R_LodShiftDepth)
+				lodGroupDraw[group][1] = 0;
+			}
 		}
 	}
 

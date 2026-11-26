@@ -439,7 +439,7 @@ qboolean R_LodShiftStill( const deformStage_t *deform, vec3_t bounds[2] ) {
 	radius = RadiusFromBounds( bounds[0], bounds[1] );
 	distance = Distance( origin, backEnd.viewParms.or.origin );
 
-	if ( deform->bulgeHeight == 0 ) {
+	if ( R_LodShiftDepth( deform ) == 0 ) {
 		return qtrue;
 	}
 	if ( deform->moveVector[0] ) {
