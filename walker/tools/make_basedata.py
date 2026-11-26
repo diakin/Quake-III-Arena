@@ -49,20 +49,25 @@ BENCHMARK_TXT = r"""// WALKER benchmark: in a battle (best 5 x 5 with bots) "ben
 // Steps that changed less than the battle varies by itself (under 5 %) were taken out
 // (2026-11-26): hud, far shadows, simple sun shadows, water reflection, old dynamic
 // lights, fast sky, marks, textures off / small, vertex light, 640x480, bots holding.
-base:
-real_fps: r_finish 0                    // the frame rate without waiting for the card every frame
-no_robots: r_drawentities 0             // robots, weapons, shells and effects not drawn
-no_world: r_drawworld 0                 // the map not drawn
-robot_shadows_off: cg_shadows 0
-robot_shadows_round: cg_shadows 1
-sun_shadows_off: r_sunShadows 0
-haze_off: r_drawfog 0
-dlights_off: r_dynamiclight 0
-simple_models: r_simpleModels 1         // buildings far away in their simple level (off by default since 26.11.2026)
-nothing_drawn: bot_hold 2; r_drawworld 0; r_drawentities 0     // only the sky and the HUD
-base_again:                             // against base: how much the battle itself varies
-models_old: r_glsl 0                    // robots the old way (frames blended on the processor); also the old dynamic lights
-vbo_off: r_vbo 0; vid_restart           // last (a restart may change what follows): the map the old way, not from video memory
+// "frozen": the step runs on the battle stopped at one moment (every frame the same
+// picture, the bots do not think), so it differs from the frozen base by its settings
+// only; a live battle varies by itself by 10-15 % (2026-11-26, two runs on one PC).
+base:                                   // the live battle
+frozen: frozen                          // the base of the frozen steps
+real_fps: frozen; r_finish 0            // the frame rate without waiting for the card every frame
+no_robots: frozen; r_drawentities 0     // robots, weapons, shells and effects not drawn
+no_world: frozen; r_drawworld 0         // the map not drawn
+robot_shadows_off: frozen; cg_shadows 0
+robot_shadows_round: frozen; cg_shadows 1
+sun_shadows_off: frozen; r_sunShadows 0
+haze_off: frozen; r_drawfog 0
+dlights_off: frozen; r_dynamiclight 0
+simple_models: frozen; r_simpleModels 1 // buildings far away in their simple level (off by default since 26.11.2026)
+models_old: frozen; r_glsl 0            // robots the old way (frames blended on the processor); also the old dynamic lights
+nothing_drawn: frozen; r_drawworld 0; r_drawentities 0     // only the sky and the HUD
+frozen_again: frozen                    // against frozen: what is left of the noise
+base_again:                             // the live battle again, against base
+vbo_off: r_vbo 0; vid_restart           // live (a restarted cgame needs the server running), last: the map the old way
 """
 
 

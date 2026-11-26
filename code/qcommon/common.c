@@ -95,6 +95,7 @@ qboolean	com_benchExe;		// WALKER: started as WalkerBench.exe: a fixed battle, n
 
 int			com_frameTime;
 int			com_frameMsec;
+int			com_frozen;		// WALKER: the benchmark stopped the game time (Com_ModifyMsec)
 int			com_frameNumber;
 
 qboolean	com_errorEntered;
@@ -2645,6 +2646,12 @@ Com_ModifyMsec
 */
 int Com_ModifyMsec( int msec ) {
 	int		clampTime;
+
+	// WALKER: benchmark steps on a stopped battle: the server and the client stay at the
+	// same moment, every frame draws the same picture
+	if ( com_frozen ) {
+		return 0;
+	}
 
 	//
 	// modify time for debugging values

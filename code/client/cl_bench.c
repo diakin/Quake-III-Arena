@@ -14,7 +14,10 @@ and are appended to benchmark.log in basewalker.
 benchmark.txt: one step a line, "name: command; command; ...". A command of
 two words is a cvar and its value, "vid_restart" restarts the renderer (for
 latched cvars: textures, resolution), anything else is executed as is.
-"//" starts a comment.
+"//" starts a comment. "frozen" in a step: it runs on the battle stopped at one
+moment (no game time passes, bots do not think), every frame the same picture,
+so the step differs from the frozen base by its settings only; the battle is
+stopped when the first frozen step starts and goes on at the next live one.
 
 This file is part of WALKER, based on the Quake III Arena source code
 (GPL v2, see COPYING.txt).
@@ -32,6 +35,8 @@ char	*FS_BuildOSPath( const char *base, const char *game, const char *qpath );	/
 #define BENCH_MAX_FRAMES	16384		// frame times kept per step (1 % low)
 #define BENCH_WARMUP		3000		// msec after a step is applied, not measured
 #define BENCH_SETTLE_FRAMES	3			// and these frames (a vid_restart takes one long frame)
+#define BENCH_FROZEN_WARMUP	1000		// a frozen step: the picture does not change, less warmup
+#define BENCH_FROZEN_MIN	3000		// and half the time of a step, not less than this
 
 // pmtype_t and the health stat of the game (bg_public.h)
 #define BENCH_PM_SPECTATOR		2
@@ -50,6 +55,7 @@ typedef struct {
 	benchSet_t	sets[BENCH_MAX_SETS];
 	int			numSets;
 	qboolean	restart;
+	qboolean	frozen;			// on the stopped battle
 
 	// results
 	int			frames;
@@ -200,12 +206,20 @@ static void Bench_Parse( const char *text ) {
 				step->restart = qtrue;
 				continue;
 			}
+			if ( !Q_stricmp( first, "frozen" ) ) {
+				step->frozen = qtrue;
+				continue;
+			}
 			token = COM_Parse( &parse );
 			if ( token[0] && !COM_Parse( &parse )[0] && step->numSets < BENCH_MAX_SETS ) {
 				Q_strncpyz( step->sets[step->numSets].name, first, sizeof( step->sets[0].name ) );
 				Q_strncpyz( step->sets[step->numSets].value, token, sizeof( step->sets[0].value ) );
 				step->numSets++;
 			}
+		}
+		// a stopped server sends no snapshot, and the cgame restarted by vid_restart waits for one
+		if ( step->restart ) {
+			step->frozen = qfalse;
 		}
 		benchNumSteps++;
 	}
@@ -357,6 +371,19 @@ void CL_SystemInfoFile( void ) {
 }
 
 
+// how long a step is measured
+static int Bench_MeasureMsec( qboolean frozen ) {
+	int		msec = benchSeconds * 1000;
+
+	if ( frozen ) {
+		msec /= 2;
+		if ( msec < BENCH_FROZEN_MIN ) {
+			msec = BENCH_FROZEN_MIN;
+		}
+	}
+	return msec;
+}
+
 /*
 =================
 Bench_Line
@@ -381,7 +408,7 @@ static void Bench_Line( benchStep_t *step, float baseFps, char *line, int size )
 		step->batches / frames, step->flushes / frames, step->draws / frames, step->triangles / frames / 1000.0f,
 		baseFps > 0 ? ( fps / baseFps - 1.0f ) * 100.0f : 0.0f,
 		step->deadFrames ? va( "dead %i %%", step->deadFrames * 100 / step->frames )
-		: ( step->spectatorFrames * 2 > step->frames ? "spect" : "" ) );
+		: ( step->spectatorFrames * 2 > step->frames ? ( step->frozen ? "spect frozen" : "spect" ) : ( step->frozen ? "frozen" : "" ) ) );
 }
 
 
@@ -395,7 +422,7 @@ static void Bench_Report( void ) {
 	fileHandle_t	file;
 	qtime_t			now;
 	char			line[512];
-	float			baseFps = 0;
+	float			baseFps = 0, frozenFps = 0;
 	int				index, players = 0;
 
 	for ( index = 0; index < MAX_CLIENTS; index++ ) {
@@ -412,8 +439,8 @@ static void Bench_Report( void ) {
 		Bench_SystemReport( system, sizeof( system ) );
 		Q_strcat( report, sizeof( report ), system );
 	}
-	Q_strcat( report, sizeof( report ), va( "game %ix%i, map %s, players %i, %i s a step, r_finish 1 (see real_fps)\n",
-		cls.glconfig.vidWidth, cls.glconfig.vidHeight, Cvar_VariableString( "mapname" ), players, benchSeconds ) );
+	Q_strcat( report, sizeof( report ), va( "game %ix%i, map %s, players %i, %i s a step (frozen %i s), r_finish 1 (see real_fps)\n",
+		cls.glconfig.vidWidth, cls.glconfig.vidHeight, Cvar_VariableString( "mapname" ), players, benchSeconds, Bench_MeasureMsec( qtrue ) / 1000 ) );
 	Q_strcat( report, sizeof( report ), va( "settings: r_picmip %s, r_sunShadows %s, cg_shadows %s, r_noportals %s, r_drawfog %s, r_dynamiclight %s, r_mode %s, r_vertexLight %s, r_glsl %s, r_smp %s, r_vbo %s\n",
 		Cvar_VariableString( "r_picmip" ), Cvar_VariableString( "r_sunShadows" ), Cvar_VariableString( "cg_shadows" ),
 		Cvar_VariableString( "r_noportals" ), Cvar_VariableString( "r_drawfog" ), Cvar_VariableString( "r_dynamiclight" ),
@@ -424,6 +451,8 @@ static void Bench_Report( void ) {
 		"(\"Connection Interrupted\" shows past about 64 frames), lag>1s = share of frames with it over a second\n" );
 	Q_strcat( report, sizeof( report ), "view: spect = spectator, dead N % = the own robot destroyed for this share of the step\n" );
 	Q_strcat( report, sizeof( report ), "median = fps of a typical frame (half are faster), what the fps counter on the screen mostly shows\n" );
+	Q_strcat( report, sizeof( report ), "frozen = the battle stopped at one moment, every frame the same picture: the step differs by its\n"
+		"settings only; vs base of a frozen step = against the first frozen step, of a live one = against base\n" );
 	if ( benchNumRamp > 0 ) {
 		float	rampBase = 0;
 		Q_strcat( report, sizeof( report ), "bots entering the battle, two at a time (vs base = against no bots):\n" );
@@ -442,9 +471,11 @@ static void Bench_Report( void ) {
 	for ( index = 0; index < benchNumSteps; index++ ) {
 		benchStep_t	*step = &benchSteps[index];
 
-		Bench_Line( step, index == 0 ? 0 : baseFps, line, sizeof( line ) );
-		if ( index == 0 && step->frames && step->msec ) {
-			baseFps = step->frames * 1000.0f / step->msec;
+		float		*kindBase = step->frozen ? &frozenFps : &baseFps;
+
+		Bench_Line( step, *kindBase, line, sizeof( line ) );
+		if ( *kindBase == 0 && step->frames && step->msec ) {
+			*kindBase = step->frames * 1000.0f / step->msec;
 		}
 		Q_strcat( report, sizeof( report ), line );
 	}
@@ -482,6 +513,7 @@ static void Bench_Finish( qboolean report ) {
 		benchGlobalsApplied = qfalse;
 	}
 	com_profiling = 0;
+	com_frozen = 0;
 	benchState = BENCH_IDLE;
 	if ( report ) {
 		Bench_Report();
@@ -728,7 +760,9 @@ void CL_BenchFrame( int frameMsec, int serverMsec, int clientMsec ) {
 
 	switch ( benchState ) {
 	case BENCH_APPLY:
-		Com_Printf( "benchmark: step %i/%i %s\n", benchStep + 1, benchNumSteps, step->name );
+		Com_Printf( "benchmark: step %i/%i %s%s\n", benchStep + 1, benchNumSteps, step->name, step->frozen ? " (frozen)" : "" );
+		// the first frozen step stops the battle, the following ones keep the same moment
+		com_frozen = step->frozen;
 		Bench_Apply( step );
 		benchState = BENCH_WARMUP_STATE;
 		benchSettle = BENCH_SETTLE_FRAMES;
@@ -741,7 +775,7 @@ void CL_BenchFrame( int frameMsec, int serverMsec, int clientMsec ) {
 			benchStateTime = now;		// the warmup counts from after the restart
 			return;
 		}
-		if ( now - benchStateTime < BENCH_WARMUP ) {
+		if ( now - benchStateTime < ( step->frozen ? BENCH_FROZEN_WARMUP : BENCH_WARMUP ) ) {
 			return;
 		}
 		benchState = BENCH_MEASURE;
@@ -758,7 +792,7 @@ void CL_BenchFrame( int frameMsec, int serverMsec, int clientMsec ) {
 			return;
 		}
 		Bench_Accumulate( step, frameMsec, serverMsec, clientMsec );
-		if ( now - benchStateTime < benchSeconds * 1000 ) {
+		if ( now - benchStateTime < Bench_MeasureMsec( step->frozen ) ) {
 			return;
 		}
 		Bench_Close( step );
