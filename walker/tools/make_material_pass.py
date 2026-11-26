@@ -18,6 +18,9 @@ materialPass. Движок (renderer/tr_glsl.c, программа materials) р
 models/robotweapons/weapons.jpg (клетки по материалу), UV орудий переносятся в клетки
 (с обрезкой до [0, 1]: текстуры однотонные, повтор не виден), маска — по клеткам.
 
+Если bake_walker.py записал карту износа <часть>_wear.tga (у K7), маска учитывает и её:
+голый металл сколов блестит как металл, грязь и пыль матовые, масло мокрое.
+
 Повторный запуск ничего не меняет (шейдеры с materialPass пропускаются).
 """
 import json, os, re, struct, sys
@@ -190,6 +193,28 @@ def rasterize_mask(glb_path, class_of_material, numbers, size):
     return mask
 
 
+# голый металл сколов блестит как металл K7, масло - как мокрая плёнка
+BARE_METAL = (0.40, 0.0, 0.55)      # r (отражение умножением), g, b (блик)
+WET = (0.30, 0.0, 0.95)
+
+
+def apply_wear(mask, wear_path, numbers):
+    """карта износа из bake_walker.py: r - голый металл, g - множитель блеска x128, b - масло."""
+    if not os.path.exists(wear_path):
+        return mask
+    size = mask.shape[0]
+    wear = np.asarray(Image.open(wear_path).convert('RGB').resize((size, size), Image.BILINEAR)).astype(float)
+    bare, gloss, wet = wear[..., 0] / 255, wear[..., 1] / 128, wear[..., 2] / 255
+    result = mask.astype(float) / 255
+    lit = result[..., 3] < 0.5                       # свечение не трогаем
+    for channel in range(3):
+        value = result[..., channel] * gloss
+        value = np.maximum(value, BARE_METAL[channel] * bare)
+        value = np.maximum(value, WET[channel] * wet)
+        result[..., channel] = np.where(lit, np.clip(value, 0, 1), result[..., channel])
+    return np.round(result * 255).astype(np.uint8)
+
+
 def robot(name, shader_file):
     folder = os.path.join(DATA, 'models', 'players', name)
     shader_path = os.path.join(DATA, 'scripts', shader_file)
@@ -221,6 +246,7 @@ def robot(name, shader_file):
         atlas = Image.open(os.path.join(folder, f'{part}_default.jpg'))
         size = max(128, atlas.size[0] // 2)
         mask = rasterize_mask(glb, class_of_material, numbers, size)
+        mask = apply_wear(mask, os.path.join(folder, f'{part}_wear.tga'), numbers)
         mask_name = f'{prefix}/{part}_mask.tga'
         Image.fromarray(mask, 'RGBA').save(os.path.join(DATA, mask_name))
         for scheme in schemes:

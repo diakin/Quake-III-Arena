@@ -38,11 +38,17 @@ ROBOT = os.path.basename(os.path.normpath(MODEL_DIR))
 SHADER_PREFIX = 'models/players/' + ROBOT
 ENV_SHINE = 'models/players/walker/env_shine.jpg'
 PARTS = {'lower': 1024, 'upper': 1024, 'head': 512}
+# K7 - главный робот: атласы вдвое крупнее (2048), каждая точка - один тексель
+# (столько же выборок, сколько у 1024 с SUPERSAMPLE 2), подробный износ (26.11.2026)
+DETAILED = ROBOT == 'walker'
+if DETAILED:
+    PARTS = {'lower': 2048, 'upper': 2048, 'head': 1024}
 SCHEMES = [scheme for scheme in ['default', 'red', 'blue', 'desert', 'urban']
            if os.path.exists(os.path.join(MODEL_DIR, f'lower_{scheme}.skin'))]
 AO_RAYS = 40
 AO_DISTANCE = 0.55          # единицы модели (1 единица = 14 единиц Quake)
-SUPERSAMPLE = 2             # цвет считается в 2x2 точках на тексель
+SUPERSAMPLE = 1 if DETAILED else 2   # цвет считается в 2x2 точках на тексель (K7: 1)
+FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf'   # надписи-трафареты
 
 # окраски команд ярче: краска (насыщенные пиксели нужного оттенка) насыщеннее и светлее,
 # металл и стекло (серые) не меняются; (диапазон оттенка 0..1, насыщенность x, яркость x)
@@ -66,6 +72,7 @@ PAINTED = {'camo_green', 'camo_dark', 'panel_light', 'marking', 'trim_yellow', '
 METAL = {'metal_gray', 'metal_dark', 'chrome', 'black', 'metal', 'dark'}
 GLOWING = {'engine_glow', 'light_cyan', 'sensor_purple', 'glow'}
 GLASS = {'canopy_glass', 'glass'}
+HYDRAULIC = {'chrome'}      # блестящие штоки гидравлики: с них течёт масло
 
 # ================================================================ GLB
 
@@ -407,6 +414,144 @@ class Part:
         self.dust = smoothstep(0.55, 0.95, normal[:, 1]) * (0.35 + 0.65 * fbm(position * 14.0 + 4.4, 3))
         self.grain = fbm(position * 120.0, 2) - 0.5
         self.panel_masks(texel)
+        self.detail_masks(texel, chip_noise, wide_noise)
+
+    def detail_masks(self, texel, chip_noise, wide_noise):
+        """крупные сколы, масло со штоков, копоть у дюз, надписи; без DETAILED - пусто."""
+        count = len(self.sample_position)
+        self.chip_big = np.zeros(count); self.chip_ring = np.zeros(count); self.mottle = np.zeros(count)
+        self.oil = np.zeros(count); self.oil_film = np.zeros(count); self.soot = np.zeros(count)
+        self.decal_color = np.zeros((count, 3)); self.decal_alpha = np.zeros(count)
+        if not DETAILED:
+            return
+        position = self.sample_position
+        normal = self.sample_normal
+        materials = np.array(self.material_names)[self.sample_material]
+        # крупные сколы краски: у рёбер чаще, на больших панелях пятнами; вокруг скола
+        # тёмная полоса грунта, внутри голый металл
+        big_noise = fbm(position * 13.0 + 7.7, 4)
+        edge_near = np.exp(-self.sample_convex / (texel * 9))
+        field = big_noise * 0.70 + edge_near * 0.34 * (0.4 + 1.1 * chip_noise)
+        self.chip_big = smoothstep(0.716, 0.730, field)
+        self.chip_ring = np.clip(smoothstep(0.695, 0.712, field) - self.chip_big, 0, 1)
+        # крупные пятна тона краски (выгорание, подкраска)
+        self.mottle = fbm(self.sample_position * 2.6 + 5.5, 3) - 0.5
+        # масло: течёт вниз со штоков гидравлики по вертикальным стенкам под ними
+        hydraulic = np.isin(materials, list(HYDRAULIC))
+        if np.any(hydraulic):
+            sources = position[hydraulic][::3]
+            scale = np.array([1 / 0.06, 1 / 0.75, 1 / 0.06])
+            tree = cKDTree(sources * scale)
+            distance, index = tree.query(position * scale, k=6, distance_upper_bound=1.0, workers=-1)
+            found = np.isfinite(distance)
+            index = np.where(found, index, 0)
+            below = found & (sources[index, 1] - position[:, 1][:, None] > -0.01)
+            nearness = np.max(np.where(below, (1 - np.where(found, distance, 1)) ** 1.5, 0), axis=1)
+            vertical = smoothstep(0.15, 0.6, 1 - np.abs(normal[:, 1]))
+            streak = smoothstep(0.48, 0.78, value_noise(position * np.array([75.0, 1.4, 75.0]) + 11.0))
+            drip = smoothstep(0.35, 0.9, value_noise(position * np.array([140.0, 3.0, 140.0]) + 4.0))
+            self.oil = np.clip(nearness * (streak * 0.85 + drip * 0.4) * (0.35 + 0.65 * vertical), 0, 1) * ~hydraulic
+            # на самих штоках - масляная плёнка полосами вдоль штока
+            film = smoothstep(0.42, 0.72, fbm(position * np.array([28.0, 3.5, 28.0]) + 3.0, 3))
+            self.oil_film = film * hydraulic
+        # копоть над дюзами (engine_glow): тёмный налёт, гуще у самых дюз и вверх от них
+        engine = materials == 'engine_glow'
+        if np.any(engine):
+            tree = cKDTree(position[engine][::4])
+            distance, _ = tree.query(position, k=1, distance_upper_bound=0.4, workers=-1)
+            near = np.where(np.isfinite(distance), 1 - distance / 0.4, 0)
+            self.soot = np.clip(near ** 1.6 * (0.6 + 0.6 * fbm(position * 18.0 + 2.2, 3)), 0, 1) * ~engine
+        self.decals(texel, materials)
+
+    def decals(self, texel, materials):
+        """трафаретные надписи, полосы опасности и таблички на плоских окрашенных панелях."""
+        from PIL import ImageDraw, ImageFont
+        position = self.sample_position
+        normal = self.sample_normal
+        rng = np.random.default_rng({'lower': 21, 'upper': 22, 'head': 23}[self.name])
+        flat = (np.isin(materials, ['camo_dark', 'camo_green', 'panel_light']) & (self.sample_convex > 0.09)
+                & (self.sample_concave > 0.07) & (self.sample_ao > 0.72))
+        candidates = np.nonzero(flat)[0]
+        self.model_center = (self.positions.min(axis=0) + self.positions.max(axis=0)) / 2
+        if len(candidates) == 0:
+            return
+        font_big = ImageFont.truetype(FONT, 150)
+        font_small = ImageFont.truetype(FONT, 46)
+        def stencil(text, size=(512, 256), color=(226, 222, 206)):
+            image = Image.new('RGBA', size, (0, 0, 0, 0))
+            draw = ImageDraw.Draw(image)
+            draw.text((size[0] // 2, size[1] // 2), text, font=font_big, fill=color + (235,), anchor='mm')
+            # трафаретные перемычки
+            for x in range(40, size[0], 95):
+                draw.rectangle([x, 0, x + 7, size[1]], fill=(0, 0, 0, 0))
+            return image
+        def hazard(size=(512, 128)):
+            image = Image.new('RGBA', size, (232, 184, 30, 245))
+            draw = ImageDraw.Draw(image)
+            for x in range(-size[1], size[0] + size[1], 64):
+                draw.polygon([(x, size[1]), (x + 32, size[1]), (x + 32 + size[1], 0), (x + size[1], 0)], fill=(24, 22, 20, 245))
+            return image
+        def label(lines, size=(512, 200)):
+            image = Image.new('RGBA', size, (214, 172, 40, 240))
+            draw = ImageDraw.Draw(image)
+            draw.rectangle([6, 6, size[0] - 7, size[1] - 7], outline=(30, 28, 24, 255), width=6)
+            for row, text in enumerate(lines):
+                draw.text((24, 22 + row * 56), text, font=font_small, fill=(30, 28, 24, 255))
+            return image
+        def arrow(text, size=(512, 160), color=(226, 222, 206)):
+            image = Image.new('RGBA', size, (0, 0, 0, 0))
+            draw = ImageDraw.Draw(image)
+            draw.polygon([(20, 80), (90, 20), (90, 55), (160, 55), (160, 105), (90, 105), (90, 140)], fill=color + (230,))
+            draw.text((190, 80), text, font=font_small, fill=color + (230,), anchor='lm')
+            return image
+        designs = {'lower': [(stencil('K7'), 0.55), (hazard(), 0.50), (label(['HYDRAULIC', 'HIGH PRESSURE', '350 BAR']), 0.34),
+                             (arrow('LIFT POINT'), 0.38), (stencil('07'), 0.45), (hazard(), 0.42), (label(['SERVICE', 'EVERY 40 H']), 0.28)],
+                   'upper': [(stencil('K7'), 0.62), (label(['CAUTION', 'BLAST AREA', 'KEEP CLEAR']), 0.36), (hazard(), 0.55),
+                             (stencil('07'), 0.48), (arrow('NO STEP'), 0.40), (label(['FUEL', 'JP-8 ONLY']), 0.30), (hazard(), 0.44)],
+                   'head': [(label(['SENSOR', 'DO NOT TOUCH']), 0.24), (stencil('7'), 0.22), (hazard((256, 96)), 0.24)]}[self.name]
+        order = rng.permutation(candidates)[:400]
+        tree = cKDTree(position)
+        placed = []
+        up_world = np.array([0.0, 1.0, 0.0])
+        for design, width in designs:
+            for center_index in order:
+                center = position[center_index]
+                if any(np.linalg.norm(center - other) < 0.6 for other in placed):
+                    continue
+                near = np.array(tree.query_ball_point(center, width * 0.75), dtype=np.int64)
+                if len(near) == 0:
+                    continue
+                facing = normal[center_index]
+                # надпись читается снаружи: нормаль от середины модели
+                if np.dot(facing, center - self.model_center) < 0:
+                    continue
+                up = up_world - facing * np.dot(facing, up_world)
+                if np.linalg.norm(up) < 0.35:
+                    up = np.array([0.0, 0.0, 1.0]) - facing * facing[2]
+                up /= np.linalg.norm(up)
+                right = np.cross(up, facing)
+                height = width * design.size[1] / design.size[0]
+                offset = position[near] - center
+                local_x = offset @ right / width + 0.5
+                local_y = 0.5 - offset @ up / height
+                keep = ((local_x >= 0) & (local_x <= 1) & (local_y >= 0) & (local_y <= 1)
+                        & (normal[near] @ facing > 0.88) & (np.abs(offset @ facing) < 0.03))
+                inside = near[keep]
+                local_x, local_y = local_x[keep], local_y[keep]
+                # вся надпись должна лечь на ровную краску
+                if len(inside) < 0.8 * (width * height) * self.texels_per_unit ** 2 * SUPERSAMPLE ** 2 \
+                        or not np.all(flat[inside] | (self.sample_convex[inside] > 0.05)):
+                    continue
+                pixels = np.asarray(design).astype(float)
+                rows = np.clip((local_y * (design.size[1] - 1)).astype(int), 0, design.size[1] - 1)
+                cols = np.clip((local_x * (design.size[0] - 1)).astype(int), 0, design.size[0] - 1)
+                rgba = pixels[rows, cols]
+                alpha = rgba[:, 3] / 255 * (0.82 + 0.18 * fbm(position[inside] * 40.0, 2))
+                self.decal_color[inside] = self.decal_color[inside] * (1 - alpha[:, None]) + rgba[:, :3] * alpha[:, None]
+                self.decal_alpha[inside] = np.maximum(self.decal_alpha[inside], alpha)
+                placed.append(center)
+                break
+        print(f'  {self.name}: decals {len(placed)} of {len(designs)}')
 
     def panel_masks(self, texel):
         """швы между панелями брони, заклёпки вдоль швов и разный тон соседних панелей.
@@ -467,7 +612,11 @@ class Part:
         # краска приглушённая, «армейская»: меньше насыщенности, у панелей разный тон
         gray = color.mean(axis=1, keepdims=True)
         muted = gray + (color - gray) * 0.72
-        color = np.where(painted[:, None], muted * 0.9 * (1 + 0.09 * self.panel_tone[:, None]), color)
+        paint_level = 0.97 if DETAILED else 0.9
+        color = np.where(painted[:, None], muted * paint_level * (1 + 0.09 * self.panel_tone[:, None]), color)
+        # надписи и таблички - под износом: их тоже скалывает и пачкает
+        decal = (self.decal_alpha * painted)[:, None]
+        color = color * (1 - decal) + self.decal_color * decal
         # швы панелей: тёмная щель, светлая фаска рядом, заклёпки
         panel = (painted | metal)[:, None]
         color = color * (1 - 0.55 * self.panel_line[:, None] * panel)
@@ -478,7 +627,15 @@ class Part:
         primer = np.array([58, 56, 52])
         chip = self.wear[:, None] * painted[:, None]
         color = color * (1 - chip) + (steel * 0.75 + primer * 0.25) * chip
-        lighten = (self.edge_light * 0.22 + self.scratch * 0.35)[:, None] * painted[:, None]
+        # крупные сколы: тёмный грунт по краю, голый светлый металл внутри
+        ring = (self.chip_ring * 0.85)[:, None] * painted[:, None]
+        color = color * (1 - ring) + primer * ring
+        big = self.chip_big[:, None] * painted[:, None]
+        bare_steel = np.array([112, 112, 108]) * (0.9 + 0.3 * self.grain[:, None])
+        color = color * (1 - big) + bare_steel * big
+        color = color * (1 + 0.22 * self.mottle[:, None] * painted[:, None])
+        edge_gain = 0.42 if DETAILED else 0.22
+        lighten = (self.edge_light * edge_gain + self.scratch * 0.35)[:, None] * painted[:, None]
         color = color + (np.array([200, 196, 186]) - color) * lighten
         # металл: светлые кромки и царапины до блеска
         shine = (self.edge_light * 0.30 + self.scratch * 0.45)[:, None] * metal[:, None]
@@ -487,12 +644,20 @@ class Part:
         grime_color = np.array([46, 40, 32])
         mud_color = np.array([88, 74, 54])
         dust_color = np.array([150, 140, 118])
-        grime = np.clip(self.streaks * 0.30 + self.crevice * 0.45, 0, 0.8)[:, None] * rough[:, None]
+        streak_gain = 0.45 if DETAILED else 0.30
+        grime = np.clip(self.streaks * streak_gain + self.crevice * 0.45, 0, 0.8)[:, None] * rough[:, None]
         color = color * (1 - grime) + grime_color * grime
         mud = np.clip(self.mud, 0, 0.85)[:, None] * rough[:, None]
         color = color * (1 - mud) + mud_color * (0.8 + 0.4 * self.grain[:, None]) * mud
         dust = (self.dust * 0.22)[:, None] * rough[:, None]
         color = color * (1 - dust) + dust_color * dust
+        # копоть у дюз и масло: тёмно-янтарные потёки (блестят - см. карту износа)
+        soot = (self.soot * 0.75)[:, None] * rough[:, None]
+        color = color * (1 - soot) + np.array([22, 20, 18]) * soot
+        oil = np.clip(self.oil * 0.9, 0, 0.85)[:, None]
+        color = color * (1 - oil) + np.array([34, 22, 10]) * oil
+        film = (self.oil_film * 0.45)[:, None]
+        color = color * (1 - film) + color * np.array([0.62, 0.50, 0.30]) * film
         # дюзы (engine_glow): не плоский оранжевый, а приглушённое свечение — горячая
         # середина пластины, тёмно-красные края, у самого ребра почти чёрный металл
         texel = 1.0 / self.texels_per_unit
@@ -504,7 +669,7 @@ class Part:
             glow = edge + (warm - edge) * smoothstep(0.0, 0.35, inner)[:, None] + (hot - warm) * smoothstep(0.35, 1.0, inner)[:, None]
             color[engine] = glow * flicker[:, None] * 0.82
         # затенение: сильное в щелях, светящиеся детали не затеняются
-        shade = 0.22 + 0.78 * np.clip(ao, 0, 1) ** 1.25
+        shade = (0.24 + 0.76 * np.clip(ao, 0, 1) ** 1.4) if DETAILED else (0.22 + 0.78 * np.clip(ao, 0, 1) ** 1.25)
         shade = np.where(glowing, 0.75 + 0.25 * shade, shade)
         color *= shade[:, None]
         return np.clip(color, 0, 255)
@@ -522,6 +687,35 @@ class Part:
         if scheme in TEAM_PAINT:
             result = team_paint(result, scheme)
         result.save(os.path.join(MODEL_DIR, f'{self.name}_{scheme}.jpg'), quality=88, optimize=True)
+
+    def to_image(self, values, channels):
+        """значения в точках выборки -> картинка атласа (поля вокруг кусков - ближайшим)."""
+        size = self.resolution * SUPERSAMPLE
+        image = np.zeros((size, size, channels))
+        image[self.sample_rows, self.sample_cols] = values.reshape(len(self.sample_rows), channels)
+        covered = np.zeros((size, size), dtype=bool)
+        covered[self.sample_rows, self.sample_cols] = True
+        _, (near_rows, near_cols) = ndimage.distance_transform_edt(~covered, return_indices=True)
+        return image[near_rows, near_cols]
+
+    def write_wear(self):
+        """<часть>_wear.tga для make_material_pass.py (блеск в один проход, tr_glsl.c):
+        r - голый металл (сколы, стёртые кромки, царапины): блестит как металл;
+        g - множитель блеска класса материала x128 (грязь и пыль матовые, масло мокрое);
+        b - масло: мокрый блеск."""
+        materials = np.array(self.material_names)[self.sample_material]
+        painted = np.isin(materials, list(PAINTED))
+        metal = np.isin(materials, list(METAL))
+        bare = np.where(painted, np.clip(self.wear + self.chip_big + self.scratch * 0.6 + self.edge_light * 0.25, 0, 1),
+                        np.where(metal, np.clip(self.edge_light * 0.5 + self.scratch * 0.7, 0, 1), 0))
+        gloss = np.clip(1.0 - 0.75 * np.clip(self.mud, 0, 1) - 0.5 * self.dust - 0.45 * self.crevice
+                        - 0.35 * self.streaks - 0.6 * self.soot + 0.6 * self.oil + 0.5 * self.oil_film, 0.05, 1.99)
+        wet = np.clip(self.oil + self.oil_film * 0.7, 0, 1)
+        values = np.stack([bare * 255, gloss * 128, wet * 255], axis=1)
+        image = self.to_image(values, 3)
+        result = Image.fromarray(np.clip(image, 0, 255).astype(np.uint8), 'RGB')
+        result = result.resize((self.resolution // 2, self.resolution // 2), Image.LANCZOS)
+        result.save(os.path.join(MODEL_DIR, f'{self.name}_wear.tga'))
 
     def rewrite_glb(self):
         """новые вершины: пара (вершина атласа, исходная вершина); примитивы индексированные."""
@@ -762,6 +956,7 @@ def main():
         part.masks()
         for scheme in SCHEMES:
             part.write_atlas(scheme, part.compose(scheme))
+        part.write_wear()
     used = set()
     for part in parts:
         for scheme in SCHEMES:
