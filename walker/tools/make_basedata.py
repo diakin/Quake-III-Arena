@@ -53,6 +53,8 @@ BENCHMARK_TXT = r"""// WALKER benchmark: in a battle (best 5 x 5 with bots) "ben
 // picture, the bots do not think), so it differs from the frozen base by its settings
 // only; a live battle varies by itself by 10-15 % (2026-11-26, two runs on one PC).
 base:                                   // the live battle
+settle: frozen                          // not compared: on 26.11.2026 the first frozen step on one PC ran at
+                                        // half the speed of the following ones (back 12.5 ms instead of 5.4)
 frozen: frozen                          // the base of the frozen steps
 real_fps: frozen; r_finish 0            // the frame rate without waiting for the card every frame
 no_robots: frozen; r_drawentities 0     // robots, weapons, shells and effects not drawn

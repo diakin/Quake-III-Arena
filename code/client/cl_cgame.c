@@ -792,7 +792,13 @@ CL_CGameRendering
 =====================
 */
 void CL_CGameRendering( stereoFrame_t stereo ) {
-	VM_Call( cgvm, CG_DRAW_ACTIVE_FRAME, cl.serverTime, stereo, clc.demoplaying );
+	{
+		int		cgameStart = com_profiling ? Sys_Milliseconds() : 0;		// WALKER: benchmark column
+		VM_Call( cgvm, CG_DRAW_ACTIVE_FRAME, cl.serverTime, stereo, clc.demoplaying );
+		if ( com_profiling ) {
+			time_cgame += Sys_Milliseconds() - cgameStart;
+		}
+	}
 	VM_Debug( 0 );
 }
 

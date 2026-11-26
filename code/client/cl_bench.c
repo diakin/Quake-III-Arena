@@ -60,7 +60,7 @@ typedef struct {
 	// results
 	int			frames;
 	int			msec;			// measured wall time
-	double		bots, server, game, client, front, back;	// msec summed over the frames
+	double		bots, server, game, client, cgame, front, back;	// msec summed over the frames
 	double		batches, flushes, draws, triangles;	// batches: surfaces drawn; flushes: shader runs; draws: GL draw calls
 	int			low;			// 99th percentile frame time, msec
 	int			median;			// half of the frames are faster
@@ -400,11 +400,11 @@ static void Bench_Line( benchStep_t *step, float baseFps, char *line, int size )
 	}
 	frames = step->frames;
 	fps = step->frames * 1000.0f / step->msec;
-	Com_sprintf( line, size, "%-20s %5.1f  %5.1f  %5.1f  %5.1f  %5i  %5i  %4i %%  %5.1f  %5.1f  %5.1f  %5.1f  %5.1f  %6.0f  %6.0f  %6.0f  %5.0f  %+7.0f %%  %s\n",
+	Com_sprintf( line, size, "%-20s %5.1f  %5.1f  %5.1f  %5.1f  %5i  %5i  %4i %%  %5.1f  %5.1f  %5.1f  %5.1f  %5.1f  %5.1f  %6.0f  %6.0f  %6.0f  %5.0f  %+7.0f %%  %s\n",
 		step->name, fps, step->median > 0 ? 1000.0f / step->median : 0.0f, step->low > 0 ? 1000.0f / step->low : 0.0f, step->msec / frames,
 		step->worst, step->maxLag, step->lagFrames * 100 / step->frames,
 		step->bots / frames, ( step->server - step->bots ) / frames,
-		( step->client - step->front - step->back ) / frames, step->front / frames, step->back / frames,
+		( step->client - step->front - step->back ) / frames, ( step->cgame - step->front ) / frames, step->front / frames, step->back / frames,
 		step->batches / frames, step->flushes / frames, step->draws / frames, step->triangles / frames / 1000.0f,
 		baseFps > 0 ? ( fps / baseFps - 1.0f ) * 100.0f : 0.0f,
 		step->deadFrames ? va( "dead %i %%", step->deadFrames * 100 / step->frames )
@@ -446,7 +446,8 @@ static void Bench_Report( void ) {
 		Cvar_VariableString( "r_noportals" ), Cvar_VariableString( "r_drawfog" ), Cvar_VariableString( "r_dynamiclight" ),
 		Cvar_VariableString( "r_mode" ), Cvar_VariableString( "r_vertexLight" ), Cvar_VariableString( "r_glsl" ), Cvar_VariableString( "r_smp" ), Cvar_VariableString( "r_vbo" ) ) );
 	Q_strcat( report, sizeof( report ), "times: msec a frame on average; bots = bot AI, server = the rest of the server game,\n"
-		"client = client and cgame, front = renderer scene, back = GL calls and the video card\n" );
+		"client = client and cgame, cgame = its part in the cgame (an interpreted qvm), front = renderer scene,\n"
+		"back = GL calls and the video card\n" );
 	Q_strcat( report, sizeof( report ), "worst = the longest frame, msec; lag = how far the server answer fell behind at most, msec\n"
 		"(\"Connection Interrupted\" shows past about 64 frames), lag>1s = share of frames with it over a second\n" );
 	Q_strcat( report, sizeof( report ), "view: spect = spectator, dead N % = the own robot destroyed for this share of the step\n" );
@@ -456,7 +457,7 @@ static void Bench_Report( void ) {
 	if ( benchNumRamp > 0 ) {
 		float	rampBase = 0;
 		Q_strcat( report, sizeof( report ), "bots entering the battle, two at a time (vs base = against no bots):\n" );
-		Q_strcat( report, sizeof( report ), "robots in battle      fps median  1%low  frame  worst    lag lag>1s   bots server client  front   back   surfs shader  draws  ktris   vs base  view\n" );
+		Q_strcat( report, sizeof( report ), "robots in battle      fps median  1%low  frame  worst    lag lag>1s   bots server client  cgame  front   back   surfs shader  draws  ktris   vs base  view\n" );
 		for ( index = 0; index < benchNumRamp; index++ ) {
 			Bench_Line( &benchRamp[index], index == 0 ? 0 : rampBase, line, sizeof( line ) );
 			if ( index == 0 && benchRamp[0].frames && benchRamp[0].msec ) {
@@ -466,13 +467,17 @@ static void Bench_Report( void ) {
 		}
 		Q_strcat( report, sizeof( report ), "then the steps, with all the bots:\n" );
 	}
-	Q_strcat( report, sizeof( report ), "step                  fps median  1%low  frame  worst    lag lag>1s   bots server client  front   back   surfs shader  draws  ktris   vs base  view\n" );
+	Q_strcat( report, sizeof( report ), "step                  fps median  1%low  frame  worst    lag lag>1s   bots server client  cgame  front   back   surfs shader  draws  ktris   vs base  view\n" );
 
 	for ( index = 0; index < benchNumSteps; index++ ) {
 		benchStep_t	*step = &benchSteps[index];
 
 		float		*kindBase = step->frozen ? &frozenFps : &baseFps;
 
+		// the frozen steps compare with the step named "frozen" (a settling step may come first)
+		if ( step->frozen && !Q_stricmp( step->name, "frozen" ) && step->frames && step->msec ) {
+			frozenFps = 0;
+		}
 		Bench_Line( step, *kindBase, line, sizeof( line ) );
 		if ( *kindBase == 0 && step->frames && step->msec ) {
 			*kindBase = step->frames * 1000.0f / step->msec;
@@ -561,6 +566,7 @@ static void Bench_Accumulate( benchStep_t *step, int frameMsec, int serverMsec, 
 	step->game += time_game;
 	step->server += serverMsec;
 	step->client += clientMsec;
+	step->cgame += time_cgame;
 	step->front += time_frontend;
 	step->back += time_backend;
 	{
@@ -748,7 +754,7 @@ void CL_BenchFrame( int frameMsec, int serverMsec, int clientMsec ) {
 		// a vid_restart reloads the cgame: wait, and measure again from the start
 		if ( benchState == BENCH_MEASURE ) {
 			step->frames = step->msec = 0;
-			step->bots = step->server = step->game = step->client = step->front = step->back = 0;
+			step->bots = step->server = step->game = step->client = step->cgame = step->front = step->back = 0;
 			step->batches = step->flushes = step->draws = step->triangles = 0;
 			step->worst = step->deadFrames = step->spectatorFrames = 0;
 			step->maxLag = step->lagFrames = 0;

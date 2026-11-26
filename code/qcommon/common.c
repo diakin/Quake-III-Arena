@@ -89,6 +89,7 @@ cvar_t	*com_noErrorInterrupt;
 int		time_game;
 int		time_frontend;		// renderer frontend time
 int		time_backend;		// renderer backend time
+int		time_cgame;			// WALKER: the cgame frame (with the renderer front end it calls)
 int		time_bots;			// WALKER: bot AI
 int		com_profiling;		// WALKER: benchmark running
 qboolean	com_benchExe;		// WALKER: started as WalkerBench.exe: a fixed battle, no user settings
@@ -2819,6 +2820,7 @@ void Com_Frame( void ) {
 		if ( com_speeds->integer || com_profiling ) {
 			timeBeforeClient = Sys_Milliseconds ();
 		}
+		time_cgame = 0;
 
 		CL_Frame( msec );
 

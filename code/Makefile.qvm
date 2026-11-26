@@ -103,6 +103,11 @@ vpath %.c game cgame q3_ui
 QVM_HEADERS = $(wildcard game/*.h cgame/*.h q3_ui/*.h ui/*.h)
 QVM_CPPFLAGS = -D__STDC__=1 -D__LCC__ -DQ3_VM -Icgame -Igame -Iq3_ui
 
+# WALKER: a failed compile leaves no half written .asm behind (rcc writes the
+# functions after an error as empty procedures, and the next make linked them:
+# a qvm with an empty CG_Player built without a word, 26.11.2026)
+.DELETE_ON_ERROR:
+
 define compile_rule
 $(1)/%.asm: %.c $$(QVM_HEADERS) $$(CPP) $$(RCC) | $(1)
 	$$(call RUN,$$(CPP)) $$(QVM_CPPFLAGS) $$< $$(@:.asm=.i)
