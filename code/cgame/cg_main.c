@@ -265,9 +265,9 @@ static cvarTable_t cvarTable[] = { // bk001129
 	{ &cg_noPlayerAnims, "cg_noplayeranims", "0", CVAR_CHEAT },
 	{ &cg_showmiss, "cg_showmiss", "0", 0 },
 	{ &cg_footsteps, "cg_footsteps", "1", CVAR_CHEAT },
-	{ &cg_tracerChance, "cg_tracerchance", "0.4", CVAR_CHEAT },
-	{ &cg_tracerWidth, "cg_tracerwidth", "1", CVAR_CHEAT },
-	{ &cg_tracerLength, "cg_tracerlength", "100", CVAR_CHEAT },
+	{ &cg_tracerChance, "cg_tracerchance", "0.6", CVAR_CHEAT },	// WALKER: was 0.4
+	{ &cg_tracerWidth, "cg_tracerwidth", "1.5", CVAR_CHEAT },	// WALKER: was 1
+	{ &cg_tracerLength, "cg_tracerlength", "160", CVAR_CHEAT },	// WALKER: was 100
 	{ &cg_thirdPersonRange, "cg_thirdPersonRange", "110", CVAR_CHEAT | CVAR_USERINFO },
 	{ &cg_thirdPersonAngle, "cg_thirdPersonAngle", "0", CVAR_CHEAT },
 	{ &cg_thirdPerson, "cg_thirdPerson", "1", CVAR_USERINFO },

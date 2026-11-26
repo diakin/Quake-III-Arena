@@ -158,12 +158,12 @@ void CG_FragmentBounceMark( localEntity_t *le, trace_t *trace ) {
 
 	if ( le->leMarkType == LEMT_BLOOD ) {
 
-		radius = 16 + (rand()&31);
+		radius = 6 + (rand()&7);	// WALKER: was 16 + 0..31
 		CG_ImpactMark( cgs.media.bloodMarkShader, trace->endpos, trace->plane.normal, random()*360,
 			1,1,1,1, qtrue, radius, qfalse );
 	} else if ( le->leMarkType == LEMT_BURN ) {
 
-		radius = 8 + (rand()&15);
+		radius = 4 + (rand()&7);	// WALKER: was 8 + 0..15
 		CG_ImpactMark( cgs.media.burnMarkShader, trace->endpos, trace->plane.normal, random()*360,
 			1,1,1,1, qtrue, radius, qfalse );
 	}

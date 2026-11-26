@@ -1245,7 +1245,11 @@ void CG_AddRobotWeapons( refEntity_t *parent, centity_t *cent ) {
 			CG_PlaceWeaponLabel( slot, rear );
 		}
 
-		if ( cg.time - cent->pe.slotFlashTime[slot] > MUZZLE_FLASH_TIME || bg_robotWeapons[type].fire == WFIRE_RAIL ) {
+		// WALKER: guns flash longer and bigger (a flame forward out of the barrel)
+		// the time of the shot is kept on the entity of the snapshot: the own robot is
+		// drawn from cg.predictedPlayerEntity, which never got it (no flash on it before)
+		if ( cg.time - cg_entities[cent->currentState.clientNum].pe.slotFlashTime[slot] > ( bg_robotWeapons[type].fire == WFIRE_BULLET ? GUN_FLASH_TIME : MUZZLE_FLASH_TIME )
+			|| bg_robotWeapons[type].fire == WFIRE_RAIL ) {
 			continue;
 		}
 		memset( &flash, 0, sizeof( flash ) );
@@ -1253,15 +1257,35 @@ void CG_AddRobotWeapons( refEntity_t *parent, centity_t *cent ) {
 		flash.reType = RT_SPRITE;
 		flash.radius = 5 + 3 * bg_robotWeapons[type].weaponClass + ( rand() & 3 );
 		flash.rotation = rand() % 360;
-		flash.customShader = cgs.media.plasmaBallShader;
+		flash.customShader = cgs.media.rocketFlameShader;	// rgbGen entity: the colours below apply
+		if ( bg_robotWeapons[type].fire == WFIRE_BULLET ) {
+			static const float	tongueAhead[2] = { 0.6f, 1.25f };
+			static const float	tongueSize[2] = { 0.85f, 0.6f };
+			refEntity_t	tongue;
+			int			part;
+
+			flash.radius = 12 + 6 * bg_robotWeapons[type].weaponClass + ( rand() & 3 );
+			for ( part = 0; part < 2; part++ ) {
+				tongue = flash;
+				VectorMA( flash.origin, flash.radius * tongueAhead[part] * ( 0.8f + 0.4f * random() ), flash.axis[0], tongue.origin );
+				VectorCopy( tongue.origin, tongue.oldorigin );
+				tongue.radius = flash.radius * tongueSize[part];
+				tongue.rotation = rand() % 360;
+				tongue.shaderRGBA[0] = 255;
+				tongue.shaderRGBA[1] = part ? 150 : 200;
+				tongue.shaderRGBA[2] = part ? 40 : 90;
+				tongue.shaderRGBA[3] = 255;
+				trap_R_AddRefEntityToScene( &tongue );
+			}
+		}
 		if ( bg_robotWeapons[type].fire == WFIRE_PLASMA ) {
 			flash.shaderRGBA[0] = 120;
 			flash.shaderRGBA[1] = 220;
 			flash.shaderRGBA[2] = 255;
 		} else {
 			flash.shaderRGBA[0] = 255;
-			flash.shaderRGBA[1] = 220;
-			flash.shaderRGBA[2] = 160;
+			flash.shaderRGBA[1] = 225;
+			flash.shaderRGBA[2] = 150;
 		}
 		flash.shaderRGBA[3] = 255;
 		trap_R_AddRefEntityToScene( &flash );
@@ -1840,6 +1864,8 @@ CG_MissileHitWall
 Caused by an EV_MISSILE_MISS event, or directly by local bullet tracing
 =================
 */
+int		cg_impactRobotWeapon = -1;
+
 void CG_MissileHitWall( int weapon, int clientNum, vec3_t origin, vec3_t dir, impactSound_t soundType ) {
 	qhandle_t		mod;
 	qhandle_t		mark;
@@ -1944,7 +1970,7 @@ void CG_MissileHitWall( int weapon, int clientNum, vec3_t origin, vec3_t dir, im
 		shader = cgs.media.railExplosionShader;
 		sfx = cgs.media.sfx_plasmaexp;
 		mark = cgs.media.energyMarkShader;
-		radius = 24;
+		radius = 8;		// WALKER: was 24
 		isSprite = qtrue;
 		duration = 500;
 		light = 200;
@@ -2020,8 +2046,17 @@ void CG_MissileHitWall( int weapon, int clientNum, vec3_t origin, vec3_t dir, im
 			sfx = cgs.media.sfx_ric3;
 		}
 
-		radius = 8;
+		radius = 3;		// WALKER: was 8; the bullets of OSA and TOPOR
 		break;
+	}
+
+	// WALKER: rockets, shells and plasma of robots: the mark by the blast radius of
+	// the weapon (the Quake rocket left a burn 128 units across)
+	if ( cg_impactRobotWeapon >= 0 && cg_impactRobotWeapon < RWEAPON_COUNT ) {
+		radius = BG_WeaponParam( cg_impactRobotWeapon, WPARAM_SPLASH, qfalse ) * 0.2f;
+		if ( radius < 8 ) {
+			radius = 8;
+		}
 	}
 
 	if ( sfx ) {
@@ -2246,6 +2281,26 @@ void CG_Tracer( vec3_t source, vec3_t dest ) {
 	VectorScale( cg.refdef.viewaxis[1], line[1], right );
 	VectorMA( right, -line[0], cg.refdef.viewaxis[2], right );
 	VectorNormalize( right );
+
+	// WALKER: first a glow three times as wide, orange (the shader takes the vertex colour)
+	{
+		int		corner;
+		VectorMA( finish, 3 * cg_tracerWidth.value, right, verts[0].xyz );
+		VectorMA( finish, -3 * cg_tracerWidth.value, right, verts[1].xyz );
+		VectorMA( start, -3 * cg_tracerWidth.value, right, verts[2].xyz );
+		VectorMA( start, 3 * cg_tracerWidth.value, right, verts[3].xyz );
+		verts[0].st[0] = 0; verts[0].st[1] = 1;
+		verts[1].st[0] = 1; verts[1].st[1] = 0;
+		verts[2].st[0] = 1; verts[2].st[1] = 1;
+		verts[3].st[0] = 0; verts[3].st[1] = 0;
+		for ( corner = 0; corner < 4; corner++ ) {
+			verts[corner].modulate[0] = 200;
+			verts[corner].modulate[1] = 90;
+			verts[corner].modulate[2] = 20;
+			verts[corner].modulate[3] = 255;
+		}
+		trap_R_AddPolyToScene( cgs.media.tracerShader, 4, verts );
+	}
 
 	VectorMA( finish, cg_tracerWidth.value, right, verts[0].xyz );
 	verts[0].st[0] = 0;

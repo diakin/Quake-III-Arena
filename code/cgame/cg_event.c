@@ -892,13 +892,17 @@ void CG_EntityEvent( centity_t *cent, vec3_t position ) {
 	case EV_MISSILE_MISS:
 		DEBUGNAME("EV_MISSILE_MISS");
 		ByteToDir( es->eventParm, dir );
+		cg_impactRobotWeapon = ( es->generic1 > 0 && es->generic1 <= RWEAPON_COUNT ) ? es->generic1 - 1 : -1;	// WALKER
 		CG_MissileHitWall( es->weapon, 0, position, dir, IMPACTSOUND_DEFAULT );
+		cg_impactRobotWeapon = -1;
 		break;
 
 	case EV_MISSILE_MISS_METAL:
 		DEBUGNAME("EV_MISSILE_MISS_METAL");
 		ByteToDir( es->eventParm, dir );
+		cg_impactRobotWeapon = ( es->generic1 > 0 && es->generic1 <= RWEAPON_COUNT ) ? es->generic1 - 1 : -1;
 		CG_MissileHitWall( es->weapon, 0, position, dir, IMPACTSOUND_METAL );
+		cg_impactRobotWeapon = -1;
 		break;
 
 	case EV_RAILTRAIL:

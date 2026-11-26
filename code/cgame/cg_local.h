@@ -53,6 +53,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define	ZOOM_TIME			150
 #define	ITEM_BLOB_TIME		200
 #define	MUZZLE_FLASH_TIME	20
+#define	GUN_FLASH_TIME		50		// WALKER: robot machine guns and cannons
 #define	SINK_TIME			1000		// time for fragments to sink into ground before going away
 #define	ATTACKER_HEAD_TIME	10000
 #define	REWARD_TIME			3000
@@ -1345,6 +1346,7 @@ sfxHandle_t	CG_CustomSound( int clientNum, const char *soundName );
 //
 void CG_BuildSolidList( void );
 int	CG_PointContents( const vec3_t point, int passEntityNum );
+extern	int		cg_impactRobotWeapon;	// WALKER: robot weapon of the missile now hitting a wall, -1 none
 qboolean	CG_VisibleFromView( int entityNum, const vec3_t point, int slot );	// WALKER: 0 health bars, 1 target
 void	CG_ShadowMark( int entityNum, qhandle_t shader, const vec3_t origin, const vec3_t dir, float orientation, float alpha, float radius );
 void CG_Trace( trace_t *result, const vec3_t start, const vec3_t mins, const vec3_t maxs, const vec3_t end, 

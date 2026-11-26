@@ -978,6 +978,7 @@ gfx/misc/tracer
 	{
 		map gfx/misc/tracer.tga
 		blendFunc GL_ONE GL_ONE
+		rgbGen vertex
 	}
 }
 smokePuff
