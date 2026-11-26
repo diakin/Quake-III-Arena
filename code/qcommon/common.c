@@ -2432,6 +2432,14 @@ void Com_Init( char *commandLine ) {
 
 	Cbuf_Execute ();
 
+	// WALKER: the benchmark's window from the first start of the renderer; without it
+	// the defaults (640x480 full screen) came first, benchmode.cfg changed them later,
+	// and sysinfo.txt showed the screen in 640x480
+	if ( com_benchExe ) {
+		Cvar_Set( "r_mode", "6" );
+		Cvar_Set( "r_fullscreen", "0" );
+	}
+
 	// override anything from the config files with command line args
 	Com_StartupVariable( NULL );
 
