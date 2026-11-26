@@ -504,8 +504,7 @@ static void CG_Missile( centity_t *cent ) {
 		ent.rotation = 0;
 		if ( bg_robotWeapons[type].fire == WFIRE_PLASMA ) {
 			ent.radius = 10;
-			ent.customShader = cgs.media.plasmaBoltShader;
-			trap_R_AddLightToScene( cent->lerpOrigin, 140, 0.4f, 0.8f, 1.0f );
+			ent.customShader = cgs.media.plasmaBoltShader;	// WALKER: no light spot under the bolt
 		} else if ( bg_robotWeapons[type].weaponClass == WCLASS_LIGHT ) {
 			CG_RocketFlame( cent, &ent );
 			return;

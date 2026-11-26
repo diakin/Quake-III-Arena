@@ -1710,12 +1710,19 @@ textures/walker/water
 		rgbGen identity
 		tcMod scale 0.2 0.2
 	}}
+	// water colour over the whole surface; with a light sky the reflection alone made
+	// the sea light grey seen from above (2026-11-26: was 0.12, no darkening)
 	{{
 		map textures/walker/water.jpg
 		blendFunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA
-		alphaGen const 0.12
+		alphaGen const 0.65
 		rgbGen identity
 		tcMod scale 0.2 0.2
+	}}
+	{{
+		map $whiteimage
+		blendFunc GL_DST_COLOR GL_ZERO
+		rgbGen const ( 0.55 0.6 0.62 )
 	}}
 	// ripples and glints over the reflection only (the shallows near the shore are
 	// drawn over them by the terrain): none close to the camera, full from 600 units

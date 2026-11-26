@@ -1289,8 +1289,8 @@ void CG_AddRobotWeapons( refEntity_t *parent, centity_t *cent ) {
 		}
 		flash.shaderRGBA[3] = 255;
 		trap_R_AddRefEntityToScene( &flash );
-		trap_R_AddLightToScene( flash.origin, 120 + 40 * bg_robotWeapons[type].weaponClass + ( rand() & 31 ),
-			flash.shaderRGBA[0] / 255.0f, flash.shaderRGBA[1] / 255.0f, flash.shaderRGBA[2] / 255.0f );
+		// WALKER: no dynamic light from the shot (a light spot on the ground at every
+		// shot of every robot); the flash itself is bright enough
 	}
 }
 
@@ -2070,7 +2070,7 @@ void CG_MissileHitWall( int weapon, int clientNum, vec3_t origin, vec3_t dir, im
 		le = CG_MakeExplosion( origin, dir, 
 							   mod,	shader,
 							   duration, isSprite );
-		le->light = light;
+		le->light = 0;	// WALKER: no light spot where shells and plasma hit (was "light")
 		VectorCopy( lightColor, le->lightColor );
 		if ( weapon == WP_RAILGUN ) {
 			// colorize with client color
