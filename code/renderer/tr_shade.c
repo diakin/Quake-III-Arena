@@ -645,6 +645,7 @@ static void RB_DrawWorldVBO( void ) {
 	shader_t	*shader = tess.shader;
 	int			stageNum;
 	byte		color[4];
+	qboolean	shiftProgram;
 
 	GL_Cull( shader->cullType );
 	if ( shader->polygonOffset ) {
@@ -661,6 +662,12 @@ static void RB_DrawWorldVBO( void ) {
 
 	R_VBOBindWorld();
 	qglVertexPointer( 3, GL_FLOAT, sizeof( vboVertex_t ), (void *)offsetof( vboVertex_t, xyz ) );
+
+	// deformVertexes lodshift: the move by the vertex program (tr_glsl.c)
+	shiftProgram = shader->vboCapable == 2 && GLSL_LodShiftAvailable();
+	if ( shiftProgram ) {
+		GLSL_LodShiftBegin( &shader->deforms[0] );
+	}
 
 	RB_HardwareFogBegin();
 	for ( stageNum = 0; stageNum < MAX_SHADER_STAGES; stageNum++ ) {
@@ -688,6 +695,10 @@ static void RB_DrawWorldVBO( void ) {
 			R_BindAnimatedImage( &stage->bundle[0] );
 		}
 		matrix0 = RB_VBOTexCoords( &stage->bundle[0] );
+		if ( shiftProgram ) {
+			GLSL_LodShiftUnit( 0, stage->bundle[0].tcGen == TCGEN_VECTOR, stage->bundle[0].tcGenVectors[0], stage->bundle[0].tcGenVectors[1] );
+			GLSL_LodShiftUnit( 1, qfalse, NULL, NULL );
+		}
 
 		if ( stage->bundle[1].image[0] ) {
 			GL_SelectTexture( 1 );
@@ -695,6 +706,9 @@ static void RB_DrawWorldVBO( void ) {
 			GL_TexEnv( r_lightmap->integer ? GL_REPLACE : shader->multitextureEnv );
 			R_BindAnimatedImage( &stage->bundle[1] );
 			matrix1 = RB_VBOTexCoords( &stage->bundle[1] );
+			if ( shiftProgram ) {
+				GLSL_LodShiftUnit( 1, stage->bundle[1].tcGen == TCGEN_VECTOR, stage->bundle[1].tcGenVectors[0], stage->bundle[1].tcGenVectors[1] );
+			}
 		}
 
 		R_VBODrawRanges( tess.numVboRanges, tess.vboCounts, tess.vboOffsets );
@@ -713,6 +727,9 @@ static void RB_DrawWorldVBO( void ) {
 		}
 	}
 	RB_HardwareFogEnd();
+	if ( shiftProgram ) {
+		GLSL_LodShiftEnd();
+	}
 
 	// the old way finds the arrays it expects, in its own memory
 	R_VBOUnbind();

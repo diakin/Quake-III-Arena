@@ -58,6 +58,11 @@ static GLuint	meshProgram;
 static GLint	meshBackLerp, meshLightDir, meshAmbient, meshDirected, meshViewOrigin, meshSpecularOrigin;
 static GLint	meshColorMode, meshAlphaMode, meshTcMode, meshColor, meshFogOn, meshTexture;
 
+// the vertex program of map surfaces with deformVertexes lodshift (tr_shade.c)
+static GLuint	shiftProgram;
+static GLint	shiftEye, shiftBandStart, shiftBand, shiftDepth, shiftFar;
+static GLint	shiftTcMode[2], shiftPlaneS[2], shiftPlaneT[2];
+
 // the program of the dynamic lights
 static GLuint	dlightProgram;
 static GLint	dlightCountLocation, dlightLightsLocation, dlightColorsLocation, dlightFogLocation;
@@ -117,16 +122,19 @@ static GLuint GLSL_Program( const char *vertexSource, const char *fragmentSource
 
 static GLuint GLSL_ProgramAttribs( const char *vertexSource, const char *fragmentSource, const char *name, const char **attribs, const int *locations, int numAttribs ) {
 	GLuint	vertex = GLSL_Compile( GL_VERTEX_SHADER, vertexSource, name );
-	GLuint	fragment = GLSL_Compile( GL_FRAGMENT_SHADER, fragmentSource, name );
+	GLuint	fragment = fragmentSource ? GLSL_Compile( GL_FRAGMENT_SHADER, fragmentSource, name ) : 0;
 	GLuint	program;
 	GLint	status = 0;
 
-	if ( !vertex || !fragment ) {
+	// no fragment source: the fixed fragment stage stays (texture environment, fog)
+	if ( !vertex || ( fragmentSource && !fragment ) ) {
 		return 0;
 	}
 	program = qglCreateProgram();
 	qglAttachShader( program, vertex );
-	qglAttachShader( program, fragment );
+	if ( fragment ) {
+		qglAttachShader( program, fragment );
+	}
 	{
 		int		index;
 		for ( index = 0; index < numAttribs; index++ ) {
@@ -266,6 +274,52 @@ static const char *meshVertexSource =
 	"	}\n"
 	"}\n";
 
+/*
+===========================================================================
+Map surfaces in two detail levels (deformVertexes lodshift)
+
+RB_CalcLodShift moves every vertex on the processor while the surface is in the
+band of r_lodDistance, so such surfaces could come from the map's buffers only
+when wholly outside it (and big buildings seldom are). Here the same move is
+made per vertex; only the vertex stage is a program, the fixed fragment stage
+(texture environment, alpha test, fog by gl_FogFragCoord) stays. Texture
+coordinates: the array of the unit, or tcGen vector from the moved point, then
+the texture matrix (the tcMods), as on the fixed path.
+===========================================================================
+*/
+static const char *shiftVertexSource =
+	"uniform vec3 eye;\n"
+	"uniform float bandStart;\n"
+	"uniform float band;\n"
+	"uniform float depth;\n"
+	"uniform float farLevel;\n"
+	"uniform float tcMode0;\n"		// 0: the array of the unit, 1: tcGen vector
+	"uniform float tcMode1;\n"
+	"uniform vec3 planeS0;\n"
+	"uniform vec3 planeT0;\n"
+	"uniform vec3 planeS1;\n"
+	"uniform vec3 planeT1;\n"
+	"void main() {\n"
+	"	vec3 position = gl_Vertex.xyz;\n"
+	"	vec3 delta = position - eye;\n"
+	"	float distance = length( delta );\n"
+	"	if ( distance >= 1.0 ) {\n"
+	"		float fraction = clamp( ( distance - bandStart ) / band, 0.0, 1.0 );\n"
+	"		float shift = depth * ( farLevel > 0.5 ? 1.0 - fraction : fraction );\n"
+	"		position += delta * ( shift / distance );\n"
+	"	}\n"
+	"	vec4 vertex = vec4( position, 1.0 );\n"
+	"	vec4 eyePosition = gl_ModelViewMatrix * vertex;\n"
+	"	gl_Position = gl_ModelViewProjectionMatrix * vertex;\n"
+	"	gl_ClipVertex = eyePosition;\n"
+	"	gl_FogFragCoord = abs( eyePosition.z );\n"
+	"	gl_FrontColor = gl_Color;\n"
+	"	vec4 coord0 = tcMode0 > 0.5 ? vec4( dot( position, planeS0 ), dot( position, planeT0 ), 0.0, 1.0 ) : gl_MultiTexCoord0;\n"
+	"	vec4 coord1 = tcMode1 > 0.5 ? vec4( dot( position, planeS1 ), dot( position, planeT1 ), 0.0, 1.0 ) : gl_MultiTexCoord1;\n"
+	"	gl_TexCoord[0] = gl_TextureMatrix[0] * coord0;\n"
+	"	gl_TexCoord[1] = gl_TextureMatrix[1] * coord1;\n"
+	"}\n";
+
 static const char *meshFragmentSource =
 	"uniform sampler2D texture0;\n"
 	"uniform float fogOn;\n"
@@ -296,6 +350,7 @@ void GLSL_Init( void ) {
 	glslAvailable = qfalse;
 	dlightProgram = 0;
 	meshProgram = 0;
+	shiftProgram = 0;
 
 	qglCreateShader = GLSL_Proc( "glCreateShader", &ok );
 	qglShaderSource = GLSL_Proc( "glShaderSource", &ok );
@@ -349,6 +404,20 @@ void GLSL_Init( void ) {
 		meshColor = qglGetUniformLocation( meshProgram, "constColor" );
 		meshFogOn = qglGetUniformLocation( meshProgram, "fogOn" );
 		meshTexture = qglGetUniformLocation( meshProgram, "texture0" );
+	}
+	shiftProgram = GLSL_Program( shiftVertexSource, NULL, "lodshift" );
+	if ( shiftProgram ) {
+		shiftEye = qglGetUniformLocation( shiftProgram, "eye" );
+		shiftBandStart = qglGetUniformLocation( shiftProgram, "bandStart" );
+		shiftBand = qglGetUniformLocation( shiftProgram, "band" );
+		shiftDepth = qglGetUniformLocation( shiftProgram, "depth" );
+		shiftFar = qglGetUniformLocation( shiftProgram, "farLevel" );
+		shiftTcMode[0] = qglGetUniformLocation( shiftProgram, "tcMode0" );
+		shiftTcMode[1] = qglGetUniformLocation( shiftProgram, "tcMode1" );
+		shiftPlaneS[0] = qglGetUniformLocation( shiftProgram, "planeS0" );
+		shiftPlaneS[1] = qglGetUniformLocation( shiftProgram, "planeS1" );
+		shiftPlaneT[0] = qglGetUniformLocation( shiftProgram, "planeT0" );
+		shiftPlaneT[1] = qglGetUniformLocation( shiftProgram, "planeT1" );
 	}
 	glslAvailable = qtrue;
 	ri.Printf( PRINT_ALL, "GLSL: on%s%s\n", dlightProgram ? ", dynamic lights in one pass" : "",
@@ -437,5 +506,44 @@ void GLSL_MeshEnd( void ) {
 	qglDisableVertexAttribArray( MESH_ATTRIB_OLDFRAME );
 	qglDisableVertexAttribArray( MESH_ATTRIB_TEXCOORD );
 	qglDisableVertexAttribArray( MESH_ATTRIB_FRAME );
+	qglUseProgram( 0 );
+}
+
+
+
+/*
+=================
+GLSL_LodShiftAvailable / Begin / Unit / End
+
+the caller sets the arrays, texture matrices and the fixed state as for the
+fixed path and draws in between
+=================
+*/
+qboolean GLSL_LodShiftAvailable( void ) {
+	return glslAvailable && shiftProgram && r_glsl->integer;
+}
+
+void GLSL_LodShiftBegin( const deformStage_t *deform ) {
+	float	band = r_lodBand->value < 1 ? 1 : r_lodBand->value;	// as R_LodShiftPoint
+
+	qglUseProgram( shiftProgram );
+	qglUniform3f( shiftEye, backEnd.viewParms.or.origin[0], backEnd.viewParms.or.origin[1], backEnd.viewParms.or.origin[2] );
+	qglUniform1f( shiftBandStart, r_lodDistance->value - band * 0.5f );
+	qglUniform1f( shiftBand, band );
+	qglUniform1f( shiftDepth, deform->bulgeHeight );
+	qglUniform1f( shiftFar, deform->moveVector[0] ? 1.0f : 0.0f );
+	qglUniform1f( shiftTcMode[0], 0 );
+	qglUniform1f( shiftTcMode[1], 0 );
+}
+
+void GLSL_LodShiftUnit( int unit, qboolean vector, const vec3_t planeS, const vec3_t planeT ) {
+	qglUniform1f( shiftTcMode[unit], vector ? 1.0f : 0.0f );
+	if ( vector ) {
+		qglUniform3f( shiftPlaneS[unit], planeS[0], planeS[1], planeS[2] );
+		qglUniform3f( shiftPlaneT[unit], planeT[0], planeT[1], planeT[2] );
+	}
+}
+
+void GLSL_LodShiftEnd( void ) {
 	qglUseProgram( 0 );
 }

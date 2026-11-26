@@ -233,7 +233,7 @@ void RB_SurfaceTriangles( srfTriangles_t *srf ) {
 	// WALKER: in the map's buffers (tr_vbo.c): only the range of indexes, unless lit
 	// by a dynamic light (that pass needs the triangles here)
 	if ( tess.vboAllowed && srf->vboNumIndexes && !dlightBits
-		&& ( tess.vboAllowed == 1 || RB_VBOLodShiftStill( srf->bounds ) ) ) {
+		&& ( tess.vboAllowed == 1 || GLSL_LodShiftAvailable() || RB_VBOLodShiftStill( srf->bounds ) ) ) {
 		RB_AddVBORange( srf->vboFirstIndex, srf->vboNumIndexes );
 		return;
 	}

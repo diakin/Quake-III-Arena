@@ -95,6 +95,12 @@ static GLsizei		*volumeCounts;
 static GLsizei		awayRangeCounts[MAX_AWAY_RANGES];
 static const void	*awayRangeOffsets[MAX_AWAY_RANGES];
 static int			numAwayRanges;
+// those of surfaces with deformVertexes lodshift, drawn with the vertex program one by one
+#define	MAX_SHIFT_RANGES	1024
+static GLsizei		shiftRangeCounts[MAX_SHIFT_RANGES];
+static const void	*shiftRangeOffsets[MAX_SHIFT_RANGES];
+static const deformStage_t	*shiftRangeDeforms[MAX_SHIFT_RANGES];
+static int			numShiftRanges;
 static int			builtLevel = -1;
 static qboolean		stencilWrap;
 
@@ -421,6 +427,7 @@ static int RB_CollectAwayTriangles( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 
 	numVerts = 0;
 	numAwayRanges = 0;
+	numShiftRanges = 0;
 	for ( index = 0 ; index < numDrawSurfs ; index++ ) {
 		R_DecomposeSort( drawSurfs[index].sort, &entityNum, &shader, &fogNum, &dlighted );
 		if ( entityNum != ENTITYNUM_WORLD || shader->sort > SS_OPAQUE ) {
@@ -432,6 +439,20 @@ static int RB_CollectAwayTriangles( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 		// in two detail levels only outside the band, where lodshift moves nothing
 		if ( useBuffers ) {
 			int			first = -1, count = 0;
+
+			// lodshift surfaces moved by the program when drawn: the same program here,
+			// or the depth test of this pass misses them
+			if ( *surface == SF_TRIANGLES && ( (srfTriangles_t *)surface )->vboNumIndexes && shader->numDeforms == 1
+				&& shader->deforms[0].deformation == DEFORM_LODSHIFT && GLSL_LodShiftAvailable() ) {
+				srfTriangles_t	*tri = (srfTriangles_t *)surface;
+				if ( tri->vboAwayCount && numShiftRanges < MAX_SHIFT_RANGES ) {
+					shiftRangeOffsets[numShiftRanges] = (const void *)( (size_t)tri->vboAwayFirst * sizeof( glIndex_t ) );
+					shiftRangeCounts[numShiftRanges] = tri->vboAwayCount;
+					shiftRangeDeforms[numShiftRanges] = &shader->deforms[0];
+					numShiftRanges++;
+				}
+				continue;
+			}
 			if ( *surface == SF_FACE && ( (srfSurfaceFace_t *)surface )->vboNumIndexes ) {
 				first = ( (srfSurfaceFace_t *)surface )->vboAwayFirst;
 				count = ( (srfSurfaceFace_t *)surface )->vboAwayCount;
@@ -615,7 +636,7 @@ qboolean RB_SunShadowVolumes( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 
 	// no shadow on what faces away from the sun (it has no direct sunlight anyway)
 	numAway = RB_CollectAwayTriangles( drawSurfs, numDrawSurfs );
-	if ( numAway || numAwayRanges ) {
+	if ( numAway || numAwayRanges || numShiftRanges ) {
 		GL_State( GLS_SRCBLEND_ONE | GLS_DSTBLEND_ZERO | GLS_DEPTHFUNC_EQUAL );
 		qglColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE );
 		qglDisable( GL_CULL_FACE );
@@ -626,6 +647,18 @@ qboolean RB_SunShadowVolumes( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 		R_VBOBindWorldAway();
 		qglVertexPointer( 3, GL_FLOAT, sizeof( vboVertex_t ), NULL );
 		R_VBODrawRanges( numAwayRanges, awayRangeCounts, awayRangeOffsets );
+		R_VBOBindBuffers( 0, 0 );
+	}
+	if ( numShiftRanges ) {
+		R_VBOBindWorldAway();
+		qglVertexPointer( 3, GL_FLOAT, sizeof( vboVertex_t ), NULL );
+		for ( index = 0 ; index < numShiftRanges ; index++ ) {
+			if ( !index || shiftRangeDeforms[index] != shiftRangeDeforms[index - 1] ) {
+				GLSL_LodShiftBegin( shiftRangeDeforms[index] );
+			}
+			R_VBODrawRanges( 1, &shiftRangeCounts[index], &shiftRangeOffsets[index] );
+		}
+		GLSL_LodShiftEnd();
 		R_VBOBindBuffers( 0, 0 );
 	}
 	if ( numAway ) {
