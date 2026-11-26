@@ -412,10 +412,10 @@ static void Bench_Report( void ) {
 	}
 	Q_strcat( report, sizeof( report ), va( "game %ix%i, map %s, players %i, %i s a step, r_finish 1 (see real_fps)\n",
 		cls.glconfig.vidWidth, cls.glconfig.vidHeight, Cvar_VariableString( "mapname" ), players, benchSeconds ) );
-	Q_strcat( report, sizeof( report ), va( "settings: r_picmip %s, r_sunShadows %s, cg_shadows %s, r_noportals %s, r_drawfog %s, r_dynamiclight %s, r_mode %s, r_vertexLight %s, r_glsl %s\n",
+	Q_strcat( report, sizeof( report ), va( "settings: r_picmip %s, r_sunShadows %s, cg_shadows %s, r_noportals %s, r_drawfog %s, r_dynamiclight %s, r_mode %s, r_vertexLight %s, r_glsl %s, r_smp %s\n",
 		Cvar_VariableString( "r_picmip" ), Cvar_VariableString( "r_sunShadows" ), Cvar_VariableString( "cg_shadows" ),
 		Cvar_VariableString( "r_noportals" ), Cvar_VariableString( "r_drawfog" ), Cvar_VariableString( "r_dynamiclight" ),
-		Cvar_VariableString( "r_mode" ), Cvar_VariableString( "r_vertexLight" ), Cvar_VariableString( "r_glsl" ) ) );
+		Cvar_VariableString( "r_mode" ), Cvar_VariableString( "r_vertexLight" ), Cvar_VariableString( "r_glsl" ), Cvar_VariableString( "r_smp" ) ) );
 	Q_strcat( report, sizeof( report ), "times: msec a frame on average; bots = bot AI, server = the rest of the server game,\n"
 		"client = client and cgame, front = renderer scene, back = GL calls and the video card\n" );
 	Q_strcat( report, sizeof( report ), "worst = the longest frame, msec; lag = how far the server answer fell behind at most, msec\n"

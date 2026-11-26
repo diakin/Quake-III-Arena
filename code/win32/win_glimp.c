@@ -1773,7 +1773,10 @@ void *GLimp_RendererSleep( void ) {
 		wglErrors++;
 	}
 
-	ResetEvent( renderActiveEvent );
+	// WALKER: renderActiveEvent is reset by GLimp_WakeRenderer before it wakes this
+	// thread. Reset here, an empty command list (loading: R_SyncRenderThread) could be
+	// done and the event set and reset again before the main thread began to wait
+	// for it: both threads then waited for each other for ever
 
 	// after this, the front end can exit GLimp_FrontEndSleep
 	SetEvent( renderCompletedEvent );
@@ -1788,6 +1791,13 @@ void *GLimp_RendererSleep( void ) {
 	ResetEvent( renderCommandsEvent );
 
 	data = smpData;
+
+	// WALKER: told to quit: give the context back before the thread ends. It stayed
+	// current in the dead thread, and after a vid_restart the main thread could not
+	// take it (no GL functions, GL errors, then a hang)
+	if ( !data ) {
+		qwglMakeCurrent( glw_state.hDC, NULL );
+	}
 
 	// after this, the main thread can exit GLimp_WakeRenderer
 	SetEvent( renderActiveEvent );
@@ -1812,9 +1822,26 @@ void GLimp_WakeRenderer( void *data ) {
 		wglErrors++;
 	}
 
+	ResetEvent( renderActiveEvent );
+
 	// after this, the renderer can continue through GLimp_RendererSleep
 	SetEvent( renderCommandsEvent );
 
 	WaitForSingleObject( renderActiveEvent, INFINITE );
+
+	// WALKER: the render thread quits: wait for it, the main thread takes the context
+	if ( !data ) {
+		if ( renderThreadHandle ) {
+			WaitForSingleObject( renderThreadHandle, 5000 );
+			CloseHandle( renderThreadHandle );
+			renderThreadHandle = NULL;
+		}
+		CloseHandle( renderCommandsEvent );
+		CloseHandle( renderCompletedEvent );
+		CloseHandle( renderActiveEvent );
+		if ( !qwglMakeCurrent( glw_state.hDC, glw_state.hGLRC ) ) {
+			wglErrors++;
+		}
+	}
 }
 
