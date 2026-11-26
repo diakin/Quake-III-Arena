@@ -53,7 +53,8 @@ GAME OPTIONS MENU
 #define ID_BACK					138
 #define ID_ROBOTSPEED			139
 
-// WALKER: robot speed for testing, in percent of the normal g_speed
+// WALKER: speed of all robots in percent of the normal g_speed (each robot keeps its own
+// speed relative to the others: ps.speed = km/h * g_speed / 38, g_robots.c)
 #define ROBOT_SPEED_NORMAL		55
 
 #define	NUM_CROSSHAIRS			10
@@ -94,18 +95,20 @@ static const char *teamoverlay_names[] =
 	0
 };
 
-static const char *robotspeed_names[] = { "25%", "50%", "75%", "100%", "125%", "150%", "200%", 0 };
-static const int robotspeed_percent[] = { 25, 50, 75, 100, 125, 150, 200 };
+static const char *robotspeed_names[] = { "25%", "50%", "60%", "70%", "75%", "80%", "90%", "100%", "110%", "125%", "150%", "200%", 0 };
+static const int robotspeed_percent[] = { 25, 50, 60, 70, 75, 80, 90, 100, 110, 125, 150, 200 };
+#define ROBOT_SPEED_STEPS	( sizeof( robotspeed_percent ) / sizeof( robotspeed_percent[0] ) )
+#define ROBOT_SPEED_100		7		// the index of 100%
 
 static void Preferences_SetMenuItems( void ) {
 	{
 		float	speed = trap_Cvar_VariableValue( "g_speed" );
-		int		index, best = 3;
+		int		index, best = ROBOT_SPEED_100;
 
 		if ( speed <= 0 ) {
 			speed = ROBOT_SPEED_NORMAL;
 		}
-		for ( index = 0 ; index < 7 ; index++ ) {
+		for ( index = 0 ; index < (int)ROBOT_SPEED_STEPS ; index++ ) {
 			if ( fabs( robotspeed_percent[index] * ROBOT_SPEED_NORMAL / 100.0f - speed )
 				< fabs( robotspeed_percent[best] * ROBOT_SPEED_NORMAL / 100.0f - speed ) ) {
 				best = index;
@@ -385,7 +388,7 @@ static void Preferences_MenuInit( void ) {
 
 	y += BIGCHAR_HEIGHT+2;
 	s_preferences.robotspeed.generic.type		= MTYPE_SPINCONTROL;
-	s_preferences.robotspeed.generic.name		= "Robot Speed (test):";
+	s_preferences.robotspeed.generic.name		= "Robot Speed:";
 	s_preferences.robotspeed.generic.flags		= QMF_PULSEIFFOCUS|QMF_SMALLFONT;
 	s_preferences.robotspeed.generic.callback	= Preferences_Event;
 	s_preferences.robotspeed.generic.id			= ID_ROBOTSPEED;

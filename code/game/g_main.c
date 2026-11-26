@@ -145,7 +145,9 @@ static cvarTable_t		gameCvarTable[] = {
 
 	{ &g_dedicated, "dedicated", "0", 0, 0, qfalse  },
 
-	{ &g_speed, "g_speed", "55", 0, 0, qtrue  },	// WALKER: heavy robot speed (was 110); menu GAME OPTIONS -> Robot Speed
+	// WALKER: the speed of all robots (55 = 100 %, each robot keeps its own relative to the
+	// others: ps.speed = km/h * g_speed / 38); menu GAME OPTIONS -> Robot Speed, saved
+	{ &g_speed, "g_speed", "55", CVAR_ARCHIVE, 0, qtrue  },
 	{ &g_beaconPoints, "g_beaconPoints", "1000", CVAR_SERVERINFO, 0, qfalse },
 	{ &g_beaconDrain, "g_beaconDrain", "2", 0, 0, qfalse },
 	{ &g_robots, "g_robots", "5", CVAR_SERVERINFO, 0, qfalse },
