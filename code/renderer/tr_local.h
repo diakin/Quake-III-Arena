@@ -622,6 +622,8 @@ typedef struct {
 	// WALKER: the indexes in the map's index buffer (tr_vbo.c), 0: not there
 	int			vboFirstIndex;
 	int			vboNumIndexes;
+	int			vboAwayFirst;		// its triangles facing away from the sun, in the second index buffer
+	int			vboAwayCount;
 
 	// triangle definitions (no normals at points)
 	int			numPoints;
@@ -656,6 +658,8 @@ typedef struct {
 	// WALKER: the indexes in the map's index buffer (tr_vbo.c), 0: not there
 	int				vboFirstIndex;
 	int				vboNumIndexes;
+	int				vboAwayFirst;	// its triangles facing away from the sun, in the second index buffer
+	int				vboAwayCount;
 
 	// WALKER: triangles facing away from the sun (tr_sunshadow.c), kept until the sun moves
 	int				*awayIndexes;
@@ -1415,6 +1419,14 @@ void		R_VBOUnbind( void );
 void		R_VBODrawRanges( int count, const GLsizei *counts, const void **offsets );
 void		RB_AddVBORange( int firstIndex, int numIndexes );
 qboolean	RB_VBOLodShiftStill( vec3_t bounds[2] );
+qboolean	R_LodShiftStill( const deformStage_t *deform, vec3_t bounds[2] );
+unsigned int	R_VBOCreateBuffer( qboolean elements, int size, const void *data );
+void		R_VBODeleteBuffer( unsigned int *buffer );
+void		R_VBOBindBuffers( unsigned int vertexBuffer, unsigned int indexBuffer );
+void		R_VBODrawArrayRanges( int count, const GLint *firsts, const GLsizei *counts );
+qboolean	R_VBOWorldAwayActive( void );
+void		R_VBOBindWorldAway( void );
+void		R_SunShadowShutdownGL( void );
 qboolean	R_VBOFunctionsAvailable( void );
 void		R_VBOBuildMesh( md3Header_t *header );
 const meshSurfaceVBO_t *R_VBOMeshSurface( const md3Surface_t *surface );

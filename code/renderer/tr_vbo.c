@@ -36,6 +36,7 @@ static void	( APIENTRY *qglGenBuffersARB )( GLsizei count, GLuint *buffers );
 static void	( APIENTRY *qglDeleteBuffersARB )( GLsizei count, const GLuint *buffers );
 static void	( APIENTRY *qglBindBufferARB )( GLenum target, GLuint buffer );
 static void	( APIENTRY *qglBufferDataARB )( GLenum target, vboSize_t size, const void *data, GLenum usage );
+static void	( APIENTRY *qglMultiDrawArraysEXT )( GLenum mode, const GLint *first, const GLsizei *count, GLsizei primcount );
 static void	( APIENTRY *qglMultiDrawElementsEXT )( GLenum mode, const GLsizei *count, GLenum type, const void **indices, GLsizei primcount );
 
 cvar_t			*r_vbo;
@@ -46,6 +47,8 @@ static qboolean	vboFunctions;		// the OpenGL functions were found
 qboolean		R_VBOFunctionsAvailable( void ) { return vboFunctions; }
 static GLuint	worldVertexBuffer;
 static GLuint	worldIndexBuffer;
+static GLuint	worldAwayBuffer;		// the triangles facing away from the sun (tr_sunshadow.c)
+static vec3_t	worldAwaySun;
 static int		worldVBOVertexes, worldVBOIndexes;
 
 
@@ -82,7 +85,7 @@ void R_VBOInit( void ) {
 
 	r_vbo = ri.Cvar_Get( "r_vbo", "1", CVAR_ARCHIVE | CVAR_LATCH );
 	vboFunctions = qfalse;
-	worldVertexBuffer = worldIndexBuffer = 0;
+	worldVertexBuffer = worldIndexBuffer = worldAwayBuffer = 0;
 	worldVBOVertexes = worldVBOIndexes = 0;
 	R_VBOResetMeshTables();
 
@@ -98,6 +101,11 @@ void R_VBOInit( void ) {
 	qglMultiDrawElementsEXT = R_VBOProc( "glMultiDrawElements", "glMultiDrawElementsEXT", &ok );
 	if ( !ok ) {
 		qglMultiDrawElementsEXT = NULL;		// a glDrawElements for every range instead
+	}
+	ok = qtrue;
+	qglMultiDrawArraysEXT = R_VBOProc( "glMultiDrawArrays", "glMultiDrawArraysEXT", &ok );
+	if ( !ok ) {
+		qglMultiDrawArraysEXT = NULL;
 	}
 	vboFunctions = qtrue;
 }
@@ -120,7 +128,10 @@ void R_VBOShutdown( void ) {
 	if ( worldIndexBuffer ) {
 		qglDeleteBuffersARB( 1, &worldIndexBuffer );
 	}
-	worldVertexBuffer = worldIndexBuffer = 0;
+	if ( worldAwayBuffer ) {
+		qglDeleteBuffersARB( 1, &worldAwayBuffer );
+	}
+	worldVertexBuffer = worldIndexBuffer = worldAwayBuffer = 0;
 	worldVBOVertexes = worldVBOIndexes = 0;
 }
 
@@ -148,6 +159,69 @@ void R_VBOBindWorld( void ) {
 void R_VBOUnbind( void ) {
 	qglBindBufferARB( GL_ARRAY_BUFFER_ARB, 0 );
 	qglBindBufferARB( GL_ELEMENT_ARRAY_BUFFER_ARB, 0 );
+}
+
+
+/*
+=================
+R_VBOCreateBuffer / R_VBODeleteBuffer / R_VBOBindBuffers / R_VBODrawArrayRanges
+
+small helpers for other users of buffers (tr_sunshadow.c)
+=================
+*/
+unsigned int R_VBOCreateBuffer( qboolean elements, int size, const void *data ) {
+	GLuint	buffer = 0;
+	GLenum	target = elements ? GL_ELEMENT_ARRAY_BUFFER_ARB : GL_ARRAY_BUFFER_ARB;
+
+	if ( !vboFunctions || !r_vbo->integer || size <= 0 ) {
+		return 0;
+	}
+	while ( qglGetError() != GL_NO_ERROR ) {
+	}
+	qglGenBuffersARB( 1, &buffer );
+	qglBindBufferARB( target, buffer );
+	qglBufferDataARB( target, size, data, GL_STATIC_DRAW_ARB );
+	qglBindBufferARB( target, 0 );
+	if ( qglGetError() != GL_NO_ERROR ) {
+		qglDeleteBuffersARB( 1, &buffer );
+		return 0;
+	}
+	return buffer;
+}
+
+void R_VBODeleteBuffer( unsigned int *buffer ) {
+	if ( vboFunctions && *buffer ) {
+		qglDeleteBuffersARB( 1, buffer );
+	}
+	*buffer = 0;
+}
+
+void R_VBOBindBuffers( unsigned int vertexBuffer, unsigned int indexBuffer ) {
+	qglBindBufferARB( GL_ARRAY_BUFFER_ARB, vertexBuffer );
+	qglBindBufferARB( GL_ELEMENT_ARRAY_BUFFER_ARB, indexBuffer );
+}
+
+void R_VBODrawArrayRanges( int count, const GLint *firsts, const GLsizei *counts ) {
+	int		index;
+
+	if ( qglMultiDrawArraysEXT ) {
+		qglMultiDrawArraysEXT( GL_TRIANGLES, firsts, counts, count );
+		backEnd.pc.c_drawCalls++;
+		return;
+	}
+	for ( index = 0; index < count; index++ ) {
+		qglDrawArrays( GL_TRIANGLES, firsts[index], counts[index] );
+	}
+	backEnd.pc.c_drawCalls += count;
+}
+
+qboolean R_VBOWorldAwayActive( void ) {
+	return worldAwayBuffer && R_VBOWorldActive() && VectorCompare( worldAwaySun, tr.sunDirection );
+}
+
+void R_VBOBindWorldAway( void ) {
+	qglBindBufferARB( GL_ARRAY_BUFFER_ARB, worldVertexBuffer );
+	qglBindBufferARB( GL_ELEMENT_ARRAY_BUFFER_ARB, worldAwayBuffer );
 }
 
 
@@ -213,8 +287,12 @@ void R_VBOBuildWorld( void ) {
 	for ( surfaceNum = 0, surf = tr.world->surfaces; surfaceNum < tr.world->numsurfaces; surfaceNum++, surf++ ) {
 		if ( *surf->data == SF_FACE ) {
 			( (srfSurfaceFace_t *)surf->data )->vboNumIndexes = 0;
+			( (srfSurfaceFace_t *)surf->data )->vboAwayFirst = 0;
+			( (srfSurfaceFace_t *)surf->data )->vboAwayCount = 0;
 		} else if ( *surf->data == SF_TRIANGLES ) {
 			( (srfTriangles_t *)surf->data )->vboNumIndexes = 0;
+			( (srfTriangles_t *)surf->data )->vboAwayFirst = 0;
+			( (srfTriangles_t *)surf->data )->vboAwayCount = 0;
 		}
 	}
 	for ( surfaceNum = 0, surf = tr.world->surfaces; surfaceNum < tr.world->numsurfaces; surfaceNum++, surf++ ) {
@@ -293,6 +371,74 @@ void R_VBOBuildWorld( void ) {
 			vertexBase += tri->numVerts;
 			indexBase += tri->numIndexes;
 		}
+	}
+
+	// the triangles facing away from the sun, for the sun shadows (tr_sunshadow.c,
+	// RB_CollectAwayTriangles drew them from the processor's memory every frame)
+	{
+		glIndex_t	*away = ri.Hunk_AllocateTempMemory( indexBase * sizeof( glIndex_t ) );
+		int			numAway = 0;
+
+		for ( surfaceNum = 0, surf = tr.world->surfaces; surfaceNum < tr.world->numsurfaces; surfaceNum++, surf++ ) {
+			if ( *surf->data == SF_FACE ) {
+				srfSurfaceFace_t	*face = (srfSurfaceFace_t *)surf->data;
+				if ( !face->vboNumIndexes || face->vboAwayFirst < 0 || face->vboAwayCount ) {
+					continue;
+				}
+				face->vboAwayFirst = numAway;
+				face->vboAwayCount = 0;
+				if ( DotProduct( face->plane.normal, tr.sunDirection ) > 0 ) {
+					face->vboAwayFirst = -1;	// done (a surface met twice)
+					continue;
+				}
+				Com_Memcpy( away + numAway, indexes + face->vboFirstIndex, face->vboNumIndexes * sizeof( glIndex_t ) );
+				numAway += face->vboNumIndexes;
+				face->vboAwayCount = face->vboNumIndexes;
+			} else if ( *surf->data == SF_TRIANGLES ) {
+				srfTriangles_t		*tri = (srfTriangles_t *)surf->data;
+				int					corner;
+				if ( !tri->vboNumIndexes || tri->vboAwayFirst < 0 || tri->vboAwayCount ) {
+					continue;
+				}
+				tri->vboAwayFirst = numAway;
+				for ( corner = 0; corner < tri->vboNumIndexes; corner += 3 ) {
+					glIndex_t	*triangle = indexes + tri->vboFirstIndex + corner;
+					vec3_t		edge1, edge2, normal;
+					VectorSubtract( vertexes[triangle[1]].xyz, vertexes[triangle[0]].xyz, edge1 );
+					VectorSubtract( vertexes[triangle[2]].xyz, vertexes[triangle[0]].xyz, edge2 );
+					CrossProduct( edge1, edge2, normal );
+					// Quake winding is clockwise: this normal points into the model
+					if ( DotProduct( normal, tr.sunDirection ) < 0 ) {
+						continue;
+					}
+					away[numAway++] = triangle[0];
+					away[numAway++] = triangle[1];
+					away[numAway++] = triangle[2];
+				}
+				tri->vboAwayCount = numAway - tri->vboAwayFirst;
+				if ( !tri->vboAwayCount ) {
+					tri->vboAwayFirst = -1;
+				}
+			}
+		}
+		// faces left at -1 had nothing facing away: mark them empty again
+		for ( surfaceNum = 0, surf = tr.world->surfaces; surfaceNum < tr.world->numsurfaces; surfaceNum++, surf++ ) {
+			if ( *surf->data == SF_FACE && ( (srfSurfaceFace_t *)surf->data )->vboAwayFirst < 0 ) {
+				( (srfSurfaceFace_t *)surf->data )->vboAwayFirst = 0;
+				( (srfSurfaceFace_t *)surf->data )->vboAwayCount = 0;
+			} else if ( *surf->data == SF_TRIANGLES && ( (srfTriangles_t *)surf->data )->vboAwayFirst < 0 ) {
+				( (srfTriangles_t *)surf->data )->vboAwayFirst = 0;
+				( (srfTriangles_t *)surf->data )->vboAwayCount = 0;
+			}
+		}
+		if ( numAway ) {
+			qglGenBuffersARB( 1, &worldAwayBuffer );
+			qglBindBufferARB( GL_ELEMENT_ARRAY_BUFFER_ARB, worldAwayBuffer );
+			qglBufferDataARB( GL_ELEMENT_ARRAY_BUFFER_ARB, numAway * sizeof( glIndex_t ), away, GL_STATIC_DRAW_ARB );
+			qglBindBufferARB( GL_ELEMENT_ARRAY_BUFFER_ARB, 0 );
+			VectorCopy( tr.sunDirection, worldAwaySun );
+		}
+		ri.Hunk_FreeTempMemory( away );
 	}
 
 	qglGenBuffersARB( 1, &worldVertexBuffer );

@@ -85,6 +85,16 @@ static int			maxAwayVerts;
 static vec3_t		*awayVerts;			// world triangles facing away from the sun, this view
 
 static vec3_t		builtSunDirection;
+
+// WALKER: the volumes in video memory (tr_vbo.c); the visible casters as ranges of it
+static unsigned int	volumeBuffer;
+static GLint		*volumeFirsts;
+static GLsizei		*volumeCounts;
+// the away-facing world triangles of this view as ranges of the map's second index buffer
+#define	MAX_AWAY_RANGES	8192
+static GLsizei		awayRangeCounts[MAX_AWAY_RANGES];
+static const void	*awayRangeOffsets[MAX_AWAY_RANGES];
+static int			numAwayRanges;
 static int			builtLevel = -1;
 static qboolean		stencilWrap;
 
@@ -223,6 +233,8 @@ void R_LoadSunCasters( const char *bspName ) {
 	volumeVerts = ri.Hunk_Alloc( maxVolumeVerts * sizeof( *volumeVerts ), h_low );
 	volumeIndexes = ri.Hunk_Alloc( maxVolumeVerts * sizeof( *volumeIndexes ), h_low );
 	frameIndexes = ri.Hunk_Alloc( maxVolumeVerts * sizeof( *frameIndexes ), h_low );
+	volumeFirsts = ri.Hunk_Alloc( ( numCasters + 1 ) * sizeof( *volumeFirsts ), h_low );
+	volumeCounts = ri.Hunk_Alloc( ( numCasters + 1 ) * sizeof( *volumeCounts ), h_low );
 
 	// room for every world triangle (faces and models)
 	maxAwayVerts = 0;
@@ -354,6 +366,22 @@ static void R_BuildSunVolumes( int level ) {
 	if ( numVerts > maxVolumeVerts ) {
 		ri.Error( ERR_DROP, "R_BuildSunVolumes: overflow" );
 	}
+
+	// WALKER: into video memory; every frame only the ranges of the visible casters
+	R_VBODeleteBuffer( &volumeBuffer );
+	volumeBuffer = R_VBOCreateBuffer( qfalse, numVerts * sizeof( vec3_t ), volumeVerts );
+}
+
+/*
+===============
+R_SunShadowShutdownGL
+
+before OpenGL goes: the buffer goes with it, the volumes are built again
+===============
+*/
+void R_SunShadowShutdownGL( void ) {
+	R_VBODeleteBuffer( &volumeBuffer );
+	builtLevel = -1;
 }
 
 /*
@@ -389,14 +417,49 @@ static int RB_CollectAwayTriangles( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 	int				*indexes;
 	float			*a, *b, *c;
 	vec3_t			edge1, edge2, normal;
+	qboolean		useBuffers = R_VBOWorldAwayActive();
 
 	numVerts = 0;
+	numAwayRanges = 0;
 	for ( index = 0 ; index < numDrawSurfs ; index++ ) {
 		R_DecomposeSort( drawSurfs[index].sort, &entityNum, &shader, &fogNum, &dlighted );
 		if ( entityNum != ENTITYNUM_WORLD || shader->sort > SS_OPAQUE ) {
 			continue;
 		}
 		surface = drawSurfs[index].surface;
+
+		// WALKER: in the map's buffers: the range of its away triangles (tr_vbo.c); models
+		// in two detail levels only outside the band, where lodshift moves nothing
+		if ( useBuffers ) {
+			int			first = -1, count = 0;
+			if ( *surface == SF_FACE && ( (srfSurfaceFace_t *)surface )->vboNumIndexes ) {
+				first = ( (srfSurfaceFace_t *)surface )->vboAwayFirst;
+				count = ( (srfSurfaceFace_t *)surface )->vboAwayCount;
+			} else if ( *surface == SF_TRIANGLES && ( (srfTriangles_t *)surface )->vboNumIndexes
+				&& !( shader->numDeforms && ( shader->deforms[0].deformation != DEFORM_LODSHIFT
+					|| !R_LodShiftStill( &shader->deforms[0], ( (srfTriangles_t *)surface )->bounds ) ) ) ) {
+				first = ( (srfTriangles_t *)surface )->vboAwayFirst;
+				count = ( (srfTriangles_t *)surface )->vboAwayCount;
+			}
+			if ( first >= 0 ) {
+				const void	*offset = (const void *)( (size_t)first * sizeof( glIndex_t ) );
+				if ( !count ) {
+					continue;
+				}
+				if ( numAwayRanges && (const byte *)awayRangeOffsets[numAwayRanges - 1]
+					+ awayRangeCounts[numAwayRanges - 1] * sizeof( glIndex_t ) == (const byte *)offset ) {
+					awayRangeCounts[numAwayRanges - 1] += count;
+					continue;
+				}
+				if ( numAwayRanges < MAX_AWAY_RANGES ) {
+					awayRangeOffsets[numAwayRanges] = offset;
+					awayRangeCounts[numAwayRanges] = count;
+					numAwayRanges++;
+					continue;
+				}
+			}
+		}
+
 		if ( *surface == SF_FACE ) {
 			face = (srfSurfaceFace_t *)surface;
 			if ( DotProduct( face->plane.normal, tr.sunDirection ) > 0
@@ -456,7 +519,7 @@ static int RB_CollectAwayTriangles( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 }
 
 qboolean RB_SunShadowVolumes( drawSurf_t *drawSurfs, int numDrawSurfs ) {
-	int			index, level, count, numIndexes, numAway;
+	int			index, level, count, numIndexes, numAway, numRanges;
 	sunCaster_t	*caster;
 	int			plane;
 
@@ -471,6 +534,7 @@ qboolean RB_SunShadowVolumes( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 
 	// volumes inside the view frustum
 	numIndexes = 0;
+	numRanges = 0;
 	for ( index = 0 ; index < numCasters ; index++ ) {
 		caster = &casters[index];
 		if ( !caster->numVolumeIndexes ) {
@@ -486,6 +550,18 @@ qboolean RB_SunShadowVolumes( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 			continue;
 		}
 		count = caster->numVolumeIndexes;
+		if ( volumeBuffer ) {
+			// WALKER: a range of the buffer, joined to the previous one when it goes on
+			if ( numRanges && volumeFirsts[numRanges - 1] + volumeCounts[numRanges - 1] == caster->firstVolumeIndex ) {
+				volumeCounts[numRanges - 1] += count;
+			} else {
+				volumeFirsts[numRanges] = caster->firstVolumeIndex;
+				volumeCounts[numRanges] = count;
+				numRanges++;
+			}
+			numIndexes += count;
+			continue;
+		}
 		Com_Memcpy( frameIndexes + numIndexes, volumeIndexes + caster->firstVolumeIndex, count * sizeof( glIndex_t ) );
 		numIndexes += count;
 	}
@@ -513,28 +589,51 @@ qboolean RB_SunShadowVolumes( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 	}
 	qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
 	qglDisableClientState( GL_COLOR_ARRAY );
-	qglVertexPointer( 3, GL_FLOAT, 0, volumeVerts );
 
 	// depth fail: the back faces behind the scene count up, then the front faces
 	// behind it count down (all increments first: no underflow without wrapping)
-	qglCullFace( GL_FRONT );
-	qglStencilOp( GL_KEEP, stencilWrap ? GL_INCR_WRAP_EXT : GL_INCR, GL_KEEP );
-	qglDrawElements( GL_TRIANGLES, numIndexes, GL_INDEX_TYPE, frameIndexes );
-	backEnd.pc.c_drawCalls += 2;
-	qglCullFace( GL_BACK );
-	qglStencilOp( GL_KEEP, stencilWrap ? GL_DECR_WRAP_EXT : GL_DECR, GL_KEEP );
-	qglDrawElements( GL_TRIANGLES, numIndexes, GL_INDEX_TYPE, frameIndexes );
+	if ( volumeBuffer ) {
+		R_VBOBindBuffers( volumeBuffer, 0 );
+		qglVertexPointer( 3, GL_FLOAT, 0, NULL );
+		qglCullFace( GL_FRONT );
+		qglStencilOp( GL_KEEP, stencilWrap ? GL_INCR_WRAP_EXT : GL_INCR, GL_KEEP );
+		R_VBODrawArrayRanges( numRanges, volumeFirsts, volumeCounts );
+		qglCullFace( GL_BACK );
+		qglStencilOp( GL_KEEP, stencilWrap ? GL_DECR_WRAP_EXT : GL_DECR, GL_KEEP );
+		R_VBODrawArrayRanges( numRanges, volumeFirsts, volumeCounts );
+		R_VBOBindBuffers( 0, 0 );
+	} else {
+		qglVertexPointer( 3, GL_FLOAT, 0, volumeVerts );
+		qglCullFace( GL_FRONT );
+		qglStencilOp( GL_KEEP, stencilWrap ? GL_INCR_WRAP_EXT : GL_INCR, GL_KEEP );
+		qglDrawElements( GL_TRIANGLES, numIndexes, GL_INDEX_TYPE, frameIndexes );
+		backEnd.pc.c_drawCalls += 2;
+		qglCullFace( GL_BACK );
+		qglStencilOp( GL_KEEP, stencilWrap ? GL_DECR_WRAP_EXT : GL_DECR, GL_KEEP );
+		qglDrawElements( GL_TRIANGLES, numIndexes, GL_INDEX_TYPE, frameIndexes );
+	}
 
 	// no shadow on what faces away from the sun (it has no direct sunlight anyway)
 	numAway = RB_CollectAwayTriangles( drawSurfs, numDrawSurfs );
-	if ( numAway ) {
+	if ( numAway || numAwayRanges ) {
 		GL_State( GLS_SRCBLEND_ONE | GLS_DSTBLEND_ZERO | GLS_DEPTHFUNC_EQUAL );
 		qglColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE );
 		qglDisable( GL_CULL_FACE );
 		qglStencilOp( GL_KEEP, GL_KEEP, GL_ZERO );
+	}
+	if ( numAwayRanges ) {
+		// WALKER: from the map's buffers (the same vertexes as drawn: depth equal holds)
+		R_VBOBindWorldAway();
+		qglVertexPointer( 3, GL_FLOAT, sizeof( vboVertex_t ), NULL );
+		R_VBODrawRanges( numAwayRanges, awayRangeCounts, awayRangeOffsets );
+		R_VBOBindBuffers( 0, 0 );
+	}
+	if ( numAway ) {
 		qglVertexPointer( 3, GL_FLOAT, 0, awayVerts );
 		qglDrawArrays( GL_TRIANGLES, 0, numAway );
+		backEnd.pc.c_drawCalls++;
 	}
+	qglVertexPointer( 3, GL_FLOAT, 16, tess.xyz );	// not left in a buffer
 
 	qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
 	qglColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );

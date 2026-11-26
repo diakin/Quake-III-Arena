@@ -425,7 +425,10 @@ static qboolean RB_ShaderVBOCheck( shader_t *shader ) {
 
 // a surface of a lodshift shader that the deform leaves where it is in this view
 qboolean RB_VBOLodShiftStill( vec3_t bounds[2] ) {
-	deformStage_t	*deform = &tess.shader->deforms[0];
+	return R_LodShiftStill( &tess.shader->deforms[0], bounds );
+}
+
+qboolean R_LodShiftStill( const deformStage_t *deform, vec3_t bounds[2] ) {
 	float			band = r_lodBand->value < 1 ? 1 : r_lodBand->value;
 	float			start = r_lodDistance->value - band * 0.5f;
 	vec3_t			origin;
