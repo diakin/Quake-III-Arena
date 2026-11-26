@@ -14,9 +14,10 @@ going up from the middle. The state of a beacon is one number, control, from
 The owner changes at -1 / +1 (taken) and at 0 (made free).
 
 Score as in War Robots: each team starts with g_beaconPoints points; every
-second the team that holds fewer beacons loses g_beaconDrain points per
-beacon of difference. A team with no points left loses; at the time limit
-the team with more points wins.
+second each team loses g_beaconDrain points for every beacon the other team
+holds (with 3 : 2 both teams lose, the one with 2 beacons less fast; only a
+team holding all beacons loses nothing). A team with no points left loses; at
+the time limit the team with more points wins.
 
 This file is part of WALKER, based on the Quake III Arena source code
 (GPL v2, see COPYING.txt).
@@ -258,13 +259,11 @@ void G_BeaconsFrame( void ) {
 		}
 	}
 
-	// points: the team with fewer beacons loses points every second
+	// points: each team loses points every second for the beacons of the other team
 	drainTime += elapsed;
-	if ( held[TEAM_RED] > held[TEAM_BLUE] ) {
-		drainBlue += g_beaconDrain.value * ( held[TEAM_RED] - held[TEAM_BLUE] ) * elapsed / 1000.0f;
-	} else if ( held[TEAM_BLUE] > held[TEAM_RED] ) {
-		drainRed += g_beaconDrain.value * ( held[TEAM_BLUE] - held[TEAM_RED] ) * elapsed / 1000.0f;
-	}
+	// every beacon of the other team takes points, independently of the own beacons
+	drainBlue += g_beaconDrain.value * held[TEAM_RED] * elapsed / 1000.0f;
+	drainRed += g_beaconDrain.value * held[TEAM_BLUE] * elapsed / 1000.0f;
 	if ( drainTime >= 1000 ) {
 		drainTime = 0;
 		if ( drainRed >= 1 || drainBlue >= 1 ) {
@@ -313,6 +312,12 @@ qboolean G_BeaconsCheckExit( void ) {
 			LogExit( "Team destroyed." );
 			return qtrue;
 		}
+	}
+	// both teams lose points now, so both can run out in the same second (a draw)
+	if ( level.teamScores[TEAM_RED] <= 0 && level.teamScores[TEAM_BLUE] <= 0 ) {
+		trap_SendServerCommand( -1, "print \"Both teams have no points left.\n\"" );
+		LogExit( "Points depleted." );
+		return qtrue;
 	}
 	if ( level.teamScores[TEAM_RED] <= 0 ) {
 		trap_SendServerCommand( -1, "print \"Red has no points left.\n\"" );

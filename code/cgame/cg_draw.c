@@ -1069,6 +1069,10 @@ static float CG_DrawScores( float y ) {
 	float		y1;
 	gitem_t		*item;
 
+	if ( cgs.gametype == GT_BEACONS ) {
+		return y;		// WALKER: the points are at the top (cg_beacons.c)
+	}
+
 	s1 = cgs.scores1;
 	s2 = cgs.scores2;
 
@@ -2534,7 +2538,7 @@ static void CG_Draw2D( void ) {
 				CG_DrawTimedMenus();
 			}
 #else
-			CG_DrawStatusBar();
+			CG_DrawRobotStatus();		// WALKER: instead of the Q3 status bar (cg_beacons.c)
 #endif
       
 			CG_DrawAmmoWarning();

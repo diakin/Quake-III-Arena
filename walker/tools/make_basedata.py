@@ -1292,6 +1292,30 @@ railDisc
     save('gfx/2d/black.tga', Image.new('RGBA', (8, 8), (0, 0, 0, 255)))
 
 
+def hud_art():
+    """WALKER HUD (cgame/cg_beacons.c): круг маяка и значок робота, белые с прозрачностью -
+    цвет даёт игра (trap_R_SetColor)."""
+    from PIL import ImageDraw
+    scale = 4
+    size = 64
+    disc = Image.new('RGBA', (size * scale, size * scale), (255, 255, 255, 0))
+    ImageDraw.Draw(disc).ellipse([2 * scale, 2 * scale, (size - 2) * scale, (size - 2) * scale], fill=(255, 255, 255, 255))
+    save('gfx/hud/disc.tga', disc.resize((size, size), Image.LANCZOS))
+    ring = Image.new('RGBA', (size * scale, size * scale), (255, 255, 255, 0))
+    ImageDraw.Draw(ring).ellipse([2 * scale, 2 * scale, (size - 2) * scale, (size - 2) * scale], outline=(255, 255, 255, 255), width=5 * scale)
+    save('gfx/hud/ring.tga', ring.resize((size, size), Image.LANCZOS))
+    # значок робота: корпус, две ноги, орудия по бокам (как в списке команды наверху)
+    icon = Image.new('RGBA', (32 * scale, 32 * scale), (255, 255, 255, 0))
+    draw = ImageDraw.Draw(icon)
+    unit = scale
+    draw.rounded_rectangle([9 * unit, 6 * unit, 23 * unit, 17 * unit], radius=3 * unit, fill=(255, 255, 255, 255))
+    draw.rectangle([4 * unit, 9 * unit, 8 * unit, 14 * unit], fill=(255, 255, 255, 255))
+    draw.rectangle([24 * unit, 9 * unit, 28 * unit, 14 * unit], fill=(255, 255, 255, 255))
+    draw.polygon([(11 * unit, 17 * unit), (14 * unit, 17 * unit), (12 * unit, 27 * unit), (8 * unit, 27 * unit)], fill=(255, 255, 255, 255))
+    draw.polygon([(18 * unit, 17 * unit), (21 * unit, 17 * unit), (24 * unit, 27 * unit), (20 * unit, 27 * unit)], fill=(255, 255, 255, 255))
+    save('gfx/hud/robot.tga', icon.resize((32, 32), Image.LANCZOS))
+
+
 def main():
     write('default.cfg', DEFAULT_CFG)
     write('benchmark.txt', BENCHMARK_TXT)
@@ -1306,6 +1330,7 @@ def main():
     misc_2d()
     effects()
     rewards_and_sprites()
+    hud_art()
     count = sum(len(files) for _, _, files in os.walk(OUT))
     print('base data files:', count)
 

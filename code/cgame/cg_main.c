@@ -1051,6 +1051,9 @@ static void CG_RegisterGraphics( void ) {
 	cgs.media.holeMarkShader = trap_R_RegisterShader( "gfx/damage/hole_lg_mrk" );
 	cgs.media.energyMarkShader = trap_R_RegisterShader( "gfx/damage/plasma_mrk" );
 	cgs.media.shadowMarkShader = trap_R_RegisterShader( "markShadow" );
+	cgs.media.hudDisc = trap_R_RegisterShaderNoMip( "gfx/hud/disc.tga" );
+	cgs.media.hudRing = trap_R_RegisterShaderNoMip( "gfx/hud/ring.tga" );
+	cgs.media.hudRobot = trap_R_RegisterShaderNoMip( "gfx/hud/robot.tga" );
 	cgs.media.beaconBeamShader = trap_R_RegisterShader( "beaconBeam" );
 	cgs.media.beaconRingShader = trap_R_RegisterShader( "beaconRing" );
 	cgs.media.barrierShader = trap_R_RegisterShader( "barrierGrid" );

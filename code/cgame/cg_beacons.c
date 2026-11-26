@@ -284,18 +284,203 @@ void CG_AddBeaconRings( void ) {
 
 /*
 =================
+CG_DrawBeaconTop and CG_DrawRobotStatus (WALKER HUD as in War Robots)
+=================
+*/
+#define TOP_DISC		22			// beacon circle
+#define TOP_DISC_GAP	5
+#define TOP_BAR_WIDTH	90
+#define TOP_BAR_HEIGHT	12
+#define TOP_ICON		12			// robot icon of a player
+
+// "33286" -> "33 286"
+static const char *CG_GroupedNumber( int value ) {
+	static char	buffer[32];
+	char		digits[16];
+	int			length, index, out = 0;
+
+	Com_sprintf( digits, sizeof( digits ), "%i", value < 0 ? -value : value );
+	length = strlen( digits );
+	if ( value < 0 ) {
+		buffer[out++] = '-';
+	}
+	for ( index = 0 ; index < length ; index++ ) {
+		if ( index > 0 && ( length - index ) % 3 == 0 ) {
+			buffer[out++] = ' ';
+		}
+		buffer[out++] = digits[index];
+	}
+	buffer[out] = 0;
+	return buffer;
+}
+
+static void CG_DrawTinted( float x, float y, float width, float height, qhandle_t shader, const float *rgb, float alpha ) {
+	vec4_t	color;
+
+	VectorCopy( rgb, color );
+	color[3] = alpha;
+	trap_R_SetColor( color );
+	CG_DrawPic( x, y, width, height, shader );
+	trap_R_SetColor( NULL );
+}
+
+static float CG_Clamp01( float value ) {
+	if ( value < 0 ) {
+		return 0;
+	}
+	if ( value > 1 ) {
+		return 1;
+	}
+	return value;
+}
+
+static void CG_DrawBeaconTop( const entityState_t **states, int count ) {
+	vec4_t		back = { 0.05f, 0.08f, 0.10f, 0.55f }, white = { 1, 1, 1, 1 };
+	vec4_t		fill;
+	const char	*label;
+	int			allyTeam = cg.snap->ps.persistant[PERS_TEAM] == TEAM_RED ? TEAM_RED : TEAM_BLUE;
+	int			enemyTeam = allyTeam == TEAM_RED ? TEAM_BLUE : TEAM_RED;
+	int			allyPoints = allyTeam == TEAM_RED ? cgs.scores1 : cgs.scores2;
+	int			enemyPoints = allyTeam == TEAM_RED ? cgs.scores2 : cgs.scores1;
+	int			maxPoints = atoi( Info_ValueForKey( CG_ConfigString( CS_SERVERINFO ), "g_beaconPoints" ) );
+	int			index, client, allies = 0, enemies = 0, seconds;
+	float		discsWidth, left, right, x, y, barY, share;
+
+	if ( maxPoints <= 0 ) {
+		maxPoints = 1000;
+	}
+
+	// time and the players of both teams
+	y = 4;
+	if ( cgs.timelimit > 0 ) {
+		seconds = ( cgs.timelimit * 60000 - ( cg.time - cgs.levelStartTime ) ) / 1000;
+		if ( seconds < 0 ) {
+			seconds = 0;
+		}
+		label = va( "%02i:%02i", seconds / 60, seconds % 60 );
+		CG_DrawStringExt( 320 - CG_DrawStrlen( label ) * 7, y, label, white, qtrue, qtrue, 14, 18, 0 );
+	}
+	for ( client = 0 ; client < MAX_CLIENTS ; client++ ) {
+		const clientInfo_t	*info = &cgs.clientinfo[client];
+		if ( !info->infoValid || ( info->team != allyTeam && info->team != enemyTeam ) ) {
+			continue;
+		}
+		if ( info->team == allyTeam ) {
+			x = 320 - 44 - ( ++allies ) * ( TOP_ICON + 3 );
+			CG_DrawTinted( x, y + 3, TOP_ICON, TOP_ICON, cgs.media.hudRobot, colorAlly, 1 );
+		} else {
+			x = 320 + 44 + ( enemies++ ) * ( TOP_ICON + 3 );
+			CG_DrawTinted( x, y + 3, TOP_ICON, TOP_ICON, cgs.media.hudRobot, colorEnemy, 1 );
+		}
+	}
+
+	// beacons between the point bars
+	y = 26;
+	discsWidth = count * TOP_DISC + ( count - 1 ) * TOP_DISC_GAP;
+	left = 320 - discsWidth * 0.5f;
+	right = 320 + discsWidth * 0.5f;
+	for ( index = 0 ; index < count ; index++ ) {
+		const entityState_t	*state = states[index];
+		vec3_t				color;
+		char				name[2];
+
+		x = left + index * ( TOP_DISC + TOP_DISC_GAP );
+		// a held beacon in the full team colour, one being taken lighter
+		CG_BeaconColor( CG_BeaconRelative( state ), color );
+		CG_DrawTinted( x - 1, y - 1, TOP_DISC + 2, TOP_DISC + 2, cgs.media.hudDisc, colorBlack, 0.6f );
+		CG_DrawTinted( x, y, TOP_DISC, TOP_DISC, cgs.media.hudDisc, color, 0.92f );
+		if ( state->generic1 == 3 && ( cg.time / 250 ) % 2 ) {
+			CG_DrawTinted( x - 2, y - 2, TOP_DISC + 4, TOP_DISC + 4, cgs.media.hudRing, colorWhite, 1 );
+		}
+		name[0] = 'A' + state->modelindex2;
+		name[1] = 0;
+		CG_DrawStringExt( x + ( TOP_DISC - 12 ) * 0.5f, y + ( TOP_DISC - 14 ) * 0.5f, name, white, qtrue, qtrue, 12, 14, 1 );
+	}
+	if ( count == 0 ) {
+		left = right = 320;
+	}
+
+	// the bars: full at the start, empty when the team has no points left
+	barY = y + ( TOP_DISC - TOP_BAR_HEIGHT ) * 0.5f;
+	share = CG_Clamp01( (float)allyPoints / maxPoints );
+	x = left - 8 - TOP_BAR_WIDTH;
+	CG_FillRect( x, barY, TOP_BAR_WIDTH, TOP_BAR_HEIGHT, back );
+	VectorCopy( colorAlly, fill ); fill[3] = 0.95f;
+	CG_FillRect( x + TOP_BAR_WIDTH * ( 1 - share ), barY, TOP_BAR_WIDTH * share, TOP_BAR_HEIGHT, fill );
+	label = va( "%i", allyPoints );
+	CG_DrawStringExt( x + TOP_BAR_WIDTH - 4 - CG_DrawStrlen( label ) * 7, barY + 1, label, white, qtrue, qtrue, 7, 10, 0 );
+
+	share = CG_Clamp01( (float)enemyPoints / maxPoints );
+	x = right + 8;
+	CG_FillRect( x, barY, TOP_BAR_WIDTH, TOP_BAR_HEIGHT, back );
+	VectorCopy( colorEnemy, fill ); fill[3] = 0.95f;
+	CG_FillRect( x, barY, TOP_BAR_WIDTH * share, TOP_BAR_HEIGHT, fill );
+	label = va( "%i", enemyPoints );
+	CG_DrawStringExt( x + 4, barY + 1, label, white, qtrue, qtrue, 7, 10, 0 );
+}
+
+/*
+=================
+CG_DrawRobotStatus
+
+the own robot in the upper left corner as in War Robots: the pilot's name, the
+structure as a number and a green bar, the shield as a thin blue bar under it,
+the robots left in the hangar (beacon game) as icons
+=================
+*/
+void CG_DrawRobotStatus( void ) {
+	const playerState_t	*ps = &cg.snap->ps;
+	vec4_t		back = { 0.05f, 0.08f, 0.10f, 0.6f }, white = { 1, 1, 1, 1 };
+	vec4_t		green = { 0.16f, 0.72f, 0.52f, 0.95f }, low = { 0.95f, 0.25f, 0.18f, 0.95f };
+	vec4_t		shieldColor = { 0.45f, 0.82f, 1.0f, 0.95f };
+	float		x = 6, y = 4, width = 140, share;
+	float		*barColor;
+	int			health = ps->stats[STAT_HEALTH], maxHealth = ps->stats[STAT_MAX_HEALTH];
+	int			index;
+
+	if ( cg_drawStatus.integer == 0 || health <= 0 ) {
+		return;
+	}
+	CG_DrawStringExt( x, y, cgs.clientinfo[ps->clientNum].name, white, qfalse, qtrue, 7, 10, 24 );
+	y += 12;
+	CG_DrawStringExt( x, y, CG_GroupedNumber( health * ROBOT_HEALTH_SCALE ), white, qtrue, qtrue, 13, 18, 0 );
+	y += 20;
+	share = maxHealth > 0 ? CG_Clamp01( (float)health / maxHealth ) : 1;
+	// a quarter left: the bar turns red and blinks
+	if ( share > 0.25f ) {
+		barColor = green;
+	} else {
+		barColor = ( cg.time >> 8 ) & 1 ? low : back;
+	}
+	CG_FillRect( x, y, width, 10, back );
+	CG_FillRect( x, y, width * share, 10, barColor );
+	y += 11;
+	if ( ps->stats[STAT_MAX_SHIELD] > 0 ) {
+		share = CG_Clamp01( (float)ps->stats[STAT_SHIELD] / ps->stats[STAT_MAX_SHIELD] );
+		CG_FillRect( x, y, width, 4, back );
+		CG_FillRect( x, y, width * share, 4, shieldColor );
+		y += 6;
+	}
+	if ( cgs.gametype == GT_BEACONS ) {
+		for ( index = 0 ; index < ps->stats[STAT_ROBOTS] ; index++ ) {
+			CG_DrawTinted( x + index * 15, y + 1, 13, 13, cgs.media.hudRobot, index == 0 ? colorWhite : colorAlly, index == 0 ? 1.0f : 0.8f );
+		}
+	}
+}
+
+/*
+=================
 CG_DrawBeacons
 
 HUD of the beacon game.
 =================
 */
 void CG_DrawBeacons( void ) {
-	int				index, count = 0, letter, seconds;
+	int				index, count = 0, letter;
 	const entityState_t	*states[8];
 	const entityState_t	*standing = NULL;
-	float			x, y, size = 26, gap = 6, relative;
+	float			x, y, relative;
 	vec4_t			fill, frame = { 0, 0, 0, 0.8f }, text = { 1, 1, 1, 1 };
-	int				allyPoints, enemyPoints;
 	const char		*label;
 
 	if ( cgs.gametype != GT_BEACONS || !cg.snap ) {
@@ -317,27 +502,13 @@ void CG_DrawBeacons( void ) {
 		states[place] = moved;
 	}
 
-	// letters at the top
-	x = 320 - ( count * size + ( count - 1 ) * gap ) * 0.5f;
-	y = 6;
+	// WALKER: the top of the screen as in War Robots: the time in the middle, the players
+	// of both teams beside it, under it the beacons as circles between the bars of the
+	// team points (own team blue on the left, the other red on the right; a bar shrinks
+	// towards its outer end)
+	CG_DrawBeaconTop( states, count );
+
 	for ( index = 0 ; index < count ; index++ ) {
-		vec3_t	color;
-		char	name[2];
-
-		relative = CG_BeaconRelative( states[index] );
-		CG_BeaconColor( relative, color );
-		VectorCopy( color, fill );
-		fill[3] = 0.85f;
-		CG_FillRect( x - 2, y - 2, size + 4, size + 4, frame );
-		CG_FillRect( x, y, size, size, fill );
-		if ( states[index]->generic1 == 3 && ( cg.time / 250 ) % 2 ) {
-			CG_DrawRect( x - 2, y - 2, size + 4, size + 4, 2, colorWhite );
-		}
-		name[0] = 'A' + states[index]->modelindex2;
-		name[1] = 0;
-		CG_DrawStringExt( x + ( size - 16 ) * 0.5f, y + ( size - 16 ) * 0.5f, name, colorBlack, qtrue, qfalse, 16, 16, 1 );
-		x += size + gap;
-
 		// is the player on this beacon?
 		if ( cg.snap->ps.stats[STAT_HEALTH] > 0 && cg.snap->ps.persistant[PERS_TEAM] != TEAM_SPECTATOR ) {
 			float	dx = cg.predictedPlayerState.origin[0] - states[index]->pos.trBase[0];
@@ -348,30 +519,6 @@ void CG_DrawBeacons( void ) {
 				standing = states[index];
 			}
 		}
-	}
-
-	// points and time under the letters: own team on the left
-	if ( cg.snap->ps.persistant[PERS_TEAM] == TEAM_RED ) {
-		allyPoints = cgs.scores1;
-		enemyPoints = cgs.scores2;
-	} else {
-		allyPoints = cgs.scores2;
-		enemyPoints = cgs.scores1;
-	}
-	y += size + 8;
-	VectorCopy( colorAlly, fill ); fill[3] = 1;
-	label = va( "%i", allyPoints );
-	CG_DrawStringExt( 320 - 60 - CG_DrawStrlen( label ) * 12, y, label, fill, qtrue, qtrue, 12, 16, 0 );
-	VectorCopy( colorEnemy, fill ); fill[3] = 1;
-	label = va( "%i", enemyPoints );
-	CG_DrawStringExt( 320 + 60, y, label, fill, qtrue, qtrue, 12, 16, 0 );
-	if ( cgs.timelimit > 0 ) {
-		seconds = ( cgs.timelimit * 60000 - ( cg.time - cgs.levelStartTime ) ) / 1000;
-		if ( seconds < 0 ) {
-			seconds = 0;
-		}
-		label = va( "%i:%02i", seconds / 60, seconds % 60 );
-		CG_DrawStringExt( 320 - CG_DrawStrlen( label ) * 6, y, label, text, qtrue, qtrue, 12, 16, 0 );
 	}
 
 	// capture bar when standing on a beacon
@@ -482,11 +629,10 @@ void CG_DrawHealthBars( void ) {
 		}
 	}
 
-	// robots left in the hangar (beacon capture)
+	// beacon capture: waiting for the next robot from the hangar
 	if ( cgs.gametype == GT_BEACONS && myTeam != TEAM_SPECTATOR ) {
-		const char	*label = va( "ROBOTS LEFT %i", cg.snap->ps.stats[STAT_ROBOTS] > 0 ? cg.snap->ps.stats[STAT_ROBOTS] : 0 );
 		vec4_t		color = { 1, 1, 1, 0.9f };
-		CG_DrawStringExt( 8, 420, label, color, qtrue, qtrue, 10, 14, 0 );
+		// the count itself: robot icons under the structure bar (CG_DrawRobotStatus)
 		if ( cg.snap->ps.stats[STAT_HEALTH] <= 0 && cg.snap->ps.stats[STAT_ROBOTS] > 1 ) {
 			CG_DrawStringExt( 320 - 13 * 6, 200, "NEXT ROBOT...", color, qtrue, qtrue, 12, 16, 0 );
 		}
