@@ -58,6 +58,11 @@ void VM_Debug( int level ) {
 	vm_debugLevel = level;
 }
 
+// WALKER: the module runs from a dll (benchmark report)
+qboolean VM_IsNative( vm_t *vm ) {
+	return vm && vm->dllHandle != NULL;
+}
+
 /*
 ==============
 VM_Init
@@ -67,6 +72,10 @@ void VM_Init( void ) {
 	Cvar_Get( "vm_cgame", "2", CVAR_ARCHIVE );	// !@# SHIP WITH SET TO 2
 	Cvar_Get( "vm_game", "2", CVAR_ARCHIVE );	// !@# SHIP WITH SET TO 2
 	Cvar_Get( "vm_ui", "2", CVAR_ARCHIVE );		// !@# SHIP WITH SET TO 2
+	// WALKER: the server game and the cgame from basewalker/qagamex86.dll and cgamex86.dll
+	// (native code; the QVMs only when a dll is missing or this is 0). vm_game and
+	// vm_cgame stay as they were in the configs (Q3 saved them as 2)
+	Cvar_Get( "com_nativeGame", "1", CVAR_ARCHIVE );
 
 	Cmd_AddCommand ("vmprofile", VM_VmProfile_f );
 	Cmd_AddCommand ("vminfo", VM_VmInfo_f );
@@ -325,7 +334,11 @@ Dlls will call this directly
 ============
 */
 int QDECL VM_DllSyscall( int arg, ... ) {
-#if ((defined __linux__) && (defined __powerpc__))
+	// WALKER: the arguments through va_arg on every system. "&arg" relied on the
+	// arguments lying on the stack right after it, which the compiler does not
+	// promise: gcc -O2 took the address of a copy, the game dll's pointers came out
+	// as garbage and botlib wrote to it (crash in BotGetTopGoal, 26.11.2026)
+#if 1
   // rcg010206 - see commentary above
   int args[16];
   int i;
@@ -334,7 +347,7 @@ int QDECL VM_DllSyscall( int arg, ... ) {
   args[0] = arg;
   
   va_start(ap, arg);
-  for (i = 1; i < sizeof (args) / sizeof (args[i]); i++)
+  for (i = 1; i < (int)( sizeof (args) / sizeof (args[i]) ); i++)
     args[i] = va_arg(ap, int);
   va_end(ap);
   
@@ -470,6 +483,12 @@ vm_t *VM_Create( const char *module, int (*systemCalls)(int *),
 
 	Q_strncpyz( vm->name, module, sizeof( vm->name ) );
 	vm->systemCall = systemCalls;
+
+	// WALKER: the native game code first (see VM_Init); also on a pure server, whose
+	// check was meant for mods: the dlls come with the game
+	if ( Cvar_VariableIntegerValue( "com_nativeGame" ) && ( !Q_stricmp( module, "qagame" ) || !Q_stricmp( module, "cgame" ) ) ) {
+		interpret = VMI_NATIVE;
+	}
 
 	// never allow dll loading with a demo
 	if ( interpret == VMI_NATIVE ) {

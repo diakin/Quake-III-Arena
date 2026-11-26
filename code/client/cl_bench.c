@@ -26,6 +26,7 @@ This file is part of WALKER, based on the Quake III Arena source code
 #include "client.h"
 
 char	*FS_BuildOSPath( const char *base, const char *game, const char *qpath );	// files.c
+extern vm_t	*gvm;		// server.h: the server game
 
 #define BENCH_FILE			"benchmark.txt"
 #define BENCH_LOG			"benchmark.log"
@@ -445,8 +446,10 @@ static void Bench_Report( void ) {
 		Cvar_VariableString( "r_picmip" ), Cvar_VariableString( "r_sunShadows" ), Cvar_VariableString( "cg_shadows" ),
 		Cvar_VariableString( "r_noportals" ), Cvar_VariableString( "r_drawfog" ), Cvar_VariableString( "r_dynamiclight" ),
 		Cvar_VariableString( "r_mode" ), Cvar_VariableString( "r_vertexLight" ), Cvar_VariableString( "r_glsl" ), Cvar_VariableString( "r_smp" ), Cvar_VariableString( "r_vbo" ) ) );
+	Q_strcat( report, sizeof( report ), va( "game code: server game %s, cgame %s\n",
+		VM_IsNative( gvm ) ? "dll" : "qvm (interpreted)", VM_IsNative( cgvm ) ? "dll" : "qvm (interpreted)" ) );
 	Q_strcat( report, sizeof( report ), "times: msec a frame on average; bots = bot AI, server = the rest of the server game,\n"
-		"client = client and cgame, cgame = its part in the cgame (an interpreted qvm), front = renderer scene,\n"
+		"client = client and cgame, cgame = its part in the cgame (dll or qvm: see game code), front = renderer scene,\n"
 		"back = GL calls and the video card\n" );
 	Q_strcat( report, sizeof( report ), "worst = the longest frame, msec; lag = how far the server answer fell behind at most, msec\n"
 		"(\"Connection Interrupted\" shows past about 64 frames), lag>1s = share of frames with it over a second\n" );

@@ -13,3 +13,5 @@ walker/dist/botlib.log
 walker/dist/basewalker/balance.cfg
 walker/dist/basewalker/sysinfo.txt
 walker/dist/basewalker/benchmark.log
+code/build-dll-*/
+walker/dist/basewalker/*.dll

@@ -290,11 +290,16 @@ static int BotWalkerRoamGoal(bot_state_t *bs, bot_goal_t *goal) {
 		if (!Q_stricmp(ent->classname, "target_location")) {
 			// beacons count three times: they are where the fights are
 			for (attempt = 0; attempt < 3 && numcandidates < 64; attempt++) {
-				VectorCopy(ent->s.origin, candidates[numcandidates++]);
+				// VectorCopy is a macro: "candidates[numcandidates++]" in it went up by
+				// three, wrote one coordinate into each of three points and past the
+				// end of the array (the native game dll crashed on it, 26.11.2026)
+				VectorCopy(ent->s.origin, candidates[numcandidates]);
+				numcandidates++;
 			}
 		}
 		else if (!Q_stricmp(ent->classname, "info_player_deathmatch")) {
-			VectorCopy(ent->s.origin, candidates[numcandidates++]);
+			VectorCopy(ent->s.origin, candidates[numcandidates]);
+			numcandidates++;
 		}
 	}
 	if (!numcandidates) return qfalse;

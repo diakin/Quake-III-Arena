@@ -545,7 +545,7 @@ void * QDECL Sys_LoadDll( const char *name, char *fqpath , int (QDECL **entryPoi
 
 	Com_sprintf( filename, sizeof( filename ), "%sx86.dll", name );
 
-#ifdef NDEBUG
+#if 0	// WALKER: the game's own dlls in basewalker, no warning box (was NDEBUG)
 	timestamp = Sys_Milliseconds();
 	if( ((timestamp - lastWarning) > (5 * 60000)) && !Cvar_VariableIntegerValue( "dedicated" )
 		&& !Cvar_VariableIntegerValue( "com_blindlyLoadDLLs" ) ) {

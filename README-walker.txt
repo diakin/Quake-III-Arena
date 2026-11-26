@@ -24,20 +24,28 @@ WALKER - игра про шагающих роботов на движке Quake
 
 1. Сборка (из папки code):
      mingw32-make -f Makefile.mingw
-   Цели: all (по умолчанию) = engine + qvm; engine - только Walker.exe;
-   qvm - только игровые модули; clean - удалить результаты сборки.
+   Цели: all (по умолчанию) = engine + dll + qvm; engine - только Walker.exe;
+   dll - игровой код сервера и cgame в машинных кодах (basewalker/qagamex86.dll,
+   cgamex86.dll); qvm - игровые модули байт-кодом; clean - удалить результаты сборки.
 
    Порядок внутри all:
    - engine: code/*.c -> code/build-mingw/*.o -> walker/dist/Walker.exe
    - qvm (code/Makefile.qvm): сначала инструменты из исходников репозитория
      (lcc/: lburg, rcc, cpp; q3asm/) в code/build-qvm-tools, затем
      code/game, code/cgame, code/q3_ui -> walker/dist/basewalker/vm/qagame.qvm, cgame.qvm, ui.qvm
+   - dll: code/game, code/cgame -> code/build-dll-game, build-dll-cgame -> basewalker/qagamex86.dll,
+     cgamex86.dll. С 26.11.2026 игра берёт их вместо qvm (com_nativeGame 1, по умолчанию;
+     0 - снова qvm). QVM в этой сборке шли в интерпретаторе (у MinGW нет генератора кода
+     vm_x86.c): ИИ ботов, игра сервера и cgame занимали около половины кадра боя на FX-6300.
+     Если dll нет, берётся qvm. Меню (ui) осталось qvm. Чистота сервера (sv_pure) dll не
+     запрещает: они идут с игрой, а не с модом.
 
 2. Готовая папка игры - walker/dist:
      Walker.exe
      basewalker/pak0.pk3        (данные, в репозитории)
      basewalker/wk_islands.pk3  (карта, в репозитории)
      basewalker/vm/*.qvm        (только что собранные модули)
+     basewalker/qagamex86.dll, cgamex86.dll  (игровой код в машинных кодах)
    Файлы из папки basewalker имеют приоритет над теми же файлами внутри pk3, поэтому
    собранные QVM заменяют старые копии из pak0.pk3.
 
@@ -110,7 +118,7 @@ benchmark stop - прервать. Результат дописывается �
                      OpenGL и ожидание видеокарты (на время замера r_finish 1, шаг real_fps -
                      без него), остаток - звук, окно, ввод;
   cgame            - часть client, ушедшая на cgame (без сборки сцены рендером, она в front);
-                     cgame - интерпретируемый qvm;
+                     cgame - dll или qvm (строка "game code" в отчёте);
   worst            - самый долгий кадр, мс;
   lag, lag>1s      - насколько ответ сервера отставал от команд игрока (максимум, мс) и доля
                      кадров с отставанием больше секунды; "Connection Interrupted" появляется

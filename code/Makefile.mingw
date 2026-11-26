@@ -3,6 +3,7 @@
 # Windows (from the "code" directory, 32-bit MinGW in PATH):
 #   mingw32-make -f Makefile.mingw          Walker.exe + QVM (target all)
 #   mingw32-make -f Makefile.mingw engine   Walker.exe only
+#   mingw32-make -f Makefile.mingw dll      qagamex86.dll + cgamex86.dll (native game code)
 #   mingw32-make -f Makefile.mingw qvm      QVM only (see Makefile.qvm)
 #   mingw32-make -f Makefile.mingw clean
 #
@@ -70,7 +71,7 @@ BOTLIB_SRC = be_aas_bspq3.c be_aas_cluster.c be_aas_debug.c be_aas_entity.c \
 	be_interface.c l_crc.c l_libvar.c l_log.c l_memory.c l_precomp.c l_script.c \
 	l_struct.c
 
-vpath %.c client qcommon game server win32 renderer jpeg-6 botlib
+vpath %.c client qcommon game server win32 renderer jpeg-6 botlib cgame
 
 ENGINE_SRC = $(CLIENT_SRC) $(QCOMMON_SRC) $(GAME_SRC) $(SERVER_SRC) $(WIN32_SRC) \
 	$(RENDERER_SRC) $(JPEG_SRC)
@@ -80,7 +81,48 @@ RES = $(BUILD_DIR)/winquake.res
 
 $(BOTLIB_OBJS): CFLAGS += -DBOTLIB
 
-all: engine qvm
+# WALKER: the server game and the cgame as native DLLs (basewalker/qagamex86.dll,
+# cgamex86.dll). The engine loads them instead of the QVMs (vm_game / vm_cgame 0,
+# the default), the QVMs stay as the fallback; the interpreter ran the game code
+# several times slower (bot AI, the server game and the cgame were about half of a
+# frame of a battle on an FX-6300). The menu (ui) stays a QVM.
+DLL_DIR = ../walker/dist/basewalker
+GAME_DLL = $(DLL_DIR)/qagamex86.dll
+CGAME_DLL = $(DLL_DIR)/cgamex86.dll
+DLL_CFLAGS = -O2 -fno-strict-aliasing -fcommon $(WARNINGS) -DWIN32 -D_WINDOWS -DNDEBUG
+DLL_LDFLAGS = -shared -static-libgcc $(DLL_STRIP)
+DLL_STRIP ?= -s
+
+GAME_DLL_SRC = g_main.c bg_misc.c bg_pmove.c bg_slidemove.c q_math.c q_shared.c \
+	ai_dmnet.c ai_dmq3.c ai_team.c ai_main.c ai_chat.c ai_cmd.c ai_vcmd.c \
+	g_active.c g_arenas.c g_bot.c g_client.c g_cmds.c g_combat.c g_items.c g_mem.c g_misc.c \
+	g_missile.c g_mover.c g_session.c g_spawn.c g_svcmds.c g_target.c g_team.c g_trigger.c \
+	g_utils.c g_weapon.c g_beacons.c g_robots.c bg_robots.c g_syscalls.c
+CGAME_DLL_SRC = cg_main.c cg_consolecmds.c cg_draw.c cg_drawtools.c cg_effects.c cg_ents.c \
+	cg_event.c cg_info.c cg_localents.c cg_marks.c cg_players.c cg_playerstate.c cg_predict.c \
+	cg_scoreboard.c cg_servercmds.c cg_snapshot.c cg_view.c cg_weapons.c cg_beacons.c cg_target.c \
+	bg_slidemove.c bg_pmove.c bg_misc.c bg_robots.c q_math.c q_shared.c cg_syscalls.c
+GAME_DLL_OBJS = $(addprefix build-dll-game/,$(GAME_DLL_SRC:.c=.o))
+CGAME_DLL_OBJS = $(addprefix build-dll-cgame/,$(CGAME_DLL_SRC:.c=.o))
+
+all: engine dll qvm
+
+dll: $(GAME_DLL) $(CGAME_DLL)
+
+$(GAME_DLL): $(GAME_DLL_OBJS) game/game.def
+	$(CC) $(DLL_LDFLAGS) -o $@ $(GAME_DLL_OBJS) game/game.def -lm
+
+$(CGAME_DLL): $(CGAME_DLL_OBJS) cgame/cgame.def
+	$(CC) $(DLL_LDFLAGS) -o $@ $(CGAME_DLL_OBJS) cgame/cgame.def -lm
+
+build-dll-game/%.o: %.c $(HEADERS) | build-dll-game
+	$(CC) $(DLL_CFLAGS) -Igame -c $< -o $@
+
+build-dll-cgame/%.o: %.c $(HEADERS) | build-dll-cgame
+	$(CC) $(DLL_CFLAGS) -Icgame -Igame -c $< -o $@
+
+build-dll-game build-dll-cgame:
+	-mkdir $@
 
 engine: $(TARGET)
 
@@ -105,12 +147,14 @@ $(BUILD_DIR):
 ifeq ($(OS),Windows_NT)
 clean:
 	-if exist $(BUILD_DIR) rmdir /s /q $(BUILD_DIR)
+	-if exist build-dll-game rmdir /s /q build-dll-game
+	-if exist build-dll-cgame rmdir /s /q build-dll-cgame
 	-del /q ..\walker\dist\Walker.exe 2>nul
 	$(MAKE) -f Makefile.qvm clean
 else
 clean:
-	-rm -rf $(BUILD_DIR) $(TARGET)
+	-rm -rf $(BUILD_DIR) $(TARGET) build-dll-game build-dll-cgame $(GAME_DLL) $(CGAME_DLL)
 	$(MAKE) -f Makefile.qvm clean
 endif
 
-.PHONY: all engine qvm clean
+.PHONY: all engine dll qvm clean
