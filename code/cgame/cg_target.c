@@ -121,7 +121,8 @@ CG_TargetDistance
 =================
 */
 static float CG_TargetDistance( centity_t *cent ) {
-	return Distance( cent->lerpOrigin, cg.predictedPlayerState.origin );
+	// metres, as the weapon ranges and the frame label
+	return Distance( cent->lerpOrigin, cg.predictedPlayerState.origin ) / ROBOT_UNITS_PER_METRE;
 }
 
 

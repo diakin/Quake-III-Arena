@@ -2703,8 +2703,15 @@ bot_moveresult_t BotAttackMove(bot_state_t *bs, int tfl) {
 		attack_range = 0;
 	}
 	else {
-		attack_dist = IDEAL_ATTACKDIST;
-		attack_range = 40;
+		// WALKER: a robot keeps 40 % of its longest weapon range (Q3: 140 units), at 1 m =
+		// 5 units an OSA (450 m) fights from about 180 m
+		attack_dist = G_RobotReach( &level.clients[bs->client] ) * 0.4f;
+		if ( attack_dist < IDEAL_ATTACKDIST ) {
+			attack_dist = IDEAL_ATTACKDIST;
+		} else if ( attack_dist > 2000 ) {
+			attack_dist = 2000;
+		}
+		attack_range = attack_dist * 0.25f;
 	}
 	//if the bot is stupid
 	if (attack_skill <= 0.4) {

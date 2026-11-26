@@ -294,6 +294,26 @@ G_RobotSpeed
 ps.speed of the current robot
 =================
 */
+/*
+=================
+G_RobotReach
+
+units: the longest range of the weapons of the current robot (bots keep a distance by it)
+=================
+*/
+float G_RobotReach( gclient_t *client ) {
+	battleRobot_t	*robot = G_RobotCurrent( client );
+	int				slot, reach = 0;
+
+	for ( slot = 0 ; slot < ROBOT_MAX_SLOTS ; slot++ ) {
+		int		type = robot->weapons[slot].type;
+		if ( type >= 0 && type < RWEAPON_COUNT && bg_robotWeapons[type].range > reach ) {
+			reach = bg_robotWeapons[type].range;
+		}
+	}
+	return reach * ROBOT_UNITS_PER_METRE;
+}
+
 float G_RobotSpeed( gclient_t *client ) {
 	battleRobot_t	*robot = G_RobotCurrent( client );
 	return BG_RobotSpeed( robot->type, robot->level ) * g_speed.value / ROBOT_SPEED_UNITS;

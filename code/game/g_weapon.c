@@ -1043,6 +1043,7 @@ void G_RobotFireWeapon( gentity_t *ent, int slot, int weapon, int weaponLevel ) 
 	trace_t		trace;
 	gentity_t	*tent, *missile;
 	int			damage = BG_WeaponDamage( weapon, weaponLevel ) / ROBOT_HEALTH_SCALE;
+	float		range = info->range * ROBOT_UNITS_PER_METRE;		// the tables are in metres
 
 	if ( damage < 1 ) {
 		damage = 1;
@@ -1062,7 +1063,7 @@ void G_RobotFireWeapon( gentity_t *ent, int slot, int weapon, int weaponLevel ) 
 	VectorCopy( trace.endpos, muzzle );
 
 	// the guns on both sides meet at the point along the view
-	VectorMA( eye, info->range, forward, target );
+	VectorMA( eye, range, forward, target );
 	trap_Trace( &trace, eye, NULL, NULL, target, ent->s.number, MASK_SHOT );
 	VectorSubtract( trace.endpos, muzzle, direction );
 	if ( VectorNormalize( direction ) > 1 && DotProduct( direction, forward ) > 0.25f ) {
@@ -1079,7 +1080,7 @@ void G_RobotFireWeapon( gentity_t *ent, int slot, int weapon, int weaponLevel ) 
 
 	switch ( info->fire ) {
 	case WFIRE_BULLET:
-		bulletRange = info->range;
+		bulletRange = range;
 		Bullet_Fire( ent, info->spread, damage );
 		bulletRange = 8192 * 16;
 		break;
@@ -1090,12 +1091,12 @@ void G_RobotFireWeapon( gentity_t *ent, int slot, int weapon, int weaponLevel ) 
 		missile->splashDamage = damage / 2;
 		missile->splashRadius = info->splashRadius;
 		missile->s.generic1 = weapon + 1;		// cgame: how to draw it (cg_ents.c)
-		VectorScale( forward, info->projectileSpeed, missile->s.pos.trDelta );
+		VectorScale( forward, info->projectileSpeed * ROBOT_UNITS_PER_METRE, missile->s.pos.trDelta );
 		SnapVector( missile->s.pos.trDelta );
-		missile->nextthink = level.time + info->range * 1000 / info->projectileSpeed;	// bursts at its range
+		missile->nextthink = level.time + info->range * 1000 / info->projectileSpeed;	// bursts at its range (metres / m/s)
 		break;
 	case WFIRE_RAIL:
-		Robot_Rail( ent, damage, info->range );
+		Robot_Rail( ent, damage, range );
 		break;
 	}
 }

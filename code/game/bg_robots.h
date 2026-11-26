@@ -26,7 +26,10 @@ This file is part of WALKER, based on the Quake III Arena source code
 #define	WEAPON_LEVELS			12
 #define	ROBOT_HEALTH_SCALE		10		// structure and shield in the game: real value / 10
 #define	ROBOT_HANGAR_SIZE		5		// bays of a hangar, robots a player takes into a battle
-#define	ROBOT_SPEED_UNITS		38.0f	// km/h that move a robot at g_speed units per second
+#define	ROBOT_UNITS_PER_METRE	5		// scale of the world: a robot of 60 units is 12 m tall, as
+										// War Robots looks at the same distance (27.11.2026)
+#define	ROBOT_SPEED_UNITS		39.6f	// km/h that move a robot at g_speed units per second:
+										// g_speed 55 = 39.6 km/h = 11 m/s = 55 units at 5 units per metre
 #define	ROBOT_MAX_SLOTS			3		// weapon slots of a robot (tag_weapon1 .. tag_weapon3)
 
 typedef enum {
@@ -84,9 +87,9 @@ typedef struct {
 	int			fire;			// weaponFire_t
 	int			damage;			// level 1, per hit (a shell: at the point of impact)
 	int			interval;		// level 1, msec between shots
-	int			range;			// units, shown as metres (1 unit = 1 m), the same on every level
-	int			splashRadius;	// shells
-	int			projectileSpeed;// shells, units per second
+	int			range;			// metres (x ROBOT_UNITS_PER_METRE in the world), the same on every level
+	int			splashRadius;	// shells, units (it goes with the size of the robots, not the range)
+	int			projectileSpeed;// shells, metres per second (x ROBOT_UNITS_PER_METRE in the world)
 	int			spread;			// bullets, Quake spread (the machine gun has 200)
 	int			price;			// currency
 	int			length;			// from the mount to the muzzle (tag_flash of the model), units

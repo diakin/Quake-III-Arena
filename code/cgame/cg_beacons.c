@@ -567,7 +567,7 @@ health in percent in entityState generic1 (g_active.c, ClientEndFrame).
 =================
 */
 #define HEALTH_BAR_HEIGHT		108		// over the robot's origin
-#define HEALTH_BAR_DISTANCE		3000
+#define HEALTH_BAR_DISTANCE		6000	// units, 1200 m
 #define HEALTH_BAR_WIDTH		40
 #define SET_COLOR( c, r, g, b, a )	( (c)[0] = (r), (c)[1] = (g), (c)[2] = (b), (c)[3] = (a) )
 

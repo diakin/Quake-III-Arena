@@ -55,7 +55,9 @@ static char		s_backgroundLoop[MAX_QPATH];
 // only begin attenuating sound volumes when outside the FULLVOLUME range
 #define		SOUND_FULLVOLUME	80
 
-#define		SOUND_ATTENUATE		0.0008f
+// WALKER: 0.0003 (Q3 0.0008): silent at about 3400 units = 680 m at 1 m = 5 units, the
+// weapons reach up to 1000 m (Q3 went silent at 1330 units)
+#define		SOUND_ATTENUATE		0.0003f
 
 channel_t   s_channels[MAX_CHANNELS];
 channel_t   loop_channels[MAX_CHANNELS];

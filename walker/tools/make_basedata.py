@@ -89,7 +89,8 @@ set fraglimit 0
 set timelimit 0
 set bench_players 10        // start when this many robots are in the battle (at most 2 minutes)
 set bench_seconds 10        // a step
-map wk_islands
+// the map is started by the engine after this file: bench_map (wk_islands; another one:
+// WalkerBench.exe +set bench_map wk_bigbeacons), qcommon/common.c
 """
 
 
