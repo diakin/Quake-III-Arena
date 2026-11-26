@@ -1505,6 +1505,9 @@ SHADOWS
 */
 
 void RB_ShadowTessEnd( void );
+void R_ShadowBuildMesh( md3Header_t *header );		// WALKER: shadow volume topology of a model
+void R_ShadowShutdownMeshes( void );
+qboolean RB_MeshShadow( md3Surface_t *surface );
 void RB_ShadowFinish( qboolean sunShadows );
 
 // WALKER: sun shadows of the buildings (tr_sunshadow.c)

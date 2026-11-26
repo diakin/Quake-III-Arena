@@ -2214,6 +2214,12 @@ void RB_EndSurface( void ) {
 
 	input = &tess;
 
+	// WALKER: the shadow quads collected without the tess arrays (RB_MeshShadow)
+	if ( tess.shader == tr.shadowShader ) {
+		RB_ShadowTessEnd();
+		return;
+	}
+
 	if ( input->numIndexes == 0 && input->numVboRanges == 0 ) {
 		return;
 	}
@@ -2223,11 +2229,6 @@ void RB_EndSurface( void ) {
 	}	
 	if (input->xyz[SHADER_MAX_VERTEXES-1][0] != 0) {
 		ri.Error (ERR_DROP, "RB_EndSurface() - SHADER_MAX_VERTEXES hit");
-	}
-
-	if ( tess.shader == tr.shadowShader ) {
-		RB_ShadowTessEnd();
-		return;
 	}
 
 	// for debugging of sort order issues, stop rendering after a given sort value

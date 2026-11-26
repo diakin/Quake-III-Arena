@@ -2187,8 +2187,19 @@ about as wide as the robot.
 ===============
 */
 static float CG_RobotSpotRadius( const clientInfo_t *ci ) {
+	// WALKER: kept for the models (two model bounds calls a robot a frame in the
+	// interpreted cgame otherwise)
+	static qhandle_t	cachedLegs[MAX_CLIENTS], cachedTorso[MAX_CLIENTS];
+	static float		cachedRadius[MAX_CLIENTS];
+	int					slot = ( ci - cgs.clientinfo ) & ( MAX_CLIENTS - 1 );
 	vec3_t	mins, maxs;
 	float	half = 0;
+
+	if ( cachedRadius[slot] > 0 && cachedLegs[slot] == ci->legsModel && cachedTorso[slot] == ci->torsoModel ) {
+		return cachedRadius[slot];
+	}
+	cachedLegs[slot] = ci->legsModel;
+	cachedTorso[slot] = ci->torsoModel;
 
 	if ( ci->legsModel ) {
 		trap_R_ModelBounds( ci->legsModel, mins, maxs );
@@ -2200,8 +2211,9 @@ static float CG_RobotSpotRadius( const clientInfo_t *ci ) {
 		half = SPOT_MAX( half, SPOT_MAX( maxs[1], -mins[1] ) );
 	}
 	if ( half < 8 ) {
-		return ROBOT_SPOT_RADIUS;
+		half = ROBOT_SPOT_RADIUS;
 	}
+	cachedRadius[slot] = half;
 	return half;
 }
 #define	SHADE_FADE_TIME		250
@@ -2223,17 +2235,27 @@ static float CG_RobotShade( centity_t *cent ) {
 
 	char		*text;
 	int			axis;
+	// WALKER: the direction is read again only when the cvar changes (parsing it for
+	// every robot every frame cost in the interpreted cgame)
+	static int		sunModification = -1;
+	static vec3_t	sunCached;
+	static qboolean	sunValid;
 
-	if ( !r_sunDirection.string[0] ) {
+	if ( r_sunDirection.modificationCount != sunModification ) {
+		sunModification = r_sunDirection.modificationCount;
+		sunValid = qfalse;
+		if ( r_sunDirection.string[0] ) {
+			text = r_sunDirection.string;
+			for ( axis = 0 ; axis < 3 ; axis++ ) {
+				sunCached[axis] = atof( COM_Parse( &text ) );
+			}
+			sunValid = VectorNormalize( sunCached ) >= 0.5f;
+		}
+	}
+	if ( !sunValid ) {
 		return 0;
 	}
-	text = r_sunDirection.string;
-	for ( axis = 0 ; axis < 3 ; axis++ ) {
-		sun[axis] = atof( COM_Parse( &text ) );
-	}
-	if ( VectorNormalize( sun ) < 0.5f ) {
-		return 0;
-	}
+	VectorCopy( sunCached, sun );
 	// from the middle of the robot body toward the sun; the sky stops the trace too, but
 	// marks it with SURF_SKY. A trace 4000 units long through the map took about 0.3 ms
 	// a robot (benchmark: 3 ms a frame with 10 robots), so it is done a few times a second

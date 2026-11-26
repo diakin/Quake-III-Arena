@@ -784,6 +784,11 @@ void RB_SurfaceMesh(md3Surface_t *surface) {
 	int				Bob, Doug;
 	int				numVerts;
 
+	// WALKER: the shadow volume from the topology of the surface (tr_shadows.c)
+	if ( tess.shader == tr.shadowShader && RB_MeshShadow( surface ) ) {
+		return;
+	}
+
 	// WALKER: in video memory (tr_vbo.c): only the range of indexes; the frames are
 	// blended by the program at the end of the batch (tr_shade.c, RB_DrawMeshVBO)
 	if ( tess.meshAllowed ) {

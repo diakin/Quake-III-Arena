@@ -216,6 +216,7 @@ qhandle_t RE_RegisterModel( const char *name ) {
 			numLoaded++;
 			if ( mod->type == MOD_MESH ) {
 				R_VBOBuildMesh( mod->md3[lod] );	// WALKER: its frames into video memory (tr_vbo.c)
+				R_ShadowBuildMesh( mod->md3[lod] );	// and its shadow volume topology (tr_shadows.c)
 			}
 			// if we have a valid model and are biased
 			// so that we won't see any higher detail ones,

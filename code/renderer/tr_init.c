@@ -1171,6 +1171,7 @@ void RE_Shutdown( qboolean destroyWindow ) {
 		R_DeleteTextures();
 		R_VBOShutdown();	// WALKER: the map's buffers
 		R_VBOShutdownMeshes();	// and the models'
+		R_ShadowShutdownMeshes();	// and the shadow volume topology (hunk memory, freed with it)
 		R_SunShadowShutdownGL();	// and the sun shadow volumes'
 	}
 
