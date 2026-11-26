@@ -745,6 +745,7 @@ void	CL_BenchFrame( int frameMsec, int serverMsec, int clientMsec );	// cl_bench
 void	Sys_SystemReport( char *buffer, int size, const char *glVendor, const char *glRenderer, const char *glVersion );
 // WALKER: the benchmark exe (a copy of Walker.exe with "bench" in its name, win_sysinfo.c)
 qboolean Sys_IsBenchmarkExe( void );
+void Sys_BenchDisableComposition( void );		// WALKER: no desktop composition while the benchmark runs
 void	Sys_ShowFile( const char *path );		// open in the program Windows uses for it
 extern	qboolean	com_benchExe;
 void	CL_BenchAutoStart( void );				// cl_bench.c

@@ -2440,6 +2440,7 @@ void Com_Init( char *commandLine ) {
 	if ( com_benchExe ) {
 		Cvar_Set( "r_mode", "6" );
 		Cvar_Set( "r_fullscreen", "0" );
+		Sys_BenchDisableComposition();		// the window is not tied to the screen refresh (win_sysinfo.c)
 	}
 
 	// override anything from the config files with command line args

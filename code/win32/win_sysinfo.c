@@ -405,6 +405,70 @@ static void Check( int level, const char *format, ... ) {
 
 /*
 =================
+Sys_BenchDisableComposition / Report_Composition
+
+WALKER: desktop composition (Aero, Windows Vista and 7) shows a window through
+the desktop window manager, which draws the screen at its refresh rate. In the
+benchmark (a window, glFinish every frame) whole steps ran at exactly the
+refresh rate, 62.5 fps on a 60 Hz screen, and others at 120 with the same
+picture (26.11.2026). The benchmark exe turns composition off for its own run:
+Windows turns it on again when the program ends. Windows 8 and later can not
+turn it off.
+=================
+*/
+typedef HRESULT ( WINAPI *dwmIsCompositionEnabled_t )( BOOL *enabled );
+typedef HRESULT ( WINAPI *dwmEnableComposition_t )( UINT action );
+
+static int		compositionState = -1;		// -1 unknown, 0 off, 1 on
+static qboolean	compositionTurnedOff;
+
+static int Sys_CompositionEnabled( HMODULE library ) {
+	dwmIsCompositionEnabled_t	isEnabled = (dwmIsCompositionEnabled_t)GetProcAddress( library, "DwmIsCompositionEnabled" );
+	BOOL						enabled = FALSE;
+
+	if ( !isEnabled || isEnabled( &enabled ) != S_OK ) {
+		return -1;
+	}
+	return enabled ? 1 : 0;
+}
+
+void Sys_BenchDisableComposition( void ) {
+	HMODULE					library = LoadLibraryA( "dwmapi.dll" );		// Vista and later
+	dwmEnableComposition_t	enable;
+
+	if ( !library ) {
+		return;
+	}
+	compositionState = Sys_CompositionEnabled( library );
+	enable = (dwmEnableComposition_t)GetProcAddress( library, "DwmEnableComposition" );
+	if ( compositionState == 1 && enable && enable( 0 ) == S_OK ) {		// DWM_EC_DISABLECOMPOSITION
+		compositionTurnedOff = Sys_CompositionEnabled( library ) == 0;
+	}
+	FreeLibrary( library );
+}
+
+static void Report_Composition( void ) {
+	HMODULE		library;
+	int			state;
+
+	if ( compositionTurnedOff ) {
+		Report( "  desktop composition (Aero): turned off for the benchmark\n" );
+		return;
+	}
+	library = LoadLibraryA( "dwmapi.dll" );
+	if ( !library ) {
+		return;		// Windows XP: none
+	}
+	state = Sys_CompositionEnabled( library );
+	FreeLibrary( library );
+	if ( state >= 0 ) {
+		Report( "  desktop composition (Aero): %s\n", state ? "on" : "off" );
+	}
+}
+
+
+/*
+=================
 Sys_IsBenchmarkExe
 
 started from a copy of the game exe with "bench" in its name (WalkerBench.exe)
@@ -455,6 +519,7 @@ void Sys_SystemReport( char *buffer, int size, const char *glVendor, const char 
 	cores = Report_Processor();
 	Report_Memory( &totalMB, &freeMB );
 	powerPlan = Report_PowerPlan();
+	Report_Composition();
 	Report_Adapters();
 	Report( "  OpenGL: %s / %s / %s\n", glVendor, glRenderer, glVersion );
 	glMajor = atoi( glVersion );
