@@ -209,8 +209,8 @@ void RB_ShadowTessEnd( void ) {
 	int		numTris;
 	vec3_t	lightDir;
 
-	// WALKER: the quads of the surfaces with their topology (RB_MeshShadow)
-	RB_DrawShadowQuads();
+	// WALKER: the quads of the surfaces with their topology are collected in world
+	// coordinates and drawn once for the view (RB_FlushShadowQuads)
 	if ( !tess.numIndexes ) {
 		return;
 	}
@@ -350,7 +350,7 @@ typedef struct shadowMesh_s {
 #define	SHADOW_MESH_HASH	1024
 static shadowMesh_t		*shadowMeshHash[SHADOW_MESH_HASH];
 
-#define	SHADOW_MAX_QUAD_VERTS	32768
+#define	SHADOW_MAX_QUAD_VERTS	131072	// all robots of a view (1.5 MB)
 static float			shadowQuadVerts[SHADOW_MAX_QUAD_VERTS][3];
 static int				shadowNumQuadVerts;
 
@@ -536,6 +536,7 @@ static void RB_DrawShadowQuads( void ) {
 	}
 	qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
 	qglDisableClientState( GL_COLOR_ARRAY );
+	qglLoadMatrixf( backEnd.viewParms.world.modelMatrix );		// the quads are in world coordinates
 	qglVertexPointer( 3, GL_FLOAT, 0, shadowQuadVerts );
 
 	qglCullFace( backEnd.viewParms.isMirror ? GL_FRONT : GL_BACK );
@@ -549,8 +550,29 @@ static void RB_DrawShadowQuads( void ) {
 	qglVertexPointer( 3, GL_FLOAT, 16, tess.xyz );
 	qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
 	qglColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
+	qglLoadMatrixf( backEnd.or.modelMatrix );		// back to the current entity
 	glState.faceCulling = -1;		// the next GL_Cull sets the culling again
 	shadowNumQuadVerts = 0;
+}
+
+/*
+=================
+RB_FlushShadowQuads
+
+WALKER: the shadow volumes of all models of the view: two draws (both stencil
+passes) at the end of the view instead of two for every part of every robot
+(each part is an entity: legs, torso, head, three guns)
+=================
+*/
+void RB_FlushShadowQuads( void ) {
+	RB_DrawShadowQuads();
+}
+
+// a point of the current entity into world coordinates (as its model matrix)
+static void RB_ShadowToWorld( const vec3_t local, float *world ) {
+	world[0] = backEnd.or.origin[0] + local[0] * backEnd.or.axis[0][0] + local[1] * backEnd.or.axis[1][0] + local[2] * backEnd.or.axis[2][0];
+	world[1] = backEnd.or.origin[1] + local[0] * backEnd.or.axis[0][1] + local[1] * backEnd.or.axis[1][1] + local[2] * backEnd.or.axis[2][1];
+	world[2] = backEnd.or.origin[2] + local[0] * backEnd.or.axis[0][2] + local[1] * backEnd.or.axis[1][2] + local[2] * backEnd.or.axis[2][2];
 }
 
 /*
@@ -618,6 +640,7 @@ qboolean RB_MeshShadow( md3Surface_t *surface ) {
 		int		facing1 = shadowFacing[def[2]];
 		int		facing2 = def[3] >= 0 ? shadowFacing[def[3]] : 0;
 		float	*from, *to;
+		vec3_t	fromFar, toFar;
 
 		if ( facing1 == facing2 ) {
 			continue;
@@ -625,13 +648,15 @@ qboolean RB_MeshShadow( md3Surface_t *surface ) {
 		if ( shadowNumQuadVerts + 4 > SHADOW_MAX_QUAD_VERTS ) {
 			RB_DrawShadowQuads();
 		}
-		// as the facing triangle goes round
+		// as the facing triangle goes round; into world coordinates
 		from = shadowPoints[facing1 ? def[0] : def[1]];
 		to = shadowPoints[facing1 ? def[1] : def[0]];
-		VectorCopy( from, shadowQuadVerts[shadowNumQuadVerts + 0] );
-		VectorAdd( from, offset, shadowQuadVerts[shadowNumQuadVerts + 1] );
-		VectorAdd( to, offset, shadowQuadVerts[shadowNumQuadVerts + 2] );
-		VectorCopy( to, shadowQuadVerts[shadowNumQuadVerts + 3] );
+		VectorAdd( from, offset, fromFar );
+		VectorAdd( to, offset, toFar );
+		RB_ShadowToWorld( from, shadowQuadVerts[shadowNumQuadVerts + 0] );
+		RB_ShadowToWorld( fromFar, shadowQuadVerts[shadowNumQuadVerts + 1] );
+		RB_ShadowToWorld( toFar, shadowQuadVerts[shadowNumQuadVerts + 2] );
+		RB_ShadowToWorld( to, shadowQuadVerts[shadowNumQuadVerts + 3] );
 		shadowNumQuadVerts += 4;
 	}
 	return qtrue;

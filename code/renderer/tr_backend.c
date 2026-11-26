@@ -695,6 +695,9 @@ void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 #if 0
 	RB_DrawSun();
 #endif
+	// WALKER: the robots' shadow volumes of this view at once (in world coordinates)
+	RB_FlushShadowQuads();
+
 	// darken down any stencil shadows (the robots' and the buildings' sun shadows)
 	RB_ShadowFinish( RB_SunShadowVolumes( drawSurfs, numDrawSurfs ) );
 
