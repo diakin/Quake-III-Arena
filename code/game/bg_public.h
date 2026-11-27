@@ -32,6 +32,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // WALKER: the robot speed (g_speed) the movement constants and the stride of the walk
 // animation were set for; slower or faster robots scale both (bg_pmove.c, cg_players.c)
 #define	WALKER_REFERENCE_SPEED	110.0f
+#define	WALKER_STALL_SPEED		6.0f	// cgame: walking slower than this (units/s), the legs stand
 
 #define	CAMERA_FOCUS_DISTANCE	512		// the crosshair looks at this point ahead of the eyes
 #define	CAMERA_HEIGHT			30		// camera above the eyes

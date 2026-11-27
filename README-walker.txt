@@ -749,6 +749,12 @@ Esc -> END BATTLE (TEST) (или команда cmd endbattle) завершае�
                          игра берёт их из g_unitsPerMetre / g_damageScale каждый кадр, cgame — из
                          serverinfo, меню — из cvar (урон в ангаре). wk_tune: клавиши = - и KP_PLUS
                          KP_MINUS, с Shift — g_speed, с Ctrl — g_damageScale
+  cgame/cg_players.c     робот, у которого анимация ходьбы, а скорость меньше WALKER_STALL_SPEED (6 ед./с;
+                         упёрся в стену или в другого робота), стоит (LEGS_IDLE, при повороте
+                         LEGS_TURN): шаг идёт со скоростью робота, и без неё ноги застывали посреди
+                         шага (боты, 27.11.2026)
+  q3_ui/ui_main.c, ui_startserver.c: FFA — 10 минут (ui_ffa_timelimit по умолчанию 10; 0 или пусто
+                         в поле Time Limit — тоже 10)
   q3_ui/ui_effects.c     вторая строка подсказки внизу экрана EFFECTS на 412 (была на 398, поверх
                          первой)
   cgame/cg_target.c      рамка цели переходит на врага, на котором крестик (27.11.2026): рамка вокруг

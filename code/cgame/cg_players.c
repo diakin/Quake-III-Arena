@@ -1393,6 +1393,7 @@ static void CG_PlayerAnimation( centity_t *cent, int *legsOld, int *legs, float 
 		int		realTime = cg.time;
 		int		elapsed = cg.time - cent->pe.legsClockReal;
 		float	rate = 1;
+		qboolean	stalled = qfalse;
 
 		if ( legsAnim == LEGS_WALK || legsAnim == LEGS_RUN || legsAnim == LEGS_BACK
 			|| legsAnim == LEGS_BACKWALK || legsAnim == LEGS_WALKCR || legsAnim == LEGS_BACKCR ) {
@@ -1400,9 +1401,16 @@ static void CG_PlayerAnimation( centity_t *cent, int *legsOld, int *legs, float 
 			float	speed = sqrt( velocity[0] * velocity[0] + velocity[1] * velocity[1] );
 			float	stride = cg_strideSpeed.value > 1 ? cg_strideSpeed.value : WALKER_REFERENCE_SPEED;
 
-			rate = speed / stride;
-			if ( rate > 2 ) {
-				rate = 2;
+			// a robot pushing into a wall or another robot keeps the walking animation
+			// with no speed: its legs stopped in the middle of a step (bots, 27.11.2026).
+			// Then it stands
+			if ( speed < WALKER_STALL_SPEED ) {
+				stalled = qtrue;
+			} else {
+				rate = speed / stride;
+				if ( rate > 2 ) {
+					rate = 2;
+				}
 			}
 		}
 		if ( cent->pe.legsClockReal == 0 || elapsed < 0 || elapsed > 1000 ) {
@@ -1417,8 +1425,10 @@ static void CG_PlayerAnimation( centity_t *cent, int *legsOld, int *legs, float 
 		cent->pe.legsClockFraction -= (int)cent->pe.legsClockFraction;
 
 		cg.time = cent->pe.legsClock;
-		if ( cent->pe.legs.yawing && legsAnim == LEGS_IDLE ) {
+		if ( cent->pe.legs.yawing && ( legsAnim == LEGS_IDLE || stalled ) ) {
 			CG_RunLerpFrame( ci, &cent->pe.legs, LEGS_TURN, speedScale );
+		} else if ( stalled ) {
+			CG_RunLerpFrame( ci, &cent->pe.legs, LEGS_IDLE, speedScale );
 		} else {
 			CG_RunLerpFrame( ci, &cent->pe.legs, cent->currentState.legsAnim, speedScale );
 		}

@@ -775,6 +775,11 @@ static void ServerOptions_Start( void ) {
 		maxclients++;
 	}
 
+	// WALKER: free for all always has a time limit, 10 minutes when none was entered
+	if ( s_serveroptions.gametype == GT_FFA && timelimit <= 0 ) {
+		timelimit = 10;
+	}
+
 	switch( s_serveroptions.gametype ) {
 	case GT_FFA:
 	default:
@@ -1173,7 +1178,9 @@ static void ServerOptions_SetMenuItems( void ) {
 	case GT_FFA:
 	default:
 		Com_sprintf( s_serveroptions.fraglimit.field.buffer, 4, "%i", (int)Com_Clamp( 0, 999, trap_Cvar_VariableValue( "ui_ffa_fraglimit" ) ) );
-		Com_sprintf( s_serveroptions.timelimit.field.buffer, 4, "%i", (int)Com_Clamp( 0, 999, trap_Cvar_VariableValue( "ui_ffa_timelimit" ) ) );
+		// WALKER: free for all lasts 10 minutes unless another limit was entered (0 = 10)
+		Com_sprintf( s_serveroptions.timelimit.field.buffer, 4, "%i",
+			trap_Cvar_VariableValue( "ui_ffa_timelimit" ) > 0 ? (int)Com_Clamp( 1, 999, trap_Cvar_VariableValue( "ui_ffa_timelimit" ) ) : 10 );
 		break;
 
 	case GT_TOURNAMENT:
