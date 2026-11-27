@@ -318,6 +318,14 @@ void SV_LinkEntity( sharedEntity_t *gEnt ) {
 	ent->numClusters = 0;
 	for (i=0 ; i < num_leafs ; i++) {
 		cluster = CM_LeafCluster( leafs[i] );
+		// WALKER: the split collision leafs (cm_load.c) share clusters: each one once
+		if ( cluster != -1 && ent->numClusters > 0 ) {
+			for ( j = 0; j < ent->numClusters && ent->clusternums[j] != cluster; j++ ) {
+			}
+			if ( j < ent->numClusters ) {
+				continue;
+			}
+		}
 		if ( cluster != -1 ) {
 			ent->clusternums[ent->numClusters++] = cluster;
 			if ( ent->numClusters == MAX_ENT_CLUSTERS ) {

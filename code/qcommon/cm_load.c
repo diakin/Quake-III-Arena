@@ -71,6 +71,7 @@ cbrush_t	*box_brush;
 
 
 void	CM_InitBoxHull (void);
+void	CM_SplitLeafs( void );
 void	CM_FloodAreaConnections (void);
 
 
@@ -647,6 +648,8 @@ void CM_LoadMap( const char *name, qboolean clientload, int *checksum ) {
 	// we are NOT freeing the file, because it is cached for the ref
 	FS_FreeFile (buf);
 
+	CM_SplitLeafs ();		// WALKER: smaller collision leafs (before the box hull: it uses the array ends)
+
 	CM_InitBoxHull ();
 
 	CM_FloodAreaConnections ();
@@ -732,6 +735,307 @@ int		CM_LeafArea( int leafnum ) {
 
 //=======================================================================
 
+
+
+/*
+=================================================================================
+
+WALKER: the leafs of the collision tree split into smaller cells (27.11.2026)
+
+The maps are mostly detail brushes (terrain, rocks, props): they do not split the
+BSP, and q3map stops at its 1024-unit blocks. wk_islands had 65 leafs for 17608
+brushes, up to 1862 in one leaf, and every trace or point test through a leaf
+tested all of them: a bot visibility trace cost 0.1 ms there, three times more than
+on wk_bigbeacons. Here a leaf with more than CM_SPLIT_BRUSHES brushes is cut in
+half across its longer horizontal side, again and again, down to CM_SPLIT_MIN units.
+The new leafs keep the cluster and the area of the old one: visibility, areas and
+sounds do not change; only the brushes a trace looks at.
+
+=================================================================================
+*/
+#define CM_SPLIT_BRUSHES	32
+#define CM_SPLIT_MIN		128.0f
+#define CM_SPLIT_DEPTH		12
+
+typedef struct {
+	int			numNodes, maxNodes;
+	cNode_t		*nodes;
+	int			numLeafs, maxLeafs;
+	cLeaf_t		*leafs;
+	int			numLeafBrushes, maxLeafBrushes;
+	int			*leafbrushes;
+	int			numPlanes, maxPlanes;
+	cplane_t	**planes;		// allocated one by one: the nodes point at them
+} cmSplit_t;
+
+static cmSplit_t	cmSplit;
+
+// room for "needed" elements; "used" of them are kept
+static void *CM_SplitGrow( void *array, int *maximum, int used, int needed, int size ) {
+	void	*bigger;
+
+	if ( needed <= *maximum ) {
+		return array;
+	}
+	*maximum = needed * 2 > 64 ? needed * 2 : 64;
+	bigger = Z_Malloc( *maximum * size );
+	if ( array ) {
+		if ( used > 0 ) {
+			Com_Memcpy( bigger, array, used * size );
+		}
+		Z_Free( array );
+	}
+	return bigger;
+}
+
+// a node of the new tree, returned as its index; a leaf as -1 - index
+static int CM_SplitRegion( const cLeaf_t *parent, const int *brushes, int count, vec3_t mins, vec3_t maxs, int depth ) {
+	int		axis = ( maxs[0] - mins[0] ) >= ( maxs[1] - mins[1] ) ? 0 : 1;
+	float	size = maxs[axis] - mins[axis];
+	int		index, side, nodeIndex;
+	float	middle;
+	cplane_t	*plane;
+
+	if ( count <= CM_SPLIT_BRUSHES || size < CM_SPLIT_MIN * 2 || depth >= CM_SPLIT_DEPTH ) {
+		cLeaf_t	*leaf;
+		int		leafIndex = cmSplit.numLeafs++;
+
+		cmSplit.leafs = CM_SplitGrow( cmSplit.leafs, &cmSplit.maxLeafs, leafIndex, cmSplit.numLeafs, sizeof( cLeaf_t ) );
+		cmSplit.leafbrushes = CM_SplitGrow( cmSplit.leafbrushes, &cmSplit.maxLeafBrushes, cmSplit.numLeafBrushes,
+			cmSplit.numLeafBrushes + count, sizeof( int ) );
+		leaf = &cmSplit.leafs[leafIndex];
+		*leaf = *parent;
+		leaf->firstLeafBrush = cmSplit.numLeafBrushes;		// into the new array, offset later
+		leaf->numLeafBrushes = count;
+		Com_Memcpy( cmSplit.leafbrushes + cmSplit.numLeafBrushes, brushes, count * sizeof( int ) );
+		cmSplit.numLeafBrushes += count;
+		return -1 - leafIndex;
+	}
+
+	// the cut on a 64-unit line near the middle
+	middle = floor( ( mins[axis] + maxs[axis] ) * 0.5f / 64.0f + 0.5f ) * 64.0f;
+	if ( middle <= mins[axis] + 1 || middle >= maxs[axis] - 1 ) {
+		middle = ( mins[axis] + maxs[axis] ) * 0.5f;
+	}
+	plane = Hunk_Alloc( sizeof( *plane ), h_high );
+	VectorClear( plane->normal );
+	plane->normal[axis] = 1;
+	plane->dist = middle;
+	plane->type = axis;
+	plane->signbits = 0;
+
+	nodeIndex = cmSplit.numNodes++;
+	cmSplit.nodes = CM_SplitGrow( cmSplit.nodes, &cmSplit.maxNodes, nodeIndex, cmSplit.numNodes, sizeof( cNode_t ) );
+	cmSplit.nodes[nodeIndex].plane = plane;
+
+	for ( side = 0; side < 2; side++ ) {
+		int		*list = Z_Malloc( ( count > 0 ? count : 1 ) * sizeof( int ) );
+		int		listCount = 0, child;
+		vec3_t	childMins, childMaxs;
+
+		VectorCopy( mins, childMins );
+		VectorCopy( maxs, childMaxs );
+		if ( side == 0 ) {
+			childMins[axis] = middle;		// front: above the plane
+		} else {
+			childMaxs[axis] = middle;
+		}
+		for ( index = 0; index < count; index++ ) {
+			cbrush_t	*brush = &cm.brushes[brushes[index]];
+			// touching the cut counts for both sides
+			if ( brush->bounds[0][axis] <= childMaxs[axis] + 1 && brush->bounds[1][axis] >= childMins[axis] - 1 ) {
+				list[listCount++] = brushes[index];
+			}
+		}
+		child = CM_SplitRegion( parent, list, listCount, childMins, childMaxs, depth + 1 );
+		cmSplit.nodes[nodeIndex].children[side] = child;	// the array may have moved: index again
+		Z_Free( list );
+	}
+	return nodeIndex;
+}
+
+// the bounds of every leaf of the original tree (axial planes narrow them)
+static void CM_LeafBounds( int num, vec3_t mins, vec3_t maxs, vec3_t *leafMins, vec3_t *leafMaxs ) {
+	while ( num >= 0 ) {
+		cNode_t		*node = &cm.nodes[num];
+		cplane_t	*plane = node->plane;
+
+		if ( plane->type < 3 ) {
+			vec3_t	frontMins, backMaxs;
+			VectorCopy( mins, frontMins );
+			VectorCopy( maxs, backMaxs );
+			if ( plane->dist > frontMins[plane->type] ) {
+				frontMins[plane->type] = plane->dist;
+			}
+			if ( plane->dist < backMaxs[plane->type] ) {
+				backMaxs[plane->type] = plane->dist;
+			}
+			CM_LeafBounds( node->children[0], frontMins, maxs, leafMins, leafMaxs );
+			CM_LeafBounds( node->children[1], mins, backMaxs, leafMins, leafMaxs );
+			return;
+		}
+		CM_LeafBounds( node->children[0], mins, maxs, leafMins, leafMaxs );
+		num = node->children[1];
+	}
+	VectorCopy( mins, leafMins[-1 - num] );
+	VectorCopy( maxs, leafMaxs[-1 - num] );
+}
+
+/*
+cm_splitCheck 1: random traces (points, boxes of a robot) and point tests over the
+world, answered by the old tree and by the split one, the differences printed
+*/
+#define CM_CHECK_COUNT	4000
+static trace_t	cmCheckTraces[CM_CHECK_COUNT];
+static int		cmCheckContents[CM_CHECK_COUNT];
+
+static void CM_SplitCheck( qboolean compare ) {
+	vec3_t	mins, maxs, boxMins = { -30, -30, 0 }, boxMaxs = { 30, 30, 60 }, zero = { 0, 0, 0 };
+	int		index, differ = 0, seed = 12345, hits = 0, solid = 0;
+
+	VectorCopy( cm.cmodels[0].mins, mins );
+	VectorCopy( cm.cmodels[0].maxs, maxs );
+	for ( index = 0; index < CM_CHECK_COUNT; index++ ) {
+		vec3_t	start, end;
+		trace_t	trace;
+		int		contents, axis;
+		for ( axis = 0; axis < 3; axis++ ) {
+			seed = seed * 1103515245 + 12345;
+			start[axis] = mins[axis] + ( maxs[axis] - mins[axis] ) * ( ( seed >> 8 ) & 0xffff ) / 65535.0f;
+			seed = seed * 1103515245 + 12345;
+			end[axis] = start[axis] + ( ( ( seed >> 8 ) & 0xffff ) / 65535.0f - 0.5f ) * ( axis == 2 ? 800 : 3000 );
+		}
+		CM_BoxTrace( &trace, start, end, ( index & 1 ) ? boxMins : zero, ( index & 1 ) ? boxMaxs : zero, 0, CONTENTS_SOLID | CONTENTS_PLAYERCLIP, qfalse );
+		contents = CM_PointContents( start, 0 );
+		hits += trace.fraction < 1;
+		solid += ( contents & CONTENTS_SOLID ) != 0;
+		if ( !compare ) {
+			cmCheckTraces[index] = trace;
+			cmCheckContents[index] = contents;
+			continue;
+		}
+		if ( fabs( trace.fraction - cmCheckTraces[index].fraction ) > 0.0001f || trace.startsolid != cmCheckTraces[index].startsolid
+			|| trace.allsolid != cmCheckTraces[index].allsolid || contents != cmCheckContents[index] ) {
+			if ( differ < 5 ) {
+				Com_Printf( "collision check: differs at (%.0f %.0f %.0f): fraction %f / %f, contents %i / %i\n",
+					start[0], start[1], start[2], cmCheckTraces[index].fraction, trace.fraction, cmCheckContents[index], contents );
+			}
+			differ++;
+		}
+	}
+	if ( compare ) {
+		Com_Printf( "collision check: %i of %i traces and point tests differ (%i traces hit, %i points in solid)\n",
+			differ, CM_CHECK_COUNT, hits, solid );
+	}
+}
+
+void CM_SplitLeafs( void ) {
+	vec3_t		*leafMins, *leafMaxs;
+	int			*newRoot;
+	int			leafNum, nodeNum, side, index;
+	int			oldLeafs = cm.numLeafs, oldNodes = cm.numNodes, oldLeafBrushes = cm.numLeafBrushes;
+	int			split = 0, before = 0, after = 0, maxBefore = 0, maxAfter = 0;
+	int			*oldBase = cm.leafbrushes;
+	cNode_t		*nodes;
+	cLeaf_t		*leafs;
+	int			*leafbrushes;
+
+	if ( !Cvar_Get( "cm_splitLeafs", "1", 0 )->integer || cm.numNodes < 1 ) {
+		return;
+	}
+	Com_Memset( &cmSplit, 0, sizeof( cmSplit ) );
+	leafMins = Z_Malloc( oldLeafs * sizeof( vec3_t ) );
+	leafMaxs = Z_Malloc( oldLeafs * sizeof( vec3_t ) );
+	newRoot = Z_Malloc( oldLeafs * sizeof( int ) );
+	CM_LeafBounds( 0, cm.cmodels[0].mins, cm.cmodels[0].maxs, leafMins, leafMaxs );
+
+	for ( leafNum = 0; leafNum < oldLeafs; leafNum++ ) {
+		cLeaf_t	*leaf = &cm.leafs[leafNum];
+		newRoot[leafNum] = 0;
+		before += leaf->numLeafBrushes;
+		if ( leaf->numLeafBrushes > maxBefore ) {
+			maxBefore = leaf->numLeafBrushes;
+		}
+		if ( leaf->numLeafBrushes <= CM_SPLIT_BRUSHES ) {
+			after += leaf->numLeafBrushes;
+			if ( leaf->numLeafBrushes > maxAfter ) {
+				maxAfter = leaf->numLeafBrushes;
+			}
+			continue;
+		}
+		{
+			int		firstNewLeaf = cmSplit.numLeafs;
+			int		root = CM_SplitRegion( leaf, cm.leafbrushes + leaf->firstLeafBrush, leaf->numLeafBrushes,
+						leafMins[leafNum], leafMaxs[leafNum], 0 );
+			for ( index = firstNewLeaf; index < cmSplit.numLeafs; index++ ) {
+				after += cmSplit.leafs[index].numLeafBrushes;
+				if ( cmSplit.leafs[index].numLeafBrushes > maxAfter ) {
+					maxAfter = cmSplit.leafs[index].numLeafBrushes;
+				}
+			}
+			newRoot[leafNum] = root >= 0 ? root + 1 : root - 1;	// 0 = kept; +1 / -1 so that node 0 counts
+			split++;
+		}
+	}
+
+	if ( split && Cvar_Get( "cm_splitCheck", "0", 0 )->integer ) {
+		CM_SplitCheck( qfalse );		// the answers of the old tree, compared below
+	}
+	if ( split ) {
+		// the arrays again, old entries first; the box hull keeps its room at the end
+		nodes = Hunk_Alloc( ( oldNodes + cmSplit.numNodes ) * sizeof( *nodes ), h_high );
+		Com_Memcpy( nodes, cm.nodes, oldNodes * sizeof( *nodes ) );
+		leafs = Hunk_Alloc( ( BOX_LEAFS + oldLeafs + cmSplit.numLeafs ) * sizeof( *leafs ), h_high );
+		Com_Memcpy( leafs, cm.leafs, oldLeafs * sizeof( *leafs ) );
+		leafbrushes = Hunk_Alloc( ( oldLeafBrushes + cmSplit.numLeafBrushes + BOX_BRUSHES ) * sizeof( *leafbrushes ), h_high );
+		Com_Memcpy( leafbrushes, cm.leafbrushes, oldLeafBrushes * sizeof( *leafbrushes ) );
+		Com_Memcpy( leafbrushes + oldLeafBrushes, cmSplit.leafbrushes, cmSplit.numLeafBrushes * sizeof( *leafbrushes ) );
+
+		for ( index = 0; index < cmSplit.numNodes; index++ ) {
+			cNode_t	*node = &nodes[oldNodes + index];
+			*node = cmSplit.nodes[index];
+			for ( side = 0; side < 2; side++ ) {
+				node->children[side] = node->children[side] >= 0 ? node->children[side] + oldNodes
+					: -1 - ( oldLeafs + ( -1 - node->children[side] ) );
+			}
+		}
+		for ( index = 0; index < cmSplit.numLeafs; index++ ) {
+			leafs[oldLeafs + index] = cmSplit.leafs[index];
+			leafs[oldLeafs + index].firstLeafBrush += oldLeafBrushes;
+		}
+		// the parents of the split leafs point at the new subtrees
+		for ( nodeNum = 0; nodeNum < oldNodes; nodeNum++ ) {
+			for ( side = 0; side < 2; side++ ) {
+				int		child = nodes[nodeNum].children[side];
+				if ( child < 0 && newRoot[-1 - child] ) {
+					int	root = newRoot[-1 - child];
+					nodes[nodeNum].children[side] = root > 0 ? root - 1 + oldNodes : -1 - ( oldLeafs + ( -1 - ( root + 1 ) ) );
+				}
+			}
+		}
+		// the submodels hold their brushes past the old array: the same places, the new base
+		for ( index = 1; index < cm.numSubModels; index++ ) {
+			cm.cmodels[index].leaf.firstLeafBrush = ( oldBase + cm.cmodels[index].leaf.firstLeafBrush ) - leafbrushes;
+		}
+		cm.nodes = nodes;
+		cm.numNodes = oldNodes + cmSplit.numNodes;
+		cm.leafs = leafs;
+		cm.numLeafs = oldLeafs + cmSplit.numLeafs;
+		cm.leafbrushes = leafbrushes;
+		cm.numLeafBrushes = oldLeafBrushes + cmSplit.numLeafBrushes;
+		Com_Printf( "collision: %i of %i leafs split into %i (brushes in a leaf: up to %i, was %i; tested %i, was %i)\n",
+			split, oldLeafs, cmSplit.numLeafs, maxAfter, maxBefore, after, before );
+		if ( Cvar_Get( "cm_splitCheck", "0", 0 )->integer ) {
+			CM_SplitCheck( qtrue );
+		}
+	}
+	if ( cmSplit.nodes ) Z_Free( cmSplit.nodes );
+	if ( cmSplit.leafs ) Z_Free( cmSplit.leafs );
+	if ( cmSplit.leafbrushes ) Z_Free( cmSplit.leafbrushes );
+	Z_Free( leafMins );
+	Z_Free( leafMaxs );
+	Z_Free( newRoot );
+}
 
 /*
 ===================

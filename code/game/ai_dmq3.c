@@ -2835,12 +2835,23 @@ BotEntityVisible
 returns visibility in the range [0, 1] taking fog and water surfaces into account
 ==================
 */
+/*
+WALKER: the traces of BotEntityVisible kept for BOT_VISIBLE_KEEP msec for each pair
+(viewer, robot). Every bot asked this for every robot at every think, up to three
+traces each (the middle, the bottom and the top of a hidden robot), and these traces
+were most of the bot time: on the Islands 0.1 ms each, 80-95 of 110-130 msec a second
+of the bot AI with 10 robots (27.11.2026). The field of view is still checked every
+time; only the traces wait. In 200 msec a robot moves 10-20 units.
+*/
+#define BOT_VISIBLE_KEEP	200
+static int		botVisibleTime[MAX_CLIENTS][MAX_CLIENTS];
+static float	botVisibleValue[MAX_CLIENTS][MAX_CLIENTS];
+static float BotEntityVisibleTraced(int viewer, vec3_t eye, int ent, aas_entityinfo_t *entinfo, vec3_t middle);
+
 float BotEntityVisible(int viewer, vec3_t eye, vec3_t viewangles, float fov, int ent) {
-	int i, contents_mask, passent, hitent, infog, inwater, otherinfog, pc;
-	float squaredfogdist, waterfactor, vis, bestvis;
-	bsp_trace_t trace;
 	aas_entityinfo_t entinfo;
-	vec3_t dir, entangles, start, end, middle;
+	vec3_t dir, entangles, middle;
+	float vis;
 
 	//calculate middle of bounding box
 	BotEntityInfo(ent, &entinfo);
@@ -2851,7 +2862,29 @@ float BotEntityVisible(int viewer, vec3_t eye, vec3_t viewangles, float fov, int
 	VectorSubtract(middle, eye, dir);
 	vectoangles(dir, entangles);
 	if (!InFieldOfVision(viewangles, fov, entangles)) return 0;
-	//
+	//the traces, kept for a while between two robots
+	if (viewer >= 0 && viewer < MAX_CLIENTS && ent >= 0 && ent < MAX_CLIENTS) {
+		int age = level.time - botVisibleTime[viewer][ent];
+		if (botVisibleTime[viewer][ent] && age >= 0 && age < BOT_VISIBLE_KEEP) {
+			return botVisibleValue[viewer][ent];
+		}
+		vis = BotEntityVisibleTraced(viewer, eye, ent, &entinfo, middle);
+		botVisibleTime[viewer][ent] = level.time ? level.time : 1;
+		botVisibleValue[viewer][ent] = vis;
+		return vis;
+	}
+	return BotEntityVisibleTraced(viewer, eye, ent, &entinfo, middle);
+}
+
+static float BotEntityVisibleTraced(int viewer, vec3_t eye, int ent, aas_entityinfo_t *entinfoPointer, vec3_t middleIn) {
+	int i, contents_mask, passent, hitent, infog, inwater, otherinfog, pc;
+	float squaredfogdist, waterfactor, vis, bestvis;
+	bsp_trace_t trace;
+	aas_entityinfo_t entinfo = *entinfoPointer;
+	vec3_t dir, start, end, middle;
+
+	VectorCopy(middleIn, middle);
+
 	pc = trap_AAS_PointContents(eye);
 	infog = (pc & CONTENTS_FOG);
 	inwater = (pc & (CONTENTS_LAVA|CONTENTS_SLIME|CONTENTS_WATER));
