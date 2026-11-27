@@ -21,6 +21,9 @@ models/robotweapons/weapons.jpg (клетки по материалу), UV ор�
 Если bake_walker.py записал карту износа <часть>_wear.tga (у K7), маска учитывает и её:
 голый металл сколов блестит как металл, грязь и пыль матовые, масло мокрое.
 Карта рельефа <часть>_bump.tga (у K7) попадает в шейдер части ключом materialBump.
+Дюзы (материалы EMBER) светятся как остальное свечение, но в маске у них g = 1: в
+светящемся пикселе каналы r, g, b не нужны (цвет там целиком от свечения), и шейдер
+(tr_glsl.c) рисует по этой пометке мерцание раскалённого металла вместо ровного свечения.
 
 Повторный запуск ничего не меняет (шейдеры с materialPass пропускаются).
 """
@@ -194,6 +197,10 @@ def rasterize_mask(glb_path, class_of_material, numbers, size):
     return mask
 
 
+# дюзы: раскалённый металл, мерцает как угли (g = 1 в светящемся пикселе маски)
+EMBER = {'engine_glow'}
+EMBER_CHANNELS = (0.0, 1.0, 0.0, 1.0)
+
 # голый металл сколов блестит как металл K7, масло - как мокрая плёнка
 BARE_METAL = (0.40, 0.0, 0.55)      # r (отражение умножением), g, b (блик)
 WET = (0.30, 0.0, 0.95)
@@ -244,6 +251,10 @@ def robot(name, shader_file):
             env = env or class_env
         if not class_of_material:
             continue
+        for material in EMBER & set(class_of_material):
+            if class_of_material[material] == 'glow':
+                class_of_material[material] = 'ember'
+                numbers['ember'] = EMBER_CHANNELS
         atlas = Image.open(os.path.join(folder, f'{part}_default.jpg'))
         size = max(128, atlas.size[0] // 2)
         mask = rasterize_mask(glb, class_of_material, numbers, size)

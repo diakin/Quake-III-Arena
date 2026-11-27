@@ -65,7 +65,7 @@ static GLint	meshColorMode, meshAlphaMode, meshTcMode, meshColor, meshFogOn, mes
 typedef struct {
 	GLuint	program;
 	GLint	backLerp, lightDir, ambient, directed, viewOrigin, specularOrigin;
-	GLint	glow, fogOn, baseMap, envMap, maskMap, bumpMap, bumpScale;
+	GLint	glow, fogOn, baseMap, envMap, maskMap, bumpMap, bumpScale, shaderTime;
 } materialProgram_t;
 static materialProgram_t	materialPlain, materialBump;
 
@@ -350,12 +350,52 @@ static const char *materialVertexSource =
 	"	tc = texCoord;\n"
 	"}\n";
 
+/*
+===========================================================================
+Nozzles: hot metal flickering like embers (27.11.2026)
+
+The material mask marks the nozzles (make_material_pass.py, EMBER) with g = 1 in
+their glowing pixels (the colour there comes from the glow alone, r, g and b are not
+needed). Instead of the even glow they get a heat that wanders: slow patches and a
+fast ripple of value noise over the atlas coordinates and time, now and then a
+flare; the baked nozzle colour gives where the metal is hotter (the middle of a
+plate, not its edges). The heat goes through the colours of hot iron: dark red,
+red-orange, orange, yellow.
+===========================================================================
+*/
+#define EMBER_GLSL \
+	"uniform float shaderTime;\n" \
+	"float emberHash( vec2 cell ) {\n" \
+	"	return fract( sin( dot( cell, vec2( 127.1, 311.7 ) ) ) * 43758.5453 );\n" \
+	"}\n" \
+	"float emberNoise( vec2 point ) {\n" \
+	"	vec2 cell = floor( point );\n" \
+	"	vec2 part = fract( point );\n" \
+	"	part = part * part * ( 3.0 - 2.0 * part );\n" \
+	"	return mix( mix( emberHash( cell ), emberHash( cell + vec2( 1.0, 0.0 ) ), part.x ),\n" \
+	"		mix( emberHash( cell + vec2( 0.0, 1.0 ) ), emberHash( cell + vec2( 1.0, 1.0 ) ), part.x ), part.y );\n" \
+	"}\n" \
+	"vec3 emberColor( vec3 base, vec2 uv ) {\n" \
+	"	float slow = 0.5 * ( emberNoise( uv * 34.0 + vec2( shaderTime * 0.31, -shaderTime * 0.23 ) )\n" \
+	"		+ emberNoise( uv * 44.0 + vec2( 17.0 - shaderTime * 0.27, shaderTime * 0.19 ) ) );\n" \
+	"	float fast = emberNoise( uv * 90.0 + vec2( -shaderTime * 1.9, shaderTime * 1.4 ) );\n" \
+	"	float flare = emberNoise( uv * 9.0 + vec2( shaderTime * 0.7, shaderTime * 0.5 ) );\n" \
+	"	float heat = 0.12 + 1.1 * slow * slow + 0.22 * fast + 1.0 * max( flare - 0.6, 0.0 );\n" \
+	"	heat *= clamp( dot( base, vec3( 0.6, 0.35, 0.05 ) ) * 2.0, 0.15, 1.15 );\n" \
+	"	vec3 color = mix( vec3( 0.10, 0.01, 0.0 ), vec3( 0.45, 0.04, 0.0 ), smoothstep( 0.05, 0.30, heat ) );\n" \
+	"	color = mix( color, vec3( 0.90, 0.22, 0.02 ), smoothstep( 0.30, 0.60, heat ) );\n" \
+	"	color = mix( color, vec3( 1.00, 0.52, 0.10 ), smoothstep( 0.60, 0.90, heat ) );\n" \
+	"	color = mix( color, vec3( 1.00, 0.85, 0.45 ), smoothstep( 0.90, 1.25, heat ) );\n" \
+	"	return color;\n" \
+	"}\n"
+
 static const char *materialFragmentSource =
 	"uniform sampler2D baseMap;\n"
 	"uniform sampler2D envMap;\n"
 	"uniform sampler2D maskMap;\n"
 	"uniform float glow;\n"
 	"uniform float fogOn;\n"
+	EMBER_GLSL
 	"varying vec2 tc;\n"
 	"varying vec2 envTc;\n"
 	"varying vec3 diffuse;\n"
@@ -369,7 +409,11 @@ static const char *materialFragmentSource =
 	"	lit = clamp( lit + lit * env * mask.r, 0.0, 1.0 );\n"
 	"	lit = clamp( lit + env * mask.g, 0.0, 1.0 );\n"
 	"	lit = clamp( lit + env * ( mask.b * shine ), 0.0, 1.0 );\n"
-	"	vec3 result = mix( lit, clamp( base * glow, 0.0, 1.0 ), mask.a );\n"
+	"	vec3 glowing = clamp( base * glow, 0.0, 1.0 );\n"
+	"	if ( mask.g * mask.a > 0.004 ) {\n"		// the noise only where the nozzles are
+	"		glowing = mix( glowing, emberColor( base, tc ), mask.g );\n"
+	"	}\n"
+	"	vec3 result = mix( lit, glowing, mask.a );\n"
 	"	if ( fogOn > 0.5 ) {\n"
 	"		float visible = clamp( exp( -gl_Fog.density * eyeDistance ), 0.0, 1.0 );\n"
 	"		result = mix( gl_Fog.color.rgb, result, visible );\n"
@@ -428,6 +472,7 @@ static const char *materialBumpFragmentSource =
 	"uniform float bumpScale;\n"		// slope of the map's full range, Quake units per atlas unit
 	"uniform float glow;\n"
 	"uniform float fogOn;\n"
+	EMBER_GLSL
 	"uniform vec3 lightDir;\n"
 	"uniform vec3 ambientLight;\n"
 	"uniform vec3 directedLight;\n"
@@ -467,7 +512,11 @@ static const char *materialBumpFragmentSource =
 	"	color = clamp( color + color * env * mask.r, 0.0, 1.0 );\n"
 	"	color = clamp( color + env * mask.g, 0.0, 1.0 );\n"
 	"	color = clamp( color + env * ( mask.b * shine ), 0.0, 1.0 );\n"
-	"	vec3 result = mix( color, clamp( base * glow, 0.0, 1.0 ), mask.a );\n"
+	"	vec3 glowing = clamp( base * glow, 0.0, 1.0 );\n"
+	"	if ( mask.g * mask.a > 0.004 ) {\n"		// the noise only where the nozzles are
+	"		glowing = mix( glowing, emberColor( base, tc ), mask.g );\n"
+	"	}\n"
+	"	vec3 result = mix( color, glowing, mask.a );\n"
 	"	if ( fogOn > 0.5 ) {\n"
 	"		float visible = clamp( exp( -gl_Fog.density * eyeDistance ), 0.0, 1.0 );\n"
 	"		result = mix( gl_Fog.color.rgb, result, visible );\n"
@@ -567,6 +616,7 @@ static void GLSL_MaterialProgram( materialProgram_t *target, const char *vertexS
 	target->maskMap = qglGetUniformLocation( program, "maskMap" );
 	target->bumpMap = qglGetUniformLocation( program, "bumpMap" );		// -1 in the plain one
 	target->bumpScale = qglGetUniformLocation( program, "bumpScale" );
+	target->shaderTime = qglGetUniformLocation( program, "shaderTime" );
 }
 
 /*
@@ -788,6 +838,8 @@ void GLSL_MaterialBegin( const meshModelVBO_t *model, int frame, int oldFrame, f
 	qglUniform1i( used->baseMap, 0 );
 	qglUniform1i( used->envMap, 1 );
 	qglUniform1i( used->maskMap, 2 );
+	// the nozzle embers: seconds, wrapped (the noise hash loses precision on big numbers)
+	qglUniform1f( used->shaderTime, (float)fmod( tess.shaderTime, 256.0 ) );
 	if ( used == &materialBump ) {
 		qglUniform1i( used->bumpMap, 3 );
 		qglUniform1f( used->bumpScale, bumpScale );
