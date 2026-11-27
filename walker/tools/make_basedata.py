@@ -78,10 +78,10 @@ vbo_off: r_vbo 0; vid_restart           // live (a restarted cgame needs the ser
 # WalkerBench.exe (a copy of Walker.exe with "bench" in its name, code/client/cl_bench.c):
 # the player's settings are not read, this starts a fixed battle and the benchmark runs
 BENCHMODE_CFG = r"""// WALKER benchmark exe: a fixed battle with the stock settings
-// (the player's q3config.cfg, autoexec.cfg and balance.cfg are not read, nothing is saved)
-set com_maxfps 250
-set r_mode 6                // 1024 x 768 in a window: the same on every computer
-set r_fullscreen 0
+// (the player's q3config.cfg, autoexec.cfg and balance.cfg are not read, nothing is saved).
+// The window (1024 x 768, r_mode 6) and com_maxfps 250 are set by the engine before the
+// renderer starts (qcommon/common.c). WalkerBench.exe +set bench_mysettings 1: the same
+// battle with the player's own settings from q3config.cfg (screen, effects, frame cap)
 set sv_maxclients 12
 set bot_minplayers 0        // the benchmark adds the bots one by one itself (5 x 5)
 set g_gametype 3            // team battle without limits: it does not end in the middle

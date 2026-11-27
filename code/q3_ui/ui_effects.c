@@ -245,7 +245,7 @@ static void Effects_Draw( void ) {
 
 	Menu_Draw( &effectsMenuInfo.menu );
 	UI_DrawString( 320, 394, "reflections and full shadows cost the most", UI_CENTER | UI_SMALLFONT, dimColor );
-	UI_DrawString( 320, 398, "antialiasing, filter and quality: press APPLY", UI_CENTER | UI_SMALLFONT, dimColor );
+	UI_DrawString( 320, 412, "antialiasing, filter and quality: press APPLY", UI_CENTER | UI_SMALLFONT, dimColor );	// WALKER: was 398, over the line above
 }
 
 /*

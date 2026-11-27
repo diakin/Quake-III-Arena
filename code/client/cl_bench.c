@@ -446,6 +446,17 @@ static void Bench_Report( void ) {
 		Cvar_VariableString( "r_picmip" ), Cvar_VariableString( "r_sunShadows" ), Cvar_VariableString( "cg_shadows" ),
 		Cvar_VariableString( "r_noportals" ), Cvar_VariableString( "r_drawfog" ), Cvar_VariableString( "r_dynamiclight" ),
 		Cvar_VariableString( "r_mode" ), Cvar_VariableString( "r_vertexLight" ), Cvar_VariableString( "r_glsl" ), Cvar_VariableString( "r_smp" ), Cvar_VariableString( "r_vbo" ) ) );
+	Q_strcat( report, sizeof( report ), va( "effects: r_ext_multisample %s%s, r_ext_texture_filter_anisotropic %s, r_textureMode %s, r_texturebits %s, r_lodbias %s, r_waterRipple %s, r_mirrorScale %s, cg_marks %s, com_maxfps %s\n",
+		Cvar_VariableString( "r_ext_multisample" ),
+		!Cvar_VariableIntegerValue( "r_ext_multisample" ) ? ""
+			: Cvar_VariableIntegerValue( "r_multisampleActive" ) > 0 ? va( " (in use: %ix)", Cvar_VariableIntegerValue( "r_multisampleActive" ) ) : " (not available on this card)",
+		Cvar_VariableString( "r_ext_texture_filter_anisotropic" ),
+		Cvar_VariableString( "r_textureMode" ), Cvar_VariableString( "r_texturebits" ), Cvar_VariableString( "r_lodbias" ),
+		Cvar_VariableString( "r_waterRipple" ), Cvar_VariableString( "r_mirrorScale" ), Cvar_VariableString( "cg_marks" ),
+		Cvar_VariableString( "com_maxfps" ) ) );
+	Q_strcat( report, sizeof( report ), Cvar_VariableIntegerValue( "bench_mysettings" )
+		? "the player's own settings (q3config.cfg, WalkerBench.exe +set bench_mysettings 1)\n"
+		: "the stock settings (the player's own: WalkerBench.exe +set bench_mysettings 1)\n" );
 	Q_strcat( report, sizeof( report ), va( "game code: server game %s, cgame %s\n",
 		VM_IsNative( gvm ) ? "dll" : "qvm (interpreted)", VM_IsNative( cgvm ) ? "dll" : "qvm (interpreted)" ) );
 	Q_strcat( report, sizeof( report ), "times: msec a frame on average; bots = bot AI, server = the rest of the server game,\n"

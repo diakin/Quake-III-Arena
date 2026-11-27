@@ -450,6 +450,7 @@ static int GLW_FindMultisamplePFD( HDC hDC, const PIXELFORMATDESCRIPTOR *pPFD )
 						}
 						found = format;
 						ri.Printf( PRINT_ALL, "...using %dx multisample antialiasing (pixel format %d)\n", samples, format );
+						ri.Cvar_Set( "r_multisampleActive", va( "%i", samples ) );	// WALKER: for benchmark.log
 					}
 				}
 				qwglMakeCurrent( NULL, NULL );
@@ -461,6 +462,7 @@ static int GLW_FindMultisamplePFD( HDC hDC, const PIXELFORMATDESCRIPTOR *pPFD )
 	DestroyWindow( dummyWindow );
 	if ( !found ) {
 		ri.Printf( PRINT_ALL, "...multisample antialiasing not available\n" );
+		ri.Cvar_Set( "r_multisampleActive", "0" );
 	}
 	return found;
 }

@@ -93,6 +93,7 @@ int		time_cgame;			// WALKER: the cgame frame (with the renderer front end it ca
 int		time_bots;			// WALKER: bot AI
 int		com_profiling;		// WALKER: benchmark running
 qboolean	com_benchExe;		// WALKER: started as WalkerBench.exe: a fixed battle, no user settings
+static qboolean	benchOwnSettings;	// WALKER: WalkerBench.exe +set bench_mysettings 1
 
 int			com_frameTime;
 int			com_frameMsec;
@@ -2423,12 +2424,17 @@ void Com_Init( char *commandLine ) {
 	// q3config.cfg and autoexec.cfg are not read (and not written, Com_WriteConfiguration)
 	com_benchExe = Sys_IsBenchmarkExe();
 
+	// WALKER: "WalkerBench.exe +set bench_mysettings 1" runs the benchmark battle with the
+	// player's own settings (q3config.cfg: screen, effects, frame cap); nothing is saved still
+	Com_StartupVariable( "bench_mysettings" );
+	benchOwnSettings = com_benchExe && Cvar_VariableIntegerValue( "bench_mysettings" );
+
 	// skip the q3config.cfg if "safe" is on the command line
-	if ( !Com_SafeMode() && !com_benchExe ) {
+	if ( !Com_SafeMode() && ( !com_benchExe || benchOwnSettings ) ) {
 		Cbuf_AddText ("exec q3config.cfg\n");
 	}
 
-	if ( !com_benchExe ) {
+	if ( !com_benchExe || benchOwnSettings ) {
 		Cbuf_AddText ("exec autoexec.cfg\n");
 	}
 
@@ -2438,8 +2444,11 @@ void Com_Init( char *commandLine ) {
 	// the defaults (640x480 full screen) came first, benchmode.cfg changed them later,
 	// and sysinfo.txt showed the screen in 640x480
 	if ( com_benchExe ) {
-		Cvar_Set( "r_mode", "6" );
-		Cvar_Set( "r_fullscreen", "0" );
+		if ( !benchOwnSettings ) {
+			Cvar_Set( "r_mode", "6" );
+			Cvar_Set( "r_fullscreen", "0" );
+			Cvar_Set( "com_maxfps", "250" );
+		}
 		Sys_BenchDisableComposition();		// the window is not tied to the screen refresh (win_sysinfo.c)
 	}
 
