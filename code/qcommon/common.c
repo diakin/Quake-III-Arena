@@ -40,12 +40,16 @@ int demo_protocols[] =
 #define MAX_NUM_ARGVS	50
 
 #define MIN_DEDICATED_COMHUNKMEGS 1
-#define MIN_COMHUNKMEGS 56
+// WALKER: 192 since 27.11.2026, also the minimum (com_hunkMegs is kept in the players'
+// configs, a saved 128 would stay): with the K7 hydraulics (lower.glb +7 MB of frames) a
+// bot entering a battle could not get the 16 MB of temporary memory to load the 2048
+// atlas of its robot ("Hunk_AllocateTempMemory: failed on 16777224")
+#define MIN_COMHUNKMEGS 192
 #ifdef MACOS_X
-#define DEF_COMHUNKMEGS "128"
+#define DEF_COMHUNKMEGS "192"
 #define DEF_COMZONEMEGS "64"
 #else
-#define DEF_COMHUNKMEGS "128"	// WALKER: big terrain, 2048 colour map, bot navigation
+#define DEF_COMHUNKMEGS "192"	// WALKER: big terrain, 2048 colour map, bot navigation, robot frames
 #define DEF_COMZONEMEGS "64"	// WALKER: bot navigation (AAS) of wk_islands needs about 20 MB
 #endif
 
@@ -1535,7 +1539,7 @@ void Com_InitHunkMemory( void ) {
 	// allocate the stack based hunk allocator
 	cv = Cvar_Get( "com_hunkMegs", DEF_COMHUNKMEGS, CVAR_LATCH | CVAR_ARCHIVE );
 
-	// if we are not dedicated min allocation is 56, otherwise min is 1
+	// if we are not dedicated min allocation is MIN_COMHUNKMEGS, otherwise min is 1
 	if (com_dedicated && com_dedicated->integer) {
 		nMinAlloc = MIN_DEDICATED_COMHUNKMEGS;
 		pMsg = "Minimum com_hunkMegs for a dedicated server is %i, allocating %i megs.\n";

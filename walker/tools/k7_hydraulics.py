@@ -45,7 +45,7 @@ LOWER_PIN = (-0.16, -0.33)          # (y, z) в пространстве гол�
 BARREL_LENGTH = 0.52                # от верхнего пальца до конца буксы
 ROD_TOP_GAP = 0.09                  # при самом коротком цилиндре верх штока ниже пальца на столько
 ROD_OVERLAP_MIN = 0.15              # при самом длинном шток в корпусе хотя бы на столько
-SEGMENTS = 14
+SEGMENTS = 10                       # грани цилиндров: каждая вершина хранится во всех 184 кадрах
 
 
 # ---------------------------------------------------------------- glb
@@ -127,8 +127,9 @@ class Part:
         self.indices += [base + int(item) for face in faces for item in face]
 
 
-def cylinder(part, axis, centre, radius, start, end):
-    """цилиндр с крышками вдоль оси 'x' или 'y' от start до end (по оси, от centre)"""
+def cylinder(part, axis, centre, radius, start, end, caps=(True, True)):
+    """цилиндр вдоль оси 'x' или 'y' от start до end (по оси, от centre); caps - крышки на
+    концах start и end (спрятанные в соседних деталях не нужны)"""
     centre = np.array(centre, float)
     def point(along, angle, distance):
         if axis == 'y':
@@ -147,7 +148,9 @@ def cylinder(part, axis, centre, radius, start, end):
     for step in range(SEGMENTS):
         first = step * 2
         faces += [(first, first + 2, first + 1), (first + 1, first + 2, first + 3)]
-    for along, sign in ((start, -1.0 if end > start else 1.0), (end, 1.0 if end > start else -1.0)):
+    for along, sign, wanted in ((start, -1.0 if end > start else 1.0, caps[0]), (end, 1.0 if end > start else -1.0, caps[1])):
+        if not wanted:
+            continue
         base = len(positions)
         positions.append(point(along, 0, 0)); normals.append(axis_vector * sign); uvs.append((0.5, 0.5))
         for step in range(SEGMENTS):
@@ -253,14 +256,14 @@ def build_parts(rod_length, outward):
     cylinder(get('barrel', 'metal_dark'), 'x', (0, 0, 0), 0.058, -0.03, 0.03)
     box(get('barrel', 'metal_dark'), (-0.026, -0.105, -0.036), (0.026, -0.035, 0.036))
     cylinder(get('barrel', 'metal_dark'), 'y', (0, 0, 0), 0.066, -0.095, -0.15)
-    cylinder(get('barrel', 'metal_gray'), 'y', (0, 0, 0), 0.058, -0.15, -(BARREL_LENGTH - 0.06))
+    cylinder(get('barrel', 'metal_gray'), 'y', (0, 0, 0), 0.058, -0.15, -(BARREL_LENGTH - 0.06), (False, False))
     cylinder(get('barrel', 'orange'), 'y', (0, 0, 0), 0.064, -(BARREL_LENGTH - 0.06), -BARREL_LENGTH)
     # штуцер шланга на крышке
-    cylinder(get('barrel', 'metal_dark'), 'x', (0, -0.125, 0.0), 0.018, 0.06, 0.088)
+    cylinder(get('barrel', 'metal_dark'), 'x', (0, -0.125, 0.0), 0.018, 0.06, 0.088, (False, True))
     # шток: проушина, наконечник, хромированный шток
     cylinder(get('rod', 'metal_dark'), 'x', (0, 0, 0), 0.048, -0.026, 0.026)
-    cylinder(get('rod', 'metal_dark'), 'y', (0, 0, 0), 0.04, 0.035, 0.105)
-    cylinder(get('rod', 'chrome'), 'y', (0, 0, 0), 0.03, 0.105, rod_length)
+    cylinder(get('rod', 'metal_dark'), 'y', (0, 0, 0), 0.04, 0.035, 0.105, (False, True))
+    cylinder(get('rod', 'chrome'), 'y', (0, 0, 0), 0.03, 0.105, rod_length, (False, False))
     # верхняя вилка: две щеки вокруг пальца, палец; внутренняя щека продолжается рычагом до
     # оси колена (бобышка на торце оси) - всё в координатах от пальца
     for sign in (-1, 1):

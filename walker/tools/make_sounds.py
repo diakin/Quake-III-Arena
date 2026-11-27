@@ -264,6 +264,27 @@ def metal_hit(strength):
     return mix(hit * strength, ring * 0.4)
 
 
+def bullet_on_armor(variant):
+    """пуля по броне врага (мои попадания, feedback/hit*.wav, с 27.11.2026 вместо писка):
+    щелчок и короткий металлический отзвук, без долгого звона - очередь не звенит"""
+    seconds = 0.16
+    click = band(noise(seconds), 1200, 6000) * envelope(seconds, 0.0003, 0.008)
+    knock = band(noise(seconds), 500, 2500) * envelope(seconds, 0.0005, 0.02) * 0.6
+    ring = resonator(seconds, [2150 + 140 * variant, 3480 + 160 * variant, 5100], 0.03, [1.0, 0.55, 0.3]) * 0.35
+    return mix(click, knock, ring)
+
+
+def hull_hit(variant):
+    """попадание по моему корпусу (звуки боли робота, с 27.11.2026 без тревожных сигналов):
+    тот же удар по металлу, ниже и тяжелее - глухой толчок, удар, низкий отзвук"""
+    seconds = 0.4
+    thump = band(noise(seconds), 50, 260) * envelope(seconds, 0.002, 0.07) * 0.8
+    knock = band(noise(seconds), 200, 2200) * envelope(seconds, 0.0008, 0.03)
+    ring = resonator(seconds, [190 + 15 * variant, 520 + 30 * variant, 1020 + 50 * variant, 1650], 0.08,
+                     [1.0, 0.6, 0.35, 0.18]) * 0.45
+    return mix(thump, knock, ring)
+
+
 # ---------------------------------------------------------------- интерфейс
 def beep(frequency, seconds=0.08, shape='sine'):
     t = time(seconds)
@@ -322,10 +343,11 @@ def main():
     save(robot + 'death1.wav', explosion(2.0))
     save(robot + 'death2.wav', mix(explosion(2.0, 50), metal_hit(1.0)))
     save(robot + 'death3.wav', mix(np.concatenate([alarm(2, 660), np.zeros(int(0.1 * RATE))]), np.roll(pad(explosion(1.8), 2.4), int(0.35 * RATE))))
-    save(robot + 'pain25_1.wav', mix(metal_hit(1.0), np.roll(pad(alarm(3, 990), 1.0), int(0.15 * RATE))))
-    save(robot + 'pain50_1.wav', mix(metal_hit(0.9), np.roll(pad(alarm(2, 880), 1.0), int(0.15 * RATE))))
-    save(robot + 'pain75_1.wav', mix(metal_hit(0.8), np.roll(pad(alarm(1, 780), 1.0), int(0.15 * RATE))))
-    save(robot + 'pain100_1.wav', metal_hit(0.7))
+    # попадания по корпусу: слышны только у своего робота (cg_event.c, CG_PainEvent)
+    save(robot + 'pain25_1.wav', hull_hit(3), 0.65)
+    save(robot + 'pain50_1.wav', hull_hit(2), 0.65)
+    save(robot + 'pain75_1.wav', hull_hit(1), 0.65)
+    save(robot + 'pain100_1.wav', hull_hit(0), 0.65)
     save(robot + 'jump1.wav', servo(0.5, 200, 500))
     save(robot + 'fall1.wav', stomp(3, 1.6))
     save(robot + 'falling1.wav', servo(0.8, 400, 200))
@@ -338,9 +360,9 @@ def main():
     save('misc/menu3.wav', mix(beep(660), np.roll(pad(beep(440), 0.2), int(0.05 * RATE))), 0.5)
     save('misc/menu4.wav', beep(160, 0.18, 'square'), 0.5)
     save('misc/silence.wav', np.zeros(int(0.1 * RATE)) + 1e-6, 0.0)
-    save('feedback/hit.wav', beep(1500, 0.05), 0.5)
-    save('feedback/hithi.wav', beep(1800, 0.05), 0.5)
-    save('feedback/hitlo.wav', beep(1200, 0.05), 0.5)
+    save('feedback/hit.wav', bullet_on_armor(1), 0.5)
+    save('feedback/hithi.wav', bullet_on_armor(2), 0.5)
+    save('feedback/hitlo.wav', bullet_on_armor(0), 0.5)
     save('feedback/hit_teammate.wav', beep(300, 0.12, 'square'), 0.5)
     save('feedback/three.wav', beep(700, 0.15), 0.7)
     save('feedback/two.wav', beep(700, 0.15), 0.7)

@@ -443,8 +443,12 @@ void CG_PainEvent( centity_t *cent, int health ) {
 	} else {
 		snd = "*pain100_1.wav";
 	}
-	trap_S_StartSound( NULL, cent->currentState.number, CHAN_VOICE, 
-		CG_CustomSound( cent->currentState.number, snd ) );
+	// WALKER: a hit on the hull is heard on the own robot only (or the one followed);
+	// the hits on all the other robots made a ringing over the whole battle
+	if ( cent->currentState.number == cg.snap->ps.clientNum ) {
+		trap_S_StartSound( NULL, cent->currentState.number, CHAN_VOICE,
+			CG_CustomSound( cent->currentState.number, snd ) );
+	}
 
 	// save pain time for programitic twitch animation
 	cent->pe.painTime = cg.time;
