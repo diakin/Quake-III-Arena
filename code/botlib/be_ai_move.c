@@ -85,8 +85,14 @@ typedef struct bot_movestate_s
 	//
 	bot_avoidspot_t avoidspots[MAX_AVOIDSPOTS];	//spots to avoid
 	int numavoidspots;
+	int walkthroughreach;						//WALKER: walk link whose start was reached
+	float walkthrough_time;						//WALKER: until then walk on past its end
 } bot_movestate_t;
 
+//WALKER: after reaching the start of a walk link the robot walks on past its end
+#define WALK_THROUGH_DIST		32		//units beyond the link end
+#define WALK_THROUGH_TIME		1.5		//seconds at most
+#define WALK_THROUGH_REARM		5		//seconds before the same link may be walked through again
 //used to avoid reachability links for some time after being used
 #define AVOIDREACH
 #define AVOIDREACH_TIME			6		//avoid links for 6 seconds after use
@@ -1357,7 +1363,37 @@ bot_moveresult_t BotTravel_Walk(bot_movestate_t *ms, aas_reachability_t *reach)
 	//
 	BotCheckBlocked(ms, hordir, qtrue, &result);
 	//
-	if (dist < 10)
+	// WALKER: a robot walks slowly and its origin may lie in a small area without links
+	// next to the end area, so its link area stayed the same at the end point. The Q3
+	// code then aimed at the start again, or at the end from the far side of it, and the
+	// robot paced 5-10 units to and fro at every think, its legs switching between
+	// walking forward and back (28.11.2026). Once at the start it walks on along the link
+	// to a point WALK_THROUGH_DIST beyond the end for WALK_THROUGH_TIME s or until the
+	// link changes.
+	if (dist < 10 && (ms->walkthroughreach != ms->lastreachnum
+			|| ms->walkthrough_time < AAS_Time() - WALK_THROUGH_REARM))
+	{
+		ms->walkthroughreach = ms->lastreachnum;
+		ms->walkthrough_time = AAS_Time() + WALK_THROUGH_TIME;
+	} //end if
+	if (ms->walkthroughreach == ms->lastreachnum && ms->walkthrough_time > AAS_Time())
+	{
+		vec3_t linkdir, target;
+
+		linkdir[0] = reach->end[0] - reach->start[0];
+		linkdir[1] = reach->end[1] - reach->start[1];
+		linkdir[2] = 0;
+		VectorCopy(reach->end, target);
+		if (VectorNormalize(linkdir) > 0.1)
+		{
+			VectorMA(target, WALK_THROUGH_DIST, linkdir, target);
+		} //end if
+		hordir[0] = target[0] - ms->origin[0];
+		hordir[1] = target[1] - ms->origin[1];
+		hordir[2] = 0;
+		dist = VectorNormalize(hordir);
+	} //end if
+	else if (dist < 10)
 	{
 		//walk straight to the reachability end
 		hordir[0] = reach->end[0] - ms->origin[0];

@@ -937,15 +937,6 @@ static void PM_CrashLand( void ) {
 	float		t;
 	float		a, b, c, den;
 
-	// decide which landing animation to use
-	if ( pm->ps->pm_flags & PMF_BACKWARDS_JUMP ) {
-		PM_ForceLegsAnim( LEGS_LANDB );
-	} else {
-		PM_ForceLegsAnim( LEGS_LAND );
-	}
-
-	pm->ps->legsTimer = TIMER_LAND;
-
 	// calculate the exact velocity on landing
 	dist = pm->ps->origin[2] - pml.previous_origin[2];
 	vel = pml.previous_velocity[2];
@@ -963,6 +954,19 @@ static void PM_CrashLand( void ) {
 
 	delta = vel + t * acc;
 	delta = delta*delta * 0.0001;
+
+	// decide which landing animation to use
+	// WALKER: only after a real fall (the one with a fall sound, delta over 7): a robot
+	// walking over bumpy ground leaves it for a moment again and again, and every time the
+	// legs played the landing (28.11.2026)
+	if ( delta > WALKER_LAND_DELTA ) {
+		if ( pm->ps->pm_flags & PMF_BACKWARDS_JUMP ) {
+			PM_ForceLegsAnim( LEGS_LANDB );
+		} else {
+			PM_ForceLegsAnim( LEGS_LAND );
+		}
+		pm->ps->legsTimer = TIMER_LAND;
+	}
 
 	// ducking while falling doubles damage
 	if ( pm->ps->pm_flags & PMF_DUCKED ) {
@@ -1938,10 +1942,18 @@ void PmoveSingle (pmove_t *pmove) {
 	}
 
 	// decide if backpedaling animations should be used
-	if ( pm->cmd.forwardmove < 0 ) {
-		pm->ps->pm_flags |= PMF_BACKWARDS_RUN;
-	} else if ( pm->cmd.forwardmove > 0 || ( pm->cmd.forwardmove == 0 && pm->cmd.rightmove ) ) {
-		pm->ps->pm_flags &= ~PMF_BACKWARDS_RUN;
+	// WALKER: with a margin. Walking sideways with a little forward or backward in it,
+	// the sign of forwardmove kept flipping and the legs with it (bots facing their enemy,
+	// 28.11.2026); now it takes a backward (forward) part of at least half the sideways one
+	// to switch, in between the legs keep what they do
+	{
+		int		sideways = pm->cmd.rightmove < 0 ? -pm->cmd.rightmove : pm->cmd.rightmove;
+
+		if ( pm->cmd.forwardmove < 0 && -pm->cmd.forwardmove * 2 >= sideways ) {
+			pm->ps->pm_flags |= PMF_BACKWARDS_RUN;
+		} else if ( pm->cmd.forwardmove > 0 && pm->cmd.forwardmove * 2 >= sideways ) {
+			pm->ps->pm_flags &= ~PMF_BACKWARDS_RUN;
+		}
 	}
 
 	if ( pm->ps->pm_type >= PM_DEAD ) {

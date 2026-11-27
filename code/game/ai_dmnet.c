@@ -95,6 +95,9 @@ void BotDumpNodeSwitches(bot_state_t *bs) {
 BotRecordNodeSwitch
 ==================
 */
+// WALKER: a robot in a fight keeps its enemy this long out of sight before chasing, seconds
+#define BOT_ROBOT_SIGHT_GRACE	1.5f
+
 void BotRecordNodeSwitch(bot_state_t *bs, char *node, char *str, char *s) {
 	char netname[MAX_NETNAME];
 
@@ -2220,7 +2223,14 @@ int AINode_Battle_Fight(bot_state_t *bs) {
 		}
 	}
 	//if the enemy is not visible
-	if (!BotEntityVisible(bs->entitynum, bs->eye, bs->viewangles, 360, bs->enemy)) {
+	// WALKER: for BOT_ROBOT_SIGHT_GRACE s it fights on with the same enemy. On hilly ground
+	// an enemy goes behind a bump for a moment again and again; the bot went chasing, took
+	// the first visible robot in the chase and came back to fight it, turning its view and
+	// legs to it several times a second (28.11.2026)
+	if (BotEntityVisible(bs->entitynum, bs->eye, bs->viewangles, 360, bs->enemy)) {
+		bs->enemyvisible_time = FloatTime();
+	}
+	else if (bs->enemyvisible_time < FloatTime() - BOT_ROBOT_SIGHT_GRACE) {
 		if (BotWantsToChase(bs)) {
 			AIEnter_Battle_Chase(bs, "battle fight: enemy out of sight");
 			return qfalse;
@@ -2316,7 +2326,8 @@ int AINode_Battle_Chase(bot_state_t *bs)
 		return qfalse;
 	}
 	//if there is another enemy
-	if (BotFindEnemy(bs, -1)) {
+	// WALKER: only a nearer one than the chased (Q3: any visible, the first by number)
+	if (BotFindEnemy(bs, bs->enemy)) {
 		AIEnter_Battle_Fight(bs, "battle chase: better enemy");
 		return qfalse;
 	}
@@ -2508,7 +2519,8 @@ int AINode_Battle_Retreat(bot_state_t *bs) {
 	//else if the enemy is NOT visible
 	else if (bs->enemyvisible_time < FloatTime()) {
 		//if there is another enemy
-		if (BotFindEnemy(bs, -1)) {
+		// WALKER: only a nearer one (Q3: any visible, the first by number)
+		if (BotFindEnemy(bs, bs->enemy)) {
 			AIEnter_Battle_Fight(bs, "battle retreat: another enemy");
 			return qfalse;
 		}

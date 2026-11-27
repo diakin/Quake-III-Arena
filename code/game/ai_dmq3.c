@@ -64,6 +64,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define AREACONTENTS_MODELNUM			(AREACONTENTS_MAXMODELNUM << AREACONTENTS_MODELNUMSHIFT)
 
 #define IDEAL_ATTACKDIST			140
+// WALKER: a robot in a fight keeps one way (left, right, standing) so long, seconds
+#define BOT_ROBOT_HOLD_MIN			2.5f
+#define BOT_ROBOT_HOLD_SPREAD		2.5f
+#define BOT_ROBOT_STAND_SHARE		0.3f	// how often that way is standing and firing
 
 #define MAX_WAYPOINTS		128
 //
@@ -2636,7 +2640,7 @@ BotAttackMove
 */
 bot_moveresult_t BotAttackMove(bot_state_t *bs, int tfl) {
 	int movetype, i, attackentity;
-	float attack_skill, jumper, croucher, dist, strafechange_time;
+	float attack_skill, jumper, croucher, dist;
 	float attack_dist, attack_range;
 	vec3_t forward, backward, sideward, hordir, up = {0, 0, 1};
 	aas_entityinfo_t entinfo;
@@ -2698,6 +2702,7 @@ bot_moveresult_t BotAttackMove(bot_state_t *bs, int tfl) {
 			bs->attackjump_time = FloatTime() + 1;
 		}
 	}
+	movetype = MOVE_WALK;	// WALKER: robots do not jump or crouch in a fight
 	if (bs->cur_ps.weapon == WP_GAUNTLET) {
 		attack_dist = 0;
 		attack_range = 0;
@@ -2724,49 +2729,52 @@ bot_moveresult_t BotAttackMove(bot_state_t *bs, int tfl) {
 		}
 		return moveresult;
 	}
-	//increase the strafe time
-	bs->attackstrafe_time += bs->thinktime;
-	//get the strafe change time
-	strafechange_time = 0.4 + (1 - attack_skill) * 0.2;
-	if (attack_skill > 0.7) strafechange_time += crandom() * 0.2;
-	//if the strafe direction should be changed
-	if (bs->attackstrafe_time > strafechange_time) {
-		//some magic number :)
-		if (random() > 0.935) {
-			//flip the strafe direction
-			bs->flags ^= BFL_STRAFERIGHT;
-			bs->attackstrafe_time = 0;
+	// WALKER: a walking robot does not dance like a Quake player. The Q3 code changed
+	// the strafe side every 0.4-0.6 s, added a random step back in one think of ten and
+	// corrected the distance at the very edges of the band; the bot faces its enemy, so
+	// the forward part of its move kept changing sign and the legs switched between
+	// walking forward and back several times a second, the body sliding on (28.11.2026).
+	// Now the bot keeps one way - to the left, to the right or standing and firing - for
+	// BOT_ROBOT_HOLD_MIN..+BOT_ROBOT_HOLD_SPREAD s, closes or opens the distance until the
+	// middle of the band, and walks (robots do not jump or crouch in a fight)
+	{
+		static int		holdSide[MAX_CLIENTS];		// -1 left, 0 standing, 1 right
+		static float	holdUntil[MAX_CLIENTS];
+		static int		approach[MAX_CLIENTS];		// 1 closing in, -1 backing off, 0 neither
+		int				client = bs->client;
+		vec3_t			direction;
+
+		if ( FloatTime() > holdUntil[client] ) {
+			float	roll = random();
+
+			holdSide[client] = roll < BOT_ROBOT_STAND_SHARE ? 0 : ( roll < 0.5f + BOT_ROBOT_STAND_SHARE * 0.5f ? -1 : 1 );
+			holdUntil[client] = FloatTime() + BOT_ROBOT_HOLD_MIN + random() * BOT_ROBOT_HOLD_SPREAD;
 		}
-	}
-	//
-	for (i = 0; i < 2; i++) {
+		if ( dist > attack_dist + attack_range ) {
+			approach[client] = 1;
+		} else if ( dist < attack_dist - attack_range ) {
+			approach[client] = -1;
+		} else if ( ( approach[client] > 0 && dist < attack_dist ) || ( approach[client] < 0 && dist > attack_dist ) ) {
+			approach[client] = 0;
+		}
 		hordir[0] = forward[0];
 		hordir[1] = forward[1];
 		hordir[2] = 0;
-		VectorNormalize(hordir);
-		//get the sideward vector
-		CrossProduct(hordir, up, sideward);
-		//reverse the vector depending on the strafe direction
-		if (bs->flags & BFL_STRAFERIGHT) VectorNegate(sideward, sideward);
-		//randomly go back a little
-		if (random() > 0.9) {
-			VectorAdd(sideward, backward, sideward);
-		}
-		else {
-			//walk forward or backward to get at the ideal attack distance
-			if (dist > attack_dist + attack_range) {
-				VectorAdd(sideward, forward, sideward);
+		VectorNormalize( hordir );
+		for ( i = 0; i < 2; i++ ) {
+			CrossProduct( hordir, up, sideward );
+			VectorScale( sideward, holdSide[client], direction );
+			VectorMA( direction, approach[client], hordir, direction );
+			if ( VectorLength( direction ) < 0.1f ) {
+				return moveresult;		// stands and fires
 			}
-			else if (dist < attack_dist - attack_range) {
-				VectorAdd(sideward, backward, sideward);
+			if ( trap_BotMoveInDirection( bs->ms, direction, 400, MOVE_WALK ) ) {
+				return moveresult;
 			}
+			// blocked: the other side, held as long again
+			holdSide[client] = holdSide[client] ? -holdSide[client] : ( random() < 0.5f ? -1 : 1 );
+			holdUntil[client] = FloatTime() + BOT_ROBOT_HOLD_MIN + random() * BOT_ROBOT_HOLD_SPREAD;
 		}
-		//perform the movement
-		if (trap_BotMoveInDirection(bs->ms, sideward, 400, movetype))
-			return moveresult;
-		//movement failed, flip the strafe direction
-		bs->flags ^= BFL_STRAFERIGHT;
-		bs->attackstrafe_time = 0;
 	}
 	//bot couldn't do any usefull movement
 //	bs->attackchase_time = AAS_Time() + 6;
