@@ -258,9 +258,29 @@ int		FindFloatPlane (vec3_t normal, vec_t dist)
 MapPlaneFromPoints
 ================
 */
+/*
+WALKER: FindFloatPlane snaps a normal within NORMAL_EPSILON of an axis to the axis but
+keeps the distance of the tilted plane. For a top of terrain sloping 0.25 units over
+64 (normal 1 - 8e-6) at x = -1600 that put the face 6 units above or below its
+neighbours, and through the gaps the sky under the map showed (wk_bigbeacons,
+27.11.2026). Now an axial plane is taken only when the three points lie on it;
+otherwise the tilted plane is kept as it is.
+*/
+static int FindFloatPlaneUnsnapped (vec3_t normal, vec_t dist) {
+	int		i;
+	plane_t	*p;
+
+	for (i=0, p=mapplanes ; i<nummapplanes ; i++, p++)
+	{
+		if (PlaneEqual (p, normal, dist))
+			return i;
+	}
+	return CreateNewFloatPlane (normal, dist);
+}
+
 int MapPlaneFromPoints (vec3_t p0, vec3_t p1, vec3_t p2) {
-	vec3_t	t1, t2, normal;
-	vec_t	dist;
+	vec3_t	t1, t2, normal, snapped, center;
+	vec_t	dist, snappedDist;
 
 	VectorSubtract (p0, p1, t1);
 	VectorSubtract (p2, p1, t2);
@@ -268,6 +288,21 @@ int MapPlaneFromPoints (vec3_t p0, vec3_t p1, vec3_t p2) {
 	VectorNormalize (normal, normal);
 
 	dist = DotProduct (p0, normal);
+
+	VectorCopy (normal, snapped);
+	SnapVector (snapped);
+	if (!VectorCompare (snapped, normal)) {
+		center[0] = ( p0[0] + p1[0] + p2[0] ) / 3;
+		center[1] = ( p0[1] + p1[1] + p2[1] ) / 3;
+		center[2] = ( p0[2] + p1[2] + p2[2] ) / 3;
+		snappedDist = DotProduct (center, snapped);
+		if (fabs (DotProduct (p0, snapped) - snappedDist) < DIST_EPSILON
+			&& fabs (DotProduct (p1, snapped) - snappedDist) < DIST_EPSILON
+			&& fabs (DotProduct (p2, snapped) - snappedDist) < DIST_EPSILON) {
+			return FindFloatPlane (snapped, snappedDist);
+		}
+		return FindFloatPlaneUnsnapped (normal, dist);
+	}
 
 	return FindFloatPlane (normal, dist);
 }
