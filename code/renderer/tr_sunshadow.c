@@ -95,12 +95,18 @@ static GLsizei		*volumeCounts;
 static GLsizei		awayRangeCounts[MAX_AWAY_RANGES];
 static const void	*awayRangeOffsets[MAX_AWAY_RANGES];
 static int			numAwayRanges;
-// those of surfaces with deformVertexes lodshift, drawn with the vertex program one by one
+// those of surfaces with deformVertexes lodshift, drawn with the vertex program; the
+// program depends on the depth of the move and the level only, so the ranges with the
+// same two go in one call (RB_DrawShiftRanges)
 #define	MAX_SHIFT_RANGES	1024
 static GLsizei		shiftRangeCounts[MAX_SHIFT_RANGES];
 static const void	*shiftRangeOffsets[MAX_SHIFT_RANGES];
 static const deformStage_t	*shiftRangeDeforms[MAX_SHIFT_RANGES];
+static float		shiftRangeDepths[MAX_SHIFT_RANGES];
 static int			numShiftRanges;
+static GLsizei		groupRangeCounts[MAX_SHIFT_RANGES];
+static const void	*groupRangeOffsets[MAX_SHIFT_RANGES];
+static qboolean		shiftRangeDrawn[MAX_SHIFT_RANGES];
 static int			builtLevel = -1;
 static qboolean		stencilWrap;
 
@@ -449,6 +455,7 @@ static int RB_CollectAwayTriangles( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 					shiftRangeOffsets[numShiftRanges] = (const void *)( (size_t)tri->vboAwayFirst * sizeof( glIndex_t ) );
 					shiftRangeCounts[numShiftRanges] = tri->vboAwayCount;
 					shiftRangeDeforms[numShiftRanges] = &shader->deforms[0];
+					shiftRangeDepths[numShiftRanges] = R_LodShiftDepth( &shader->deforms[0] );
 					numShiftRanges++;
 				}
 				continue;
@@ -537,6 +544,48 @@ static int RB_CollectAwayTriangles( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 		}
 	}
 	return numVerts;
+}
+
+/*
+===============
+RB_DrawShiftRanges
+
+The ranges of the lodshift surfaces, a call for each depth of the move and level
+(with r_simpleModels 0 nothing moves: one call for all); the map's buffers bound.
+===============
+*/
+static void RB_DrawShiftRanges( void ) {
+	int			first, other, groupCount;
+	float		depth;
+	qboolean	farLevel;
+
+	Com_Memset( shiftRangeDrawn, 0, numShiftRanges * sizeof( shiftRangeDrawn[0] ) );
+	for ( first = 0 ; first < numShiftRanges ; first++ ) {
+		if ( shiftRangeDrawn[first] ) {
+			continue;
+		}
+		depth = shiftRangeDepths[first];
+		farLevel = shiftRangeDeforms[first]->moveVector[0] != 0;
+		groupCount = 0;
+		for ( other = first ; other < numShiftRanges ; other++ ) {
+			if ( shiftRangeDrawn[other] || shiftRangeDepths[other] != depth
+				|| ( depth != 0 && ( shiftRangeDeforms[other]->moveVector[0] != 0 ) != farLevel ) ) {
+				continue;		// with no move the level does not matter
+			}
+			shiftRangeDrawn[other] = qtrue;
+			// joined to the previous range when it goes on in the buffer
+			if ( groupCount && (const byte *)groupRangeOffsets[groupCount - 1]
+				+ groupRangeCounts[groupCount - 1] * sizeof( glIndex_t ) == (const byte *)shiftRangeOffsets[other] ) {
+				groupRangeCounts[groupCount - 1] += shiftRangeCounts[other];
+				continue;
+			}
+			groupRangeOffsets[groupCount] = shiftRangeOffsets[other];
+			groupRangeCounts[groupCount] = shiftRangeCounts[other];
+			groupCount++;
+		}
+		GLSL_LodShiftBegin( shiftRangeDeforms[first] );
+		R_VBODrawRanges( groupCount, groupRangeCounts, groupRangeOffsets );
+	}
 }
 
 qboolean RB_SunShadowVolumes( drawSurf_t *drawSurfs, int numDrawSurfs ) {
@@ -652,12 +701,7 @@ qboolean RB_SunShadowVolumes( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 	if ( numShiftRanges ) {
 		R_VBOBindWorldAway();
 		qglVertexPointer( 3, GL_FLOAT, sizeof( vboVertex_t ), NULL );
-		for ( index = 0 ; index < numShiftRanges ; index++ ) {
-			if ( !index || shiftRangeDeforms[index] != shiftRangeDeforms[index - 1] ) {
-				GLSL_LodShiftBegin( shiftRangeDeforms[index] );
-			}
-			R_VBODrawRanges( 1, &shiftRangeCounts[index], &shiftRangeOffsets[index] );
-		}
+		RB_DrawShiftRanges();
 		GLSL_LodShiftEnd();
 		R_VBOBindBuffers( 0, 0 );
 	}
