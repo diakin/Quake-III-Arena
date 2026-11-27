@@ -378,7 +378,7 @@ void R_AddMD3Surfaces( trRefEntity_t *ent ) {
 	// WALKER: no shadow volumes in the water reflection (drawn twice otherwise)
 	addShadows = !personalModel
 		&& !tr.viewParms.isPortal
-		&& r_shadows->integer == 2
+		&& ( r_shadows->integer == 2 || ( tr.refdef.rdflags & RDF_STUDIOLIGHT ) )
 		&& ( fogNum == 0 || !tr.world || !tr.world->fogs[fogNum].hasSurface )
 		&& !( ent->e.renderfx & ( RF_NOSHADOW | RF_DEPTHHACK ) );
 

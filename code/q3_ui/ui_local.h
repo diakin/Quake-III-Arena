@@ -534,6 +534,9 @@ extern qboolean	uiPlayerOrbit;
 extern float	uiPlayerOrbitPitch;
 extern float	uiPlayerOrbitRoll;
 extern float	uiPlayerOrbitZoom;	// 1 = whole robot fits, more = closer
+extern qboolean	uiPlayerStudioLight;	// WALKER: the hangar key light and shadows (RDF_STUDIOLIGHT)
+extern float	uiPlayerLightYaw;		// its direction: 0 - from the camera, + - from the right
+extern float	uiPlayerLightPitch;		// above the floor, degrees
 void UI_PlayerInfo_SetModel( playerInfo_t *pi, const char *model );
 void UI_PlayerInfo_SetInfo( playerInfo_t *pi, int legsAnim, int torsoAnim, vec3_t viewAngles, vec3_t moveAngles, weapon_t weaponNum, qboolean chat );
 qboolean UI_RegisterClientModelname( playerInfo_t *pi, const char *modelSkinName );

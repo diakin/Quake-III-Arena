@@ -6,7 +6,9 @@ The robots of the pilot account stand in five bays along the bottom of the
 screen; an empty bay sells a new robot. The selected robot is shown large on the
 left with the weapons in its slots and can be turned around every axis: drag
 with the left mouse button (left/right - turn, up/down - tilt), drag with the
-right button (roll), arrow keys and PgUp/PgDn; HOME or "RESET VIEW" puts it
+right button (roll), arrow keys and PgUp/PgDn; the key light (LIGHT: ON, with
+shadows of the parts on each other and on the floor) moves with the middle
+button or Shift and the left one; HOME or "RESET VIEW" puts it
 back, the wheel zooms.
 
 On the right: the characteristics of the robot, its weapon slots (a slot takes
@@ -39,6 +41,7 @@ This file is part of WALKER, based on the Quake III Arena source code
 #define ID_BACK				10
 #define ID_AUTOROTATE		12
 #define ID_RESETVIEW		13
+#define ID_LIGHT			21
 #define ID_UPGRADE_ROBOT	14
 #define ID_UPGRADE_WEAPON	15
 #define ID_CHANGE_WEAPON	16
@@ -54,6 +57,10 @@ This file is part of WALKER, based on the Quake III Arena source code
 #define ZOOM_MIN			0.6f
 #define ZOOM_MAX			2.6f
 #define DRAG_SPEED			1.2f	// degrees per virtual pixel of mouse travel
+#define LIGHT_DEFAULT_YAW	40		// the key light: from the camera's right, above
+#define LIGHT_DEFAULT_PITCH	50
+#define LIGHT_MIN_PITCH		25
+#define LIGHT_MAX_PITCH		88
 #define TURN_SPEED			20.0f	// degrees per second of the automatic turn
 #define KEY_STEP			10.0f
 
@@ -104,6 +111,7 @@ typedef struct {
 	hangarButton_t	back;
 	hangarButton_t	autoRotate;
 	hangarButton_t	resetView;
+	hangarButton_t	light;
 	hangarButton_t	slots[ROBOT_MAX_SLOTS];
 	hangarButton_t	upgradeRobot;
 	hangarButton_t	upgradeWeapon;
@@ -135,6 +143,9 @@ typedef struct {
 	int				lastTime;
 	qboolean		dragging;		// left button: turn and tilt
 	qboolean		rolling;		// right button: roll
+	qboolean		lighting;		// middle button or Shift + left: the key light
+	float			lightYaw;
+	float			lightPitch;
 	float			dragLastX;
 	float			dragLastY;
 	qhandle_t		backgroundShader;
@@ -419,6 +430,8 @@ static void Hangar_UpdateButtons( void ) {
 
 	Hangar_SetButton( &hangarMenuInfo.autoRotate,
 		trap_Cvar_VariableValue( "ui_hangarAutoRotate" ) ? "AUTO ROTATE: ON" : "AUTO ROTATE: OFF", "", qtrue );
+	Hangar_SetButton( &hangarMenuInfo.light,
+		trap_Cvar_VariableValue( "ui_hangarLight" ) ? "LIGHT: ON" : "LIGHT: OFF", "", qtrue );
 
 	numSlots = bg_robots[robot ? robot->type : hangarMenuInfo.shopType].numSlots;
 	actionsY = Hangar_ActionsY( numSlots );
@@ -716,8 +729,12 @@ static void Hangar_DrawPreview( void *self ) {
 	uiPlayerOrbitPitch = hangarMenuInfo.previewPitch;
 	uiPlayerOrbitRoll = hangarMenuInfo.previewRoll;
 	uiPlayerOrbitZoom = hangarMenuInfo.previewZoom;
+	uiPlayerStudioLight = trap_Cvar_VariableValue( "ui_hangarLight" ) != 0;
+	uiPlayerLightYaw = hangarMenuInfo.lightYaw;
+	uiPlayerLightPitch = hangarMenuInfo.lightPitch;
 	UI_DrawPlayer( PREVIEW_X, PREVIEW_Y, PREVIEW_W, PREVIEW_H - 24, player, uis.realtime / 2 );
 	uiPlayerOrbit = qfalse;
+	uiPlayerStudioLight = qfalse;
 }
 
 
@@ -782,7 +799,20 @@ static void Hangar_Draw( void ) {
 	if ( hangarMenuInfo.rolling && !trap_Key_IsDown( K_MOUSE2 ) ) {
 		hangarMenuInfo.rolling = qfalse;
 	}
-	if ( hangarMenuInfo.dragging ) {
+	if ( hangarMenuInfo.lighting && !trap_Key_IsDown( K_MOUSE3 ) && !trap_Key_IsDown( K_MOUSE1 ) ) {
+		hangarMenuInfo.lighting = qfalse;
+	}
+	if ( hangarMenuInfo.lighting ) {
+		// the light goes the way the mouse does; not lower than 25 degrees (the
+		// shadow volumes must reach the floor) and not past the top
+		hangarMenuInfo.lightYaw = AngleNormalize180( hangarMenuInfo.lightYaw + ( uis.cursorx - hangarMenuInfo.dragLastX ) * DRAG_SPEED );
+		hangarMenuInfo.lightPitch -= ( uis.cursory - hangarMenuInfo.dragLastY ) * DRAG_SPEED;
+		if ( hangarMenuInfo.lightPitch < LIGHT_MIN_PITCH ) {
+			hangarMenuInfo.lightPitch = LIGHT_MIN_PITCH;
+		} else if ( hangarMenuInfo.lightPitch > LIGHT_MAX_PITCH ) {
+			hangarMenuInfo.lightPitch = LIGHT_MAX_PITCH;
+		}
+	} else if ( hangarMenuInfo.dragging ) {
 		hangarMenuInfo.previewYaw += ( uis.cursorx - hangarMenuInfo.dragLastX ) * DRAG_SPEED;
 		hangarMenuInfo.previewPitch += ( uis.cursory - hangarMenuInfo.dragLastY ) * DRAG_SPEED;
 	} else if ( hangarMenuInfo.rolling ) {
@@ -816,7 +846,7 @@ static void Hangar_Draw( void ) {
 	UI_FillRect( 0, BOTTOM_Y, SCREEN_WIDTH, 1, hangarRuleColor );
 	Hangar_Text( 630, BOTTOM_Y + 10, va( "%i of %i robots ready for battle", UI_AccountAvailableRobots(), uiAccount.numRobots ),
 		UI_RIGHT, hangarDimColor );
-	Hangar_Text( 630, BOTTOM_Y + 26, "LMB drag: turn   RMB drag: roll   wheel: zoom", UI_RIGHT, hangarDimColor );
+	Hangar_Text( 630, BOTTOM_Y + 26, "LMB: turn  RMB: roll  MMB / SHIFT+LMB: light  wheel: zoom", UI_RIGHT, hangarDimColor );
 
 	Menu_Draw( &hangarMenuInfo.menu );
 }
@@ -831,9 +861,12 @@ static sfxHandle_t Hangar_Key( int key ) {
 	switch ( key ) {
 	case K_MOUSE1:
 	case K_MOUSE2:
+	case K_MOUSE3:
 		if ( uis.cursorx >= PREVIEW_X && uis.cursorx <= PREVIEW_X + PREVIEW_W &&
 			uis.cursory >= PREVIEW_Y && uis.cursory <= PREVIEW_Y + PREVIEW_H - 24 ) {
-			if ( key == K_MOUSE1 ) {
+			if ( key == K_MOUSE3 || ( key == K_MOUSE1 && trap_Key_IsDown( K_SHIFT ) ) ) {
+				hangarMenuInfo.lighting = qtrue;
+			} else if ( key == K_MOUSE1 ) {
 				hangarMenuInfo.dragging = qtrue;
 			} else {
 				hangarMenuInfo.rolling = qtrue;
@@ -873,6 +906,8 @@ static sfxHandle_t Hangar_Key( int key ) {
 		hangarMenuInfo.previewPitch = 0;
 		hangarMenuInfo.previewRoll = 0;
 		hangarMenuInfo.previewZoom = 1;
+		hangarMenuInfo.lightYaw = LIGHT_DEFAULT_YAW;
+		hangarMenuInfo.lightPitch = LIGHT_DEFAULT_PITCH;
 		return 0;
 	case K_MWHEELUP:
 	case K_KP_PLUS:
@@ -1095,6 +1130,11 @@ static void Hangar_Event( void *ptr, int event ) {
 		hangarMenuInfo.previewPitch = 0;
 		hangarMenuInfo.previewRoll = 0;
 		hangarMenuInfo.previewZoom = 1;
+		hangarMenuInfo.lightYaw = LIGHT_DEFAULT_YAW;
+		hangarMenuInfo.lightPitch = LIGHT_DEFAULT_PITCH;
+		break;
+	case ID_LIGHT:
+		trap_Cvar_SetValue( "ui_hangarLight", !trap_Cvar_VariableValue( "ui_hangarLight" ) );
 		break;
 	case ID_UPGRADE_ROBOT:
 		Hangar_UpgradeRobot();
@@ -1246,6 +1286,9 @@ static void Hangar_Init( void ) {
 	Hangar_InitButton( &hangarMenuInfo.autoRotate, ID_AUTOROTATE, PREVIEW_X + 8, PREVIEW_Y + PREVIEW_H - 20, 116, 16 );
 	Hangar_InitButton( &hangarMenuInfo.resetView, ID_RESETVIEW, PREVIEW_X + 130, PREVIEW_Y + PREVIEW_H - 20, 80, 16 );
 	Hangar_SetButton( &hangarMenuInfo.resetView, "RESET VIEW", "", qtrue );
+	Hangar_InitButton( &hangarMenuInfo.light, ID_LIGHT, PREVIEW_X + 216, PREVIEW_Y + PREVIEW_H - 20, 80, 16 );
+	hangarMenuInfo.lightYaw = LIGHT_DEFAULT_YAW;
+	hangarMenuInfo.lightPitch = LIGHT_DEFAULT_PITCH;
 
 	Hangar_InitButton( &hangarMenuInfo.back, ID_BACK, 10, BOTTOM_Y + 12, 96, 24 );
 	Hangar_SetButton( &hangarMenuInfo.back, "BACK", "", qtrue );

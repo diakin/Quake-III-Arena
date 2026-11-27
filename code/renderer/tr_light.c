@@ -279,6 +279,11 @@ Calculates all the lighting values that will be used
 by the Calc_* functions
 =================
 */
+// WALKER: the hangar key light (RDF_STUDIOLIGHT): ambient (the minimum add of 32 comes
+// on top) and the directed light at the colour 1
+#define	STUDIO_AMBIENT		52
+#define	STUDIO_DIRECTED		200
+
 void R_SetupEntityLighting( const trRefdef_t *refdef, trRefEntity_t *ent ) {
 	int				i;
 	dlight_t		*dl;
@@ -287,6 +292,7 @@ void R_SetupEntityLighting( const trRefdef_t *refdef, trRefEntity_t *ent ) {
 	float			d;
 	vec3_t			lightDir;
 	vec3_t			lightOrigin;
+	int				firstDlight = 0;		// 1: the first one is the key light (RDF_STUDIOLIGHT)
 
 	// lighting calculations 
 	if ( ent->lightingCalculated ) {
@@ -317,6 +323,17 @@ void R_SetupEntityLighting( const trRefdef_t *refdef, trRefEntity_t *ent ) {
 		if ( VectorLength( tr.sunLight ) > 0 ) {
 			VectorCopy( tr.sunDirection, ent->lightDir );
 		}
+	} else if ( ( refdef->rdflags & RDF_STUDIOLIGHT ) && refdef->num_dlights > 0 ) {
+		// WALKER: the hangar - the first dynamic light is the key light, from its
+		// direction, with its colour; little ambient, so the sides away from it
+		// and the shadows can be seen
+		dl = &refdef->dlights[0];
+		ent->ambientLight[0] = ent->ambientLight[1] =
+			ent->ambientLight[2] = tr.identityLight * STUDIO_AMBIENT;
+		VectorScale( dl->color, tr.identityLight * STUDIO_DIRECTED, ent->directedLight );
+		VectorSubtract( dl->origin, lightOrigin, ent->lightDir );
+		VectorNormalize( ent->lightDir );
+		firstDlight = 1;
 	} else {
 		ent->ambientLight[0] = ent->ambientLight[1] = 
 			ent->ambientLight[2] = tr.identityLight * 150;
@@ -339,7 +356,7 @@ void R_SetupEntityLighting( const trRefdef_t *refdef, trRefEntity_t *ent ) {
 	d = VectorLength( ent->directedLight );
 	VectorScale( ent->lightDir, d, lightDir );
 
-	for ( i = 0 ; i < refdef->num_dlights ; i++ ) {
+	for ( i = firstDlight ; i < refdef->num_dlights ; i++ ) {
 		dl = &refdef->dlights[i];
 		VectorSubtract( dl->origin, lightOrigin, dir );
 		d = VectorNormalize( dir );

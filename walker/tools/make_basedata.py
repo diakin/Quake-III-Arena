@@ -435,6 +435,19 @@ def menu_art():
         draw.line([(line, height * 0.72), (line - 200 + line * 0.4, height)], fill=(30, 44, 50), width=1)
     save('menu/art/menuback.jpg', image)
     write('scripts/walker_menu.shader', """// menu and interface
+// the hangar floor under the robot (ui_players.c, UI_StudioFloor): not drawn, only depth,
+// so the shadow volumes stop on it and the hangar picture darkens where the shadow lies
+hangarShadowFloor
+{
+	nopicmip
+	cull none
+	sort opaque
+	{
+		map $whiteimage
+		blendFunc GL_ZERO GL_ONE
+		depthWrite
+	}
+}
 menuback
 {
 	nopicmip

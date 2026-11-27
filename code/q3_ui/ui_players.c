@@ -726,6 +726,48 @@ qboolean	uiPlayerOrbit;
 float		uiPlayerOrbitPitch;
 float		uiPlayerOrbitRoll;
 float		uiPlayerOrbitZoom = 1;
+qboolean	uiPlayerStudioLight;
+float		uiPlayerLightYaw = 40;
+float		uiPlayerLightPitch = 50;
+
+/*
+===============
+UI_StudioLight
+
+WALKER: the hangar key light and the floor its shadow falls on. The light goes
+in first (the renderer takes the first dynamic light as the key light with
+RDF_STUDIOLIGHT); the floor is an invisible plane at the feet that only writes
+depth: the shadow volumes stop on it and the hangar picture behind darkens.
+===============
+*/
+static void UI_StudioLight( const vec3_t centre ) {
+	vec3_t	position;
+	float	yaw = DEG2RAD( uiPlayerLightYaw ), pitch = DEG2RAD( uiPlayerLightPitch );
+
+	// the camera looks along +x, +y is to its left
+	position[0] = centre[0] - 1000 * cos( pitch ) * cos( yaw );
+	position[1] = centre[1] - 1000 * cos( pitch ) * sin( yaw );
+	position[2] = centre[2] + 1000 * sin( pitch );
+	trap_R_AddLightToScene( position, 1000, 1.0f, 0.96f, 0.9f );
+}
+
+static void UI_StudioFloor( const vec3_t centre, float floorHeight ) {
+	static qhandle_t	floorShader;
+	polyVert_t			corners[4];
+	int					corner;
+
+	if ( !floorShader ) {
+		floorShader = trap_R_RegisterShaderNoMip( "hangarShadowFloor" );
+	}
+	memset( corners, 0, sizeof( corners ) );
+	for ( corner = 0 ; corner < 4 ; corner++ ) {
+		corners[corner].xyz[0] = centre[0] + ( corner == 0 || corner == 3 ? -1500 : 1500 );
+		corners[corner].xyz[1] = centre[1] + ( corner < 2 ? -1500 : 1500 );
+		corners[corner].xyz[2] = floorHeight;
+		corners[corner].modulate[0] = corners[corner].modulate[1] = corners[corner].modulate[2] = corners[corner].modulate[3] = 255;
+	}
+	trap_R_AddPolyToScene( floorShader, 4, corners );
+}
 
 /*
 ===============
@@ -832,6 +874,16 @@ void UI_DrawPlayer( float x, float y, float w, float h, playerInfo_t *pi, int ti
 
 	trap_R_ClearScene();
 
+	// WALKER: hangar key light first (the first dynamic light), the floor at the feet
+	if ( uiPlayerStudioLight ) {
+		vec3_t	centre;
+
+		VectorSet( centre, origin[0], origin[1], 0 );
+		refdef.rdflags |= RDF_STUDIOLIGHT;
+		UI_StudioLight( centre );
+		UI_StudioFloor( centre, origin[2] + mins[2] );
+	}
+
 	// get the rotation information
 	UI_PlayerAngles( pi, legs.axis, torso.axis, head.axis );
 
@@ -856,7 +908,7 @@ void UI_DrawPlayer( float x, float y, float w, float h, playerInfo_t *pi, int ti
 	UI_PlayerAnimation( pi, &legs.oldframe, &legs.frame, &legs.backlerp,
 		 &torso.oldframe, &torso.frame, &torso.backlerp );
 
-	renderfx = RF_LIGHTING_ORIGIN | RF_NOSHADOW;
+	renderfx = RF_LIGHTING_ORIGIN | ( uiPlayerStudioLight ? 0 : RF_NOSHADOW );
 
 	//
 	// add the legs
@@ -991,6 +1043,11 @@ void UI_DrawPlayer( float x, float y, float w, float h, playerInfo_t *pi, int ti
 	//
 	if ( pi->chat ) {
 		UI_PlayerFloatSprite( pi, origin, trap_R_RegisterShaderNoMip( "sprites/balloon3" ) );
+	}
+
+	if ( uiPlayerStudioLight ) {
+		trap_R_RenderScene( &refdef );		// the key light only
+		return;
 	}
 
 	//

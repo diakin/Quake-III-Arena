@@ -530,6 +530,16 @@ Esc -> END BATTLE (TEST) (или команда cmd endbattle) завершае�
                          левая кнопка мыши — поворот и наклон, правая — крен, стрелки и
                          PgUp/PgDn, колесо мыши (или +/-) — масштаб, HOME — сброс; AUTO ROTATE включает и выключает
                          вращение (ui_hangarAutoRotate); PILOT выбирает робота.
+                         LIGHT: ON (ui_hangarLight, по умолчанию 1) - один источник света
+                         вместо двух подсветок и тени: части робота затеняют друг друга, тень
+                         ложится на пол. Свет двигается средней кнопкой мыши или Shift + левой
+                         (влево-вправо - вокруг робота, вверх-вниз - выше-ниже, от 25 до 88
+                         градусов); HOME и RESET VIEW возвращают его. Пол ангара - картинка:
+                         под ногами невидимая плоскость (шейдер hangarShadowFloor, пишет только
+                         глубину), тень затемняет картинку. Движок: флаг RDF_STUDIOLIGHT
+                         (tr_types.h) - первый динамический свет сцены главный, малый рассеянный
+                         свет (tr_light.c), тени объёмами при любом cg_shadows (tr_mesh.c,
+                         tr_backend.c, tr_shadows.c)
                          Наклон и крен всей модели — uiPlayerOrbit в ui_players.c
   renderer/tr_init.c     r_ambientScale 0.45, r_directedScale 1.4: модели контрастнее
   win32/win_glimp.c      сглаживание краёв (r_ext_multisample 4: WGL_ARB_multisample, при

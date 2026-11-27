@@ -45,6 +45,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // refdef flags
 #define RDF_NOWORLDMODEL	1		// used for player configuration screen
 #define RDF_HYPERSPACE		4		// teleportation effect
+#define RDF_STUDIOLIGHT		8		// WALKER, with RDF_NOWORLDMODEL (the hangar): the first dynamic
+									// light of the scene is the key light - models lit by it with a
+									// low ambient, and stencil shadows (on the models themselves and
+									// on what writes depth) fall away from it whatever cg_shadows says
 
 typedef struct {
 	vec3_t		xyz;

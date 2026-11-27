@@ -502,8 +502,9 @@ void R_ShadowShutdownMeshes( void ) {
 
 static void RB_ShadowLightDir( vec3_t lightDir ) {
 	VectorCopy( backEnd.currentEntity->lightDir, lightDir );
-	// shadows always fall away from the sun, whatever the dynamic lights do
-	if ( VectorLength( tr.sunLight ) > 0 ) {
+	// shadows always fall away from the sun, whatever the dynamic lights do;
+	// in the hangar away from its key light (the light direction of the entity)
+	if ( VectorLength( tr.sunLight ) > 0 && !( backEnd.refdef.rdflags & RDF_STUDIOLIGHT ) ) {
 		lightDir[0] = DotProduct( tr.sunDirection, backEnd.currentEntity->e.axis[0] );
 		lightDir[1] = DotProduct( tr.sunDirection, backEnd.currentEntity->e.axis[1] );
 		lightDir[2] = DotProduct( tr.sunDirection, backEnd.currentEntity->e.axis[2] );
@@ -674,7 +675,7 @@ overlap and double darken.
 =================
 */
 void RB_ShadowFinish( qboolean sunShadows ) {
-	if ( r_shadows->integer != 2 && !sunShadows ) {
+	if ( r_shadows->integer != 2 && !sunShadows && !( backEnd.refdef.rdflags & RDF_STUDIOLIGHT ) ) {
 		return;
 	}
 	if ( glConfig.stencilBits < 4 ) {
