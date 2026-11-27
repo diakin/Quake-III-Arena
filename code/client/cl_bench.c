@@ -113,6 +113,59 @@ static int		benchAutoPrinted;
 
 static void Bench_Start( int seconds );
 
+/*
+the maps of the benchmark exe (27.11.2026): bench_map is one map, a list ("wk_islands
+wk_bigbeacons") or "all"; one after another, each with the bots entering and all the
+steps, the reports one after another in benchmark.log and a summary at the end
+*/
+#define BENCH_ALL_MAPS		"wk_islands wk_beacons wk_bigbeacons"
+#define BENCH_MAX_MAPS		8
+
+typedef struct {
+	char	map[MAX_QPATH];
+	float	liveFps, liveMedian, liveLow, liveFrame, liveBots, liveBack, liveDraws;
+	float	frozenFps, frozenBack, frozenDraws;
+} benchMapResult_t;
+
+static benchMapResult_t	benchMapResults[BENCH_MAX_MAPS];
+static int				benchMapIndex;		// the map running now
+
+// the map with this number in bench_map, NULL past the end
+const char *CL_BenchMapName( int number ) {
+	static char	word[MAX_QPATH];
+	const char	*list = Cvar_VariableString( "bench_map" );
+	int			index = 0;
+
+	if ( !list[0] ) {
+		list = "wk_islands";
+	} else if ( !Q_stricmp( list, "all" ) ) {
+		list = BENCH_ALL_MAPS;
+	}
+	while ( *list ) {
+		int		length = 0;
+		while ( *list == ' ' || *list == ',' ) {
+			list++;
+		}
+		if ( !*list ) {
+			break;
+		}
+		while ( list[length] && list[length] != ' ' && list[length] != ',' && length < (int)sizeof( word ) - 1 ) {
+			word[length] = list[length];
+			length++;
+		}
+		word[length] = 0;
+		list += length;
+		while ( *list && *list != ' ' && *list != ',' ) {
+			list++;		// a name too long: the rest dropped
+		}
+		if ( index == number && number < BENCH_MAX_MAPS ) {
+			return word;
+		}
+		index++;
+	}
+	return NULL;
+}
+
 // bots entering one by one (the benchmark exe): a row for each number of robots in the battle
 #define BENCH_MAX_RAMP		( MAX_CLIENTS / 2 + 1 )
 static benchStep_t	benchRamp[BENCH_MAX_RAMP];
@@ -522,6 +575,65 @@ static void Bench_Report( void ) {
 Bench_Finish
 =================
 */
+// the numbers of the map just measured, for the summary
+static void Bench_KeepMapResult( void ) {
+	benchMapResult_t	*result;
+	int					index;
+
+	if ( benchMapIndex >= BENCH_MAX_MAPS ) {
+		return;
+	}
+	result = &benchMapResults[benchMapIndex];
+	Com_Memset( result, 0, sizeof( *result ) );
+	Q_strncpyz( result->map, Cvar_VariableString( "mapname" ), sizeof( result->map ) );
+	for ( index = 0; index < benchNumSteps; index++ ) {
+		benchStep_t	*step = &benchSteps[index];
+		float		frames = step->frames;
+
+		if ( !step->frames || !step->msec ) {
+			continue;
+		}
+		if ( !Q_stricmp( step->name, "base" ) ) {
+			result->liveFps = step->frames * 1000.0f / step->msec;
+			result->liveMedian = step->median > 0 ? 1000.0f / step->median : 0;
+			result->liveLow = step->low > 0 ? 1000.0f / step->low : 0;
+			result->liveFrame = step->msec / frames;
+			result->liveBots = step->bots / frames;
+			result->liveBack = step->back / frames;
+			result->liveDraws = step->draws / frames;
+		} else if ( !Q_stricmp( step->name, "frozen" ) ) {
+			result->frozenFps = step->frames * 1000.0f / step->msec;
+			result->frozenBack = step->back / frames;
+			result->frozenDraws = step->draws / frames;
+		}
+	}
+}
+
+static void Bench_WriteSummary( int count ) {
+	static char		summary[4096];
+	fileHandle_t	file;
+	int				index;
+
+	summary[0] = 0;
+	Q_strcat( summary, sizeof( summary ), va( "==== WALKER benchmark summary, %i maps (%s settings): the base step\n"
+		"(the battle with all the bots) and the frozen one of each report above\n",
+		count, Cvar_VariableIntegerValue( "bench_mysettings" ) ? "the player's own" : "the stock" ) );
+	Q_strcat( summary, sizeof( summary ), "map                 live: fps median  1%low  frame   bots   back  draws   frozen: fps   back  draws\n" );
+	for ( index = 0; index < count && index < BENCH_MAX_MAPS; index++ ) {
+		benchMapResult_t	*result = &benchMapResults[index];
+		Q_strcat( summary, sizeof( summary ), va( "%-18s  %9.1f  %5.1f  %5.1f  %5.1f  %5.1f  %5.1f  %5.0f   %11.1f  %5.1f  %5.0f\n",
+			result->map, result->liveFps, result->liveMedian, result->liveLow, result->liveFrame, result->liveBots,
+			result->liveBack, result->liveDraws, result->frozenFps, result->frozenBack, result->frozenDraws ) );
+	}
+	Q_strcat( summary, sizeof( summary ), "\n" );
+	Bench_Print( summary );
+	FS_FOpenFileByMode( BENCH_LOG, &file, FS_APPEND );
+	if ( file ) {
+		FS_Write( summary, strlen( summary ), file );
+		FS_FCloseFile( file );
+	}
+}
+
 static void Bench_Finish( qboolean report ) {
 	int		index;
 
@@ -538,6 +650,25 @@ static void Bench_Finish( qboolean report ) {
 		Bench_Report();
 	}
 	if ( benchAuto == AUTO_RUNNING ) {
+		const char	*next;
+
+		if ( report ) {
+			Bench_KeepMapResult();
+		}
+		next = CL_BenchMapName( benchMapIndex + 1 );
+		if ( report && next ) {
+			// the next map: the bots out (the ramp counts them again from none), the same steps
+			benchMapIndex++;
+			Com_Printf( "benchmark: the next map, %s\n", next );
+			Cbuf_AddText( va( "kick allbots\nmap %s\n", next ) );
+			benchAuto = AUTO_WAIT;
+			benchAutoTime = 0;
+			com_profiling = 1;		// CL_BenchFrame every frame again (switched off above)
+			return;
+		}
+		if ( report && benchMapIndex > 0 ) {
+			Bench_WriteSummary( benchMapIndex + 1 );
+		}
 		benchAuto = AUTO_DONE;
 		Sys_ShowFile( FS_BuildOSPath( Cvar_VariableString( "fs_homepath" ), BASEGAME, BENCH_LOG ) );
 		Cbuf_AddText( "quit\n" );
@@ -621,6 +752,7 @@ quits.
 */
 
 void CL_BenchAutoStart( void ) {
+	benchMapIndex = 0;
 	benchAuto = AUTO_WAIT;
 	benchAutoTime = 0;
 	com_profiling = 1;		// CL_BenchFrame is called every frame

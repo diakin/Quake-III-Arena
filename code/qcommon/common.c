@@ -2542,8 +2542,10 @@ void Com_Init( char *commandLine ) {
 	if ( com_benchExe ) {
 		Cvar_Get( "com_benchExe", "1", CVAR_ROM );
 		Cbuf_AddText( "exec benchmode.cfg\n" );
-		// the map: "WalkerBench.exe +set bench_map wk_bigbeacons" (+set is applied before this)
-		Cbuf_AddText( va( "map %s\n", Cvar_Get( "bench_map", "wk_islands", 0 )->string ) );
+		// the map: "WalkerBench.exe +set bench_map wk_bigbeacons" (+set is applied before
+		// this); a list or "all" runs the maps one after another (cl_bench.c)
+		Cvar_Get( "bench_map", "wk_islands", 0 );
+		Cbuf_AddText( va( "map %s\n", CL_BenchMapName( 0 ) ? CL_BenchMapName( 0 ) : "wk_islands" ) );
 		CL_BenchAutoStart();
 	}
 

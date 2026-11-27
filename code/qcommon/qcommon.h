@@ -749,6 +749,7 @@ void Sys_BenchDisableComposition( void );		// WALKER: no desktop composition whi
 void	Sys_ShowFile( const char *path );		// open in the program Windows uses for it
 extern	qboolean	com_benchExe;
 void	CL_BenchAutoStart( void );				// cl_bench.c
+const char *CL_BenchMapName( int number );	// cl_bench.c: the maps of bench_map (a list or "all")
 
 extern	int		com_frameTime;
 extern	int		com_frameMsec;

@@ -101,7 +101,11 @@ WalkerBench.exe (копия Walker.exe; движок узнаёт режим п�
 очереди, до 5 x 5) и каждый раз 6 с замера: таблица "bots entering the battle" показывает,
 сколько стоит робот в бою. Потом шаги замера, benchmark.log открывается, игра закрывается.
 Другая карта (с 27.11.2026): WalkerBench.exe +set bench_map wk_bigbeacons (по умолчанию
-wk_islands; карту запускает движок после benchmode.cfg, qcommon/common.c).
+wk_islands; карту запускает движок после benchmode.cfg, qcommon/common.c). Несколько карт подряд:
+список через пробел (+set bench_map "wk_islands wk_bigbeacons") или all — wk_islands, wk_beacons,
+wk_bigbeacons. На каждой карте весь замер (боты входят по двое, затем все шаги), перед следующей
+боты выгоняются (kick allbots); отчёты идут друг за другом в benchmark.log, в конце сводка: шаги
+base (бой со всеми ботами) и frozen каждой карты. Все три карты — около 13 минут.
 Свои настройки (с 27.11.2026): WalkerBench.exe +set bench_mysettings 1 — тот же бой, но с
 настройками игрока из q3config.cfg и autoexec.cfg: экран (r_mode, окно или полный экран),
 эффекты (сглаживание, фильтр, качество текстур, тени, дымка, отражения), com_maxfps. Файл
