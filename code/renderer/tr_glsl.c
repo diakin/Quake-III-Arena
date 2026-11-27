@@ -360,7 +360,8 @@ needed). Instead of the even glow they get a heat that wanders: slow patches and
 fast ripple of value noise over the atlas coordinates and time, now and then a
 flare; the baked nozzle colour gives where the metal is hotter (the middle of a
 plate, not its edges). The heat goes through the colours of hot iron: dark red,
-red-orange, orange, yellow.
+red-orange, orange, yellow. 28.11.2026: dimmer - less heat (fewer yellow spots,
+weaker flares) and the colour at 0.6.
 ===========================================================================
 */
 #define EMBER_GLSL \
@@ -380,13 +381,13 @@ red-orange, orange, yellow.
 	"		+ emberNoise( uv * 44.0 + vec2( 17.0 - shaderTime * 0.27, shaderTime * 0.19 ) ) );\n" \
 	"	float fast = emberNoise( uv * 90.0 + vec2( -shaderTime * 1.9, shaderTime * 1.4 ) );\n" \
 	"	float flare = emberNoise( uv * 9.0 + vec2( shaderTime * 0.7, shaderTime * 0.5 ) );\n" \
-	"	float heat = 0.12 + 1.1 * slow * slow + 0.22 * fast + 1.0 * max( flare - 0.6, 0.0 );\n" \
+	"	float heat = 0.10 + 0.8 * slow * slow + 0.16 * fast + 0.6 * max( flare - 0.6, 0.0 );\n" \
 	"	heat *= clamp( dot( base, vec3( 0.6, 0.35, 0.05 ) ) * 2.0, 0.15, 1.15 );\n" \
 	"	vec3 color = mix( vec3( 0.10, 0.01, 0.0 ), vec3( 0.45, 0.04, 0.0 ), smoothstep( 0.05, 0.30, heat ) );\n" \
 	"	color = mix( color, vec3( 0.90, 0.22, 0.02 ), smoothstep( 0.30, 0.60, heat ) );\n" \
 	"	color = mix( color, vec3( 1.00, 0.52, 0.10 ), smoothstep( 0.60, 0.90, heat ) );\n" \
 	"	color = mix( color, vec3( 1.00, 0.85, 0.45 ), smoothstep( 0.90, 1.25, heat ) );\n" \
-	"	return color;\n" \
+	"	return color * 0.6;\n" \
 	"}\n"
 
 static const char *materialFragmentSource =
