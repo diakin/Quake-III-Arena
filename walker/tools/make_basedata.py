@@ -65,6 +65,7 @@ sun_shadows_off: frozen; r_sunShadows 0
 haze_off: frozen; r_drawfog 0
 dlights_off: frozen; r_dynamiclight 0
 simple_models: frozen; r_simpleModels 1 // buildings far away in their simple level (off by default since 26.11.2026)
+relief_off: frozen; r_normalMaps 0      // robots without relief maps: light at the vertexes (before 27.11.2026)
 materials_old: frozen; r_materialPass 0 // every material class of a robot part with its own shader (before 26.11.2026)
 models_old: frozen; r_glsl 0            // robots the old way (frames blended on the processor); also the old dynamic lights
 nothing_drawn: frozen; r_drawworld 0; r_drawentities 0     // only the sky and the HUD

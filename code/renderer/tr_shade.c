@@ -931,6 +931,7 @@ static void RB_DrawMeshVBO( void ) {
 	// WALKER: a part with all its material classes in one pass (tr_glsl.c)
 	if ( shader->materialMask && tess.xstages[0] && GLSL_MaterialAvailable() ) {
 		float	*wave = shader->materialGlow;
+		float	bumpScale = 0;
 		float	glow = wave[0] + wave[1] * sin( ( wave[2] + wave[3] * tess.shaderTime ) * 2.0 * M_PI );
 
 		RB_HardwareFogBegin();
@@ -941,9 +942,15 @@ static void RB_DrawMeshVBO( void ) {
 		GL_SelectTexture( 0 );
 		qglActiveTextureARB( GL_TEXTURE0_ARB + 2 );		// unit 2: not tracked by GL_Bind
 		qglBindTexture( GL_TEXTURE_2D, shader->materialMask->texnum );
+		// unit 3: the relief map; its full range as a slope per atlas unit (the map's width)
+		if ( shader->materialBump && GLSL_MaterialBumpAvailable() ) {
+			bumpScale = shader->materialBumpRange * shader->materialBump->width;
+			qglActiveTextureARB( GL_TEXTURE0_ARB + 3 );
+			qglBindTexture( GL_TEXTURE_2D, shader->materialBump->texnum );
+		}
 		qglActiveTextureARB( GL_TEXTURE0_ARB );
 		R_BindAnimatedImage( &tess.xstages[0]->bundle[0] );
-		GLSL_MaterialBegin( model, frame, oldFrame, backLerp, glow, RB_HardwareFogOn() );
+		GLSL_MaterialBegin( model, frame, oldFrame, backLerp, glow, RB_HardwareFogOn(), bumpScale );
 		R_VBODrawRanges( tess.numVboRanges, tess.vboCounts, tess.vboOffsets );
 		RB_HardwareFogEnd();
 		GLSL_MaterialEnd();

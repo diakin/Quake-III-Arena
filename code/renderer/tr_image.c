@@ -39,6 +39,7 @@ static void LoadTGA( const char *name, byte **pic, int *width, int *height );
 static void LoadJPG( const char *name, byte **pic, int *width, int *height );
 
 static byte			 s_intensitytable[256];
+qboolean			tr_imageRawData;		// WALKER: the next images loaded are data (tr_shader.c, materialBump)
 static unsigned char s_gammatable[256];
 
 int		gl_filter_min = GL_LINEAR_MIPMAP_NEAREST;
@@ -634,7 +635,11 @@ static void Upload32( unsigned *data,
 			}
 		}
 		// select proper internal format
-		if ( samples == 3 )
+		if ( samples == 3 && tr_imageRawData )
+		{
+			internalFormat = GL_RGB8;		// WALKER: data keeps all eight bits, never compressed
+		}
+		else if ( samples == 3 )
 		{
 			if ( glConfig.textureCompression == TC_S3TC )
 			{
@@ -702,7 +707,10 @@ static void Upload32( unsigned *data,
 		Com_Memcpy( scaledBuffer, data, width * height * 4 );
 	}
 
-	R_LightScaleTexture (scaledBuffer, scaled_width, scaled_height, !mipmap );
+	// WALKER: data, not colours (the slopes of a relief map): no gamma or intensity
+	if ( !tr_imageRawData ) {
+		R_LightScaleTexture (scaledBuffer, scaled_width, scaled_height, !mipmap );
+	}
 
 	*pUploadWidth = scaled_width;
 	*pUploadHeight = scaled_height;

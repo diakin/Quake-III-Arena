@@ -1575,6 +1575,21 @@ static qboolean ParseShader( char **text )
 			}
 			continue;
 		}
+		// WALKER: materialBump <relief map> <range>: the normal tilted in every pixel (tr_glsl.c)
+		else if ( !Q_stricmp( token, "materialBump" ) )
+		{
+			token = COM_ParseExt( text, qfalse );
+			tr_imageRawData = qtrue;		// slopes, not colours: no gamma
+			shader.materialBump = R_FindImageFile( token, qtrue, qtrue, GL_CLAMP );
+			tr_imageRawData = qfalse;
+			token = COM_ParseExt( text, qfalse );
+			shader.materialBumpRange = atof( token );
+			if ( !shader.materialBump || shader.materialBumpRange <= 0 ) {
+				ri.Printf( PRINT_WARNING, "WARNING: materialBump in shader '%s': image not found or no range\n", shader.name );
+				shader.materialBump = NULL;
+			}
+			continue;
+		}
 		// entityMergable, allowing sprite surfaces from multiple entities
 		// to be merged into one batch.  This is a savings for smoke
 		// puffs and blood, but can't be used for anything where the

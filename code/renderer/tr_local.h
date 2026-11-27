@@ -429,6 +429,10 @@ typedef struct shader_s {
 	struct shader_s	*materialPass;
 	image_t		*materialMask, *materialEnv;
 	float		materialGlow[4];		// base, amplitude, phase, frequency of the glow (sin)
+	// "materialBump <map> <range>": the relief of the part, slopes along the atlas axes
+	// (bake_walker.py), range = Quake units a texel of the map's full value
+	image_t		*materialBump;
+	float		materialBumpRange;
 
   int shaderStates[MAX_STATES_PER_SHADER];          // index to valid shader states
 
@@ -1269,6 +1273,7 @@ model_t		*R_AllocModel( void );
 
 void    	R_Init( void );
 image_t		*R_FindImageFile( const char *name, qboolean mipmap, qboolean allowPicmip, int glWrapClampMode );
+extern qboolean	tr_imageRawData;
 
 image_t		*R_CreateImage( const char *name, const byte *pic, int width, int height, qboolean mipmap
 					, qboolean allowPicmip, int wrapClampMode );
@@ -1450,7 +1455,8 @@ int			R_VBOMeshMemory( void );
 // WALKER: tr_glsl.c, the program of models in video memory
 qboolean	GLSL_MeshAvailable( void );
 qboolean	GLSL_MaterialAvailable( void );		// WALKER: material classes of a part in one pass
-void		GLSL_MaterialBegin( const meshModelVBO_t *model, int frame, int oldFrame, float backLerp, float glow, qboolean fogOn );
+void		GLSL_MaterialBegin( const meshModelVBO_t *model, int frame, int oldFrame, float backLerp, float glow, qboolean fogOn, float bumpScale );
+qboolean	GLSL_MaterialBumpAvailable( void );
 void		GLSL_MaterialEnd( void );
 void		GLSL_MeshBegin( const meshModelVBO_t *model, int frame, int oldFrame, float backLerp );
 void		GLSL_MeshStage( qboolean diffuse, qboolean specular, qboolean environment, const byte *color, qboolean fogOn );

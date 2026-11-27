@@ -48,6 +48,7 @@ static void		( APIENTRY *qglDisableVertexAttribArray )( GLuint index );
 
 cvar_t			*r_glsl;
 cvar_t			*r_materialPass;	// WALKER: 0: the material classes of a robot part each with its own shader
+cvar_t			*r_normalMaps;		// WALKER: 0: the relief maps of the robots (materialBump) not used
 
 static qboolean	glslAvailable;
 
@@ -59,10 +60,14 @@ static GLuint	meshProgram;
 static GLint	meshBackLerp, meshLightDir, meshAmbient, meshDirected, meshViewOrigin, meshSpecularOrigin;
 static GLint	meshColorMode, meshAlphaMode, meshTcMode, meshColor, meshFogOn, meshTexture;
 
-// the material program: all material classes of a robot part in one pass
-static GLuint	materialProgram;
-static GLint	matBackLerp, matLightDir, matAmbient, matDirected, matViewOrigin, matSpecularOrigin;
-static GLint	matGlow, matFogOn, matBaseMap, matEnvMap, matMaskMap;
+// the material program: all material classes of a robot part in one pass; the second
+// one lights every pixel with the normal tilted by the relief map (materialBump)
+typedef struct {
+	GLuint	program;
+	GLint	backLerp, lightDir, ambient, directed, viewOrigin, specularOrigin;
+	GLint	glow, fogOn, baseMap, envMap, maskMap, bumpMap, bumpScale;
+} materialProgram_t;
+static materialProgram_t	materialPlain, materialBump;
 
 // the vertex program of map surfaces with deformVertexes lodshift (tr_shade.c)
 static GLuint	shiftProgram;
@@ -374,6 +379,104 @@ static const char *materialFragmentSource =
 
 /*
 ===========================================================================
+Materials with relief (materialBump, 27.11.2026)
+
+The same classes and sums, but the light is found for every pixel: the normal is
+tilted by the relief map of the part (bake_walker.py: seams, rivets, bolts,
+grilles). The map holds the slopes of the relief height along the atlas axes,
+dh/du and dh/dv; on the surface they become the gradient of the height with the
+derivatives of the position and the atlas coordinates in the pixel (surface
+gradient, Mikkelsen 2010), so no tangents are stored, the frames of a part may
+move as they like and the pieces of the atlas may lie at any angle. The tilted
+normal is n - grad h.
+===========================================================================
+*/
+static const char *materialBumpVertexSource =
+	"attribute vec4 frameNew;\n"
+	"attribute vec4 frameOld;\n"
+	"attribute vec2 texCoord;\n"
+	"uniform float backLerp;\n"
+	"varying vec2 tc;\n"
+	"varying vec3 modelPosition;\n"
+	"varying vec3 modelNormal;\n"
+	"varying float eyeDistance;\n"
+	"vec3 unpackNormal( float latLong ) {\n"
+	"	float value = latLong < 0.0 ? latLong + 65536.0 : latLong;\n"
+	"	float lat = floor( value / 256.0 );\n"
+	"	float lng = value - lat * 256.0;\n"
+	"	lat *= 6.28318530718 / 256.0;\n"
+	"	lng *= 6.28318530718 / 256.0;\n"
+	"	return vec3( cos( lat ) * sin( lng ), sin( lat ) * sin( lng ), cos( lng ) );\n"
+	"}\n"
+	"void main() {\n"
+	"	vec3 position = mix( frameNew.xyz, frameOld.xyz, backLerp ) * ( 1.0 / 64.0 );\n"
+	"	modelNormal = mix( unpackNormal( frameNew.w ), unpackNormal( frameOld.w ), backLerp );\n"
+	"	vec4 vertex = vec4( position, 1.0 );\n"
+	"	vec4 eye = gl_ModelViewMatrix * vertex;\n"
+	"	gl_Position = gl_ModelViewProjectionMatrix * vertex;\n"
+	"	gl_ClipVertex = eye;\n"
+	"	eyeDistance = length( eye.xyz );\n"
+	"	modelPosition = position;\n"
+	"	tc = texCoord;\n"
+	"}\n";
+
+static const char *materialBumpFragmentSource =
+	"uniform sampler2D baseMap;\n"
+	"uniform sampler2D envMap;\n"
+	"uniform sampler2D maskMap;\n"
+	"uniform sampler2D bumpMap;\n"
+	"uniform float bumpScale;\n"		// slope of the map's full range, Quake units per atlas unit
+	"uniform float glow;\n"
+	"uniform float fogOn;\n"
+	"uniform vec3 lightDir;\n"
+	"uniform vec3 ambientLight;\n"
+	"uniform vec3 directedLight;\n"
+	"uniform vec3 viewOrigin;\n"
+	"uniform vec3 specularOrigin;\n"
+	"varying vec2 tc;\n"
+	"varying vec3 modelPosition;\n"
+	"varying vec3 modelNormal;\n"
+	"varying float eyeDistance;\n"
+	"void main() {\n"
+	"	vec3 normal = normalize( modelNormal );\n"
+	"	vec2 slope = ( texture2D( bumpMap, tc ).rg * 2.0 - 1.0 ) * bumpScale;\n"
+	"	vec3 positionX = dFdx( modelPosition );\n"
+	"	vec3 positionY = dFdy( modelPosition );\n"
+	"	float heightX = dot( slope, dFdx( tc ) );\n"
+	"	float heightY = dot( slope, dFdy( tc ) );\n"
+	"	vec3 across1 = cross( positionY, normal );\n"
+	"	vec3 across2 = cross( normal, positionX );\n"
+	"	float area = dot( positionX, across1 );\n"
+	"	vec3 gradient = sign( area ) * ( heightX * across1 + heightY * across2 );\n"
+	"	normal = normalize( abs( area ) * normal - gradient );\n"
+	"	float incoming = dot( normal, lightDir );\n"
+	"	vec3 diffuse = min( incoming <= 0.0 ? ambientLight : ambientLight + incoming * directedLight, vec3( 1.0 ) );\n"
+	"	vec3 toLight = normalize( specularOrigin - modelPosition );\n"
+	"	vec3 reflected = normal * 2.0 * dot( normal, toLight ) - toLight;\n"
+	"	vec3 viewer = viewOrigin - modelPosition;\n"
+	"	float lit = max( dot( reflected, viewer ) * inversesqrt( dot( viewer, viewer ) ), 0.0 );\n"
+	"	lit *= lit;\n"
+	"	float shine = min( lit * lit, 1.0 );\n"
+	"	vec3 toViewer = normalize( viewer );\n"
+	"	vec3 mirrored = normal * 2.0 * dot( normal, toViewer ) - toViewer;\n"
+	"	vec2 envTc = vec2( 0.5 + mirrored.y * 0.5, 0.5 - mirrored.z * 0.5 );\n"
+	"	vec3 base = texture2D( baseMap, tc ).rgb;\n"
+	"	vec4 mask = texture2D( maskMap, tc );\n"
+	"	vec3 env = texture2D( envMap, envTc ).rgb;\n"
+	"	vec3 color = clamp( base * diffuse, 0.0, 1.0 );\n"
+	"	color = clamp( color + color * env * mask.r, 0.0, 1.0 );\n"
+	"	color = clamp( color + env * mask.g, 0.0, 1.0 );\n"
+	"	color = clamp( color + env * ( mask.b * shine ), 0.0, 1.0 );\n"
+	"	vec3 result = mix( color, clamp( base * glow, 0.0, 1.0 ), mask.a );\n"
+	"	if ( fogOn > 0.5 ) {\n"
+	"		float visible = clamp( exp( -gl_Fog.density * eyeDistance ), 0.0, 1.0 );\n"
+	"		result = mix( gl_Fog.color.rgb, result, visible );\n"
+	"	}\n"
+	"	gl_FragColor = vec4( result, 1.0 );\n"
+	"}\n";
+
+/*
+===========================================================================
 Map surfaces in two detail levels (deformVertexes lodshift)
 
 RB_CalcLodShift moves every vertex on the processor while the surface is in the
@@ -436,6 +539,38 @@ static const char *meshFragmentSource =
 
 /*
 =================
+GLSL_MaterialProgram
+
+one of the two material programs and the places of its uniforms
+=================
+*/
+static void GLSL_MaterialProgram( materialProgram_t *target, const char *vertexSource, const char *fragmentSource, const char *name ) {
+	static const char	*attribs[3] = { "frameNew", "frameOld", "texCoord" };
+	static const int	locations[3] = { MESH_ATTRIB_FRAME, MESH_ATTRIB_OLDFRAME, MESH_ATTRIB_TEXCOORD };
+	GLuint				program;
+
+	program = GLSL_ProgramAttribs( vertexSource, fragmentSource, name, attribs, locations, 3 );
+	if ( !program ) {
+		return;
+	}
+	target->program = program;
+	target->backLerp = qglGetUniformLocation( program, "backLerp" );
+	target->lightDir = qglGetUniformLocation( program, "lightDir" );
+	target->ambient = qglGetUniformLocation( program, "ambientLight" );
+	target->directed = qglGetUniformLocation( program, "directedLight" );
+	target->viewOrigin = qglGetUniformLocation( program, "viewOrigin" );
+	target->specularOrigin = qglGetUniformLocation( program, "specularOrigin" );
+	target->glow = qglGetUniformLocation( program, "glow" );
+	target->fogOn = qglGetUniformLocation( program, "fogOn" );
+	target->baseMap = qglGetUniformLocation( program, "baseMap" );
+	target->envMap = qglGetUniformLocation( program, "envMap" );
+	target->maskMap = qglGetUniformLocation( program, "maskMap" );
+	target->bumpMap = qglGetUniformLocation( program, "bumpMap" );		// -1 in the plain one
+	target->bumpScale = qglGetUniformLocation( program, "bumpScale" );
+}
+
+/*
+=================
 GLSL_Init
 
 after every start of OpenGL (programs live in its context)
@@ -446,11 +581,13 @@ void GLSL_Init( void ) {
 
 	r_glsl = ri.Cvar_Get( "r_glsl", "1", CVAR_ARCHIVE );
 	r_materialPass = ri.Cvar_Get( "r_materialPass", "1", CVAR_ARCHIVE );
+	r_normalMaps = ri.Cvar_Get( "r_normalMaps", "1", CVAR_ARCHIVE );
 	glslAvailable = qfalse;
 	dlightProgram = 0;
 	meshProgram = 0;
 	shiftProgram = 0;
-	materialProgram = 0;
+	Com_Memset( &materialPlain, 0, sizeof( materialPlain ) );
+	Com_Memset( &materialBump, 0, sizeof( materialBump ) );
 
 	qglCreateShader = GLSL_Proc( "glCreateShader", &ok );
 	qglShaderSource = GLSL_Proc( "glShaderSource", &ok );
@@ -505,24 +642,8 @@ void GLSL_Init( void ) {
 		meshFogOn = qglGetUniformLocation( meshProgram, "fogOn" );
 		meshTexture = qglGetUniformLocation( meshProgram, "texture0" );
 	}
-	{
-		static const char	*attribs[3] = { "frameNew", "frameOld", "texCoord" };
-		static const int	locations[3] = { MESH_ATTRIB_FRAME, MESH_ATTRIB_OLDFRAME, MESH_ATTRIB_TEXCOORD };
-		materialProgram = GLSL_ProgramAttribs( materialVertexSource, materialFragmentSource, "materials", attribs, locations, 3 );
-	}
-	if ( materialProgram ) {
-		matBackLerp = qglGetUniformLocation( materialProgram, "backLerp" );
-		matLightDir = qglGetUniformLocation( materialProgram, "lightDir" );
-		matAmbient = qglGetUniformLocation( materialProgram, "ambientLight" );
-		matDirected = qglGetUniformLocation( materialProgram, "directedLight" );
-		matViewOrigin = qglGetUniformLocation( materialProgram, "viewOrigin" );
-		matSpecularOrigin = qglGetUniformLocation( materialProgram, "specularOrigin" );
-		matGlow = qglGetUniformLocation( materialProgram, "glow" );
-		matFogOn = qglGetUniformLocation( materialProgram, "fogOn" );
-		matBaseMap = qglGetUniformLocation( materialProgram, "baseMap" );
-		matEnvMap = qglGetUniformLocation( materialProgram, "envMap" );
-		matMaskMap = qglGetUniformLocation( materialProgram, "maskMap" );
-	}
+	GLSL_MaterialProgram( &materialPlain, materialVertexSource, materialFragmentSource, "materials" );
+	GLSL_MaterialProgram( &materialBump, materialBumpVertexSource, materialBumpFragmentSource, "materials with relief" );
 	shiftProgram = GLSL_Program( shiftVertexSource, NULL, "lodshift" );
 	if ( shiftProgram ) {
 		shiftEye = qglGetUniformLocation( shiftProgram, "eye" );
@@ -538,8 +659,9 @@ void GLSL_Init( void ) {
 		shiftPlaneT[1] = qglGetUniformLocation( shiftProgram, "planeT1" );
 	}
 	glslAvailable = qtrue;
-	ri.Printf( PRINT_ALL, "GLSL: on%s%s%s\n", dlightProgram ? ", dynamic lights in one pass" : "",
-		meshProgram ? ", models in video memory" : "", materialProgram ? ", materials in one pass" : "" );
+	ri.Printf( PRINT_ALL, "GLSL: on%s%s%s%s\n", dlightProgram ? ", dynamic lights in one pass" : "",
+		meshProgram ? ", models in video memory" : "", materialPlain.program ? ", materials in one pass" : "",
+		materialBump.program ? ", relief maps" : "" );
 }
 
 
@@ -638,26 +760,38 @@ caller binds the atlas to unit 0, the reflection to unit 1, the mask to unit 2
 =================
 */
 qboolean GLSL_MaterialAvailable( void ) {
-	return glslAvailable && meshProgram && materialProgram && r_glsl->integer && r_materialPass->integer
+	return glslAvailable && meshProgram && materialPlain.program && r_glsl->integer && r_materialPass->integer
 		&& glConfig.maxActiveTextures >= 3;
 }
 
-void GLSL_MaterialBegin( const meshModelVBO_t *model, int frame, int oldFrame, float backLerp, float glow, qboolean fogOn ) {
-	trRefEntity_t	*ent = backEnd.currentEntity;
-	int				frameSize = model->numVerts * sizeof( md3XyzNormal_t );
+// the relief map can be used: the program built, a fourth texture unit, r_normalMaps
+qboolean GLSL_MaterialBumpAvailable( void ) {
+	return materialBump.program && r_normalMaps->integer && glConfig.maxActiveTextures >= 4;
+}
 
-	qglUseProgram( materialProgram );
-	qglUniform1f( matBackLerp, backLerp );
-	qglUniform3f( matLightDir, ent->lightDir[0], ent->lightDir[1], ent->lightDir[2] );
-	qglUniform3f( matAmbient, ent->ambientLight[0] / 255.0f, ent->ambientLight[1] / 255.0f, ent->ambientLight[2] / 255.0f );
-	qglUniform3f( matDirected, ent->directedLight[0] / 255.0f, ent->directedLight[1] / 255.0f, ent->directedLight[2] / 255.0f );
-	qglUniform3f( matViewOrigin, backEnd.or.viewOrigin[0], backEnd.or.viewOrigin[1], backEnd.or.viewOrigin[2] );
-	qglUniform3f( matSpecularOrigin, lightOrigin[0], lightOrigin[1], lightOrigin[2] );
-	qglUniform1f( matGlow, glow );
-	qglUniform1f( matFogOn, fogOn ? 1.0f : 0.0f );
-	qglUniform1i( matBaseMap, 0 );
-	qglUniform1i( matEnvMap, 1 );
-	qglUniform1i( matMaskMap, 2 );
+// bumpScale: 0 - the plain program, else the slope of the relief map's full range in
+// Quake units per atlas unit (its map bound to unit 3 by the caller)
+void GLSL_MaterialBegin( const meshModelVBO_t *model, int frame, int oldFrame, float backLerp, float glow, qboolean fogOn, float bumpScale ) {
+	trRefEntity_t		*ent = backEnd.currentEntity;
+	int					frameSize = model->numVerts * sizeof( md3XyzNormal_t );
+	materialProgram_t	*used = bumpScale > 0 && GLSL_MaterialBumpAvailable() ? &materialBump : &materialPlain;
+
+	qglUseProgram( used->program );
+	qglUniform1f( used->backLerp, backLerp );
+	qglUniform3f( used->lightDir, ent->lightDir[0], ent->lightDir[1], ent->lightDir[2] );
+	qglUniform3f( used->ambient, ent->ambientLight[0] / 255.0f, ent->ambientLight[1] / 255.0f, ent->ambientLight[2] / 255.0f );
+	qglUniform3f( used->directed, ent->directedLight[0] / 255.0f, ent->directedLight[1] / 255.0f, ent->directedLight[2] / 255.0f );
+	qglUniform3f( used->viewOrigin, backEnd.or.viewOrigin[0], backEnd.or.viewOrigin[1], backEnd.or.viewOrigin[2] );
+	qglUniform3f( used->specularOrigin, lightOrigin[0], lightOrigin[1], lightOrigin[2] );
+	qglUniform1f( used->glow, glow );
+	qglUniform1f( used->fogOn, fogOn ? 1.0f : 0.0f );
+	qglUniform1i( used->baseMap, 0 );
+	qglUniform1i( used->envMap, 1 );
+	qglUniform1i( used->maskMap, 2 );
+	if ( used == &materialBump ) {
+		qglUniform1i( used->bumpMap, 3 );
+		qglUniform1f( used->bumpScale, bumpScale );
+	}
 
 	qglVertexAttribPointer( MESH_ATTRIB_FRAME, 4, GL_SHORT, GL_FALSE, sizeof( md3XyzNormal_t ),
 		(const void *)(size_t)( model->framesOffset + frame * frameSize ) );

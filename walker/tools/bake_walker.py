@@ -50,6 +50,19 @@ AO_DISTANCE = 0.55          # единицы модели (1 единица = 14
 SUPERSAMPLE = 1 if DETAILED else 2   # цвет считается в 2x2 точках на тексель (K7: 1)
 FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf'   # надписи-трафареты
 
+# рельеф K7 (карта наклонов <часть>_bump.tga, 27.11.2026), единицы модели (1 = 14 единиц Quake)
+SEAM_DEPTH = 0.006          # канавка шва
+SEAM_ROLL = 0.004           # кромка панели скруглена к шву
+RIVET_OFFSET = 0.032        # заклёпки вдоль швов: от шва
+RIVET_HEIGHT = 0.0045
+BOLT_HEIGHT = 0.006         # шестигранные болты в углах панелей
+BOLT_OFFSET = 0.05          # центр болта от обоих швов
+GRILLE_DEPTH = 0.009        # решётки: жалюзи в части панелей
+GRILLE_PITCH = 0.03         # шаг пластин решётки
+GRILLE_MARGIN = 0.075       # от швов до рамки решётки
+PAINT_THICKNESS = 0.0012    # сколы краски чуть ниже окрашенной поверхности
+BUMP_RANGE = 0.006          # наибольший наклон в карте: единиц модели на тексель
+
 # окраски команд ярче: краска (насыщенные пиксели нужного оттенка) насыщеннее и светлее,
 # металл и стекло (серые) не меняются; (диапазон оттенка 0..1, насыщенность x, яркость x)
 TEAM_PAINT = {'red': ((0.93, 0.06), 1.9, 1.35), 'blue': ((0.50, 0.70), 2.6, 1.45)}
@@ -415,6 +428,7 @@ class Part:
         self.grain = fbm(position * 120.0, 2) - 0.5
         self.panel_masks(texel)
         self.detail_masks(texel, chip_noise, wide_noise)
+        self.relief(texel, self.panel_gate)
 
     def detail_masks(self, texel, chip_noise, wide_noise):
         """крупные сколы, масло со штоков, копоть у дюз, надписи; без DETAILED - пусто."""
@@ -563,6 +577,8 @@ class Part:
         cell_first, cell_second = 0.46, 0.31
         line = np.zeros(len(position)); bevel = np.zeros(len(position)); rivet = np.zeros(len(position))
         tone = np.zeros(len(position))
+        rivet_distance = np.full(len(position), 1e3)
+        self.panel_geometry = {'axis': axis, 'distance': [], 'present': [], 'index': [], 'coord': []}
         for coord, other, cell, seed in ((first, second, cell_first, 1.0), (second, first, cell_second, 2.0)):
             shifted = coord / cell + 0.37 * seed + axis * 0.21
             index = np.floor(shifted)
@@ -570,19 +586,83 @@ class Part:
             # шов есть не по всей длине: кусками по клеткам другой координаты
             segment = np.floor(other / (cell * 1.7) + seed)
             present = value_noise(np.stack([np.round(shifted), segment, axis + seed * 7], axis=1) * 0.999 + 0.5) > 0.32
-            seam = smoothstep(texel * 1.1, texel * 0.4, np.abs(distance)) * present
+            # K7 (с рельефом) - шов шире: в несколько текселей, чтобы не пропадал вдали
+            seam_width = 2.0 if DETAILED else 1.1
+            seam = smoothstep(texel * seam_width, texel * seam_width * 0.4, np.abs(distance)) * present
             line = np.maximum(line, seam)
-            bevel = np.maximum(bevel, smoothstep(texel * 2.4, texel * 1.2, np.abs(distance - texel * 1.6)) * present)
-            # заклёпки: точки в шаге 0.06 вдоль шва, на расстоянии 0.025 от него
+            if DETAILED:
+                bevel_at = texel * seam_width * 1.5
+                bevel = np.maximum(bevel, smoothstep(bevel_at * 1.5, bevel_at * 0.75, np.abs(np.abs(distance) - bevel_at)) * present)
+            else:
+                bevel = np.maximum(bevel, smoothstep(texel * 2.4, texel * 1.2, np.abs(distance - texel * 1.6)) * present)
+            # заклёпки: точки в шаге 0.06 вдоль шва, на расстоянии RIVET_OFFSET (без рельефа 0.025) от него
             along = other / 0.06
-            dot_distance = np.hypot((along - np.round(along)) * 0.06, np.abs(distance) - 0.025)
-            rivet = np.maximum(rivet, smoothstep(texel * 1.6, texel * 0.8, dot_distance) * present)
+            offset = RIVET_OFFSET if DETAILED else 0.025
+            dot_distance = np.hypot((along - np.round(along)) * 0.06, np.abs(distance) - offset)
+            rivet_size = 2.4 if DETAILED else 1.6
+            rivet = np.maximum(rivet, smoothstep(texel * rivet_size, texel * rivet_size * 0.5, dot_distance) * present)
+            rivet_distance = np.where(present, np.minimum(rivet_distance, dot_distance), rivet_distance)
             tone += value_noise(np.stack([index, axis * 3.0 + seed, np.zeros_like(index)], axis=1) + 0.5) - 0.5
+            for key, value in (('distance', distance), ('present', present), ('index', index), ('coord', coord)):
+                self.panel_geometry[key].append(value)
+        self.panel_geometry['rivet_distance'] = rivet_distance
         gate = smoothstep(0.03, 0.09, self.sample_convex)
         self.panel_line = line * gate
         self.panel_bevel = bevel * gate * (1 - line)
         self.rivet = rivet * gate * (1 - line)
         self.panel_tone = tone * 0.5
+        self.panel_gate = gate
+
+    def relief(self, texel, gate):
+        """высота рельефа (единицы модели, наружу +) на тех же панелях, что швы и заклёпки в цвете:
+        канавки швов со скруглёнными кромками, купола заклёпок, шестигранные болты в углах
+        панелей, решётки-жалюзи в части панелей, сколы краски чуть ниже краски.
+        Без DETAILED - ровно."""
+        count = len(self.sample_position)
+        self.height = np.zeros(count); self.grille_shadow = np.zeros(count); self.bolt = np.zeros(count)
+        if not DETAILED:
+            return
+        geometry = self.panel_geometry
+        materials = np.array(self.material_names)[self.sample_material]
+        painted = np.isin(materials, list(PAINTED))
+        metal = np.isin(materials, list(METAL)) & ~np.isin(materials, list(HYDRAULIC))
+        surface = (painted | metal) * gate
+        distance_a, distance_b = np.abs(geometry['distance'][0]), np.abs(geometry['distance'][1])
+        present_a, present_b = geometry['present'][0], geometry['present'][1]
+        height = np.zeros(count)
+        # швы: кромки панелей скатываются к шву, в самом шве канавка
+        for distance, present in ((distance_a, present_a), (distance_b, present_b)):
+            roll = 1 - smoothstep(texel * 1.5, texel * 7.0, distance)
+            groove = 1 - smoothstep(texel * 0.6, texel * 2.2, distance)
+            height -= (SEAM_ROLL * roll + SEAM_DEPTH * groove) * present
+        # заклёпки - купола там же, где светлые точки в цвете
+        rivet_radius = texel * 2.8
+        ratio = np.clip(geometry['rivet_distance'] / rivet_radius, 0, 1)
+        height += RIVET_HEIGHT * np.sqrt(1 - ratio ** 2)
+        # болты: в углу, где сходятся оба шва, внутри клетки; не во всех углах
+        cell_key = np.stack([geometry['index'][0], geometry['index'][1], geometry['axis'] * 5.0 + 0.5], axis=1)
+        cell_hash = value_noise(cell_key * 0.999 + 0.5)
+        local_x, local_y = distance_a - BOLT_OFFSET, distance_b - BOLT_OFFSET
+        hexagon = np.maximum(np.abs(local_x) * 0.866 + np.abs(local_y) * 0.5, np.abs(local_y))
+        bolt_radius = max(texel * 4.0, 0.013)
+        has_bolt = present_a * present_b * (cell_hash > 0.35)
+        self.bolt = smoothstep(bolt_radius, bolt_radius * 0.72, hexagon) * has_bolt * surface
+        washer = smoothstep(bolt_radius * 1.45, bolt_radius * 1.2, np.hypot(local_x, local_y)) * has_bolt * surface
+        height += BOLT_HEIGHT * self.bolt + BOLT_HEIGHT * 0.25 * np.clip(washer - self.bolt, 0, 1)
+        # решётки: клетка целиком (без полей у швов) - жалюзи поперёк одной оси, с рамкой
+        inside = np.minimum(distance_a, distance_b)
+        chosen = np.where(metal, cell_hash < 0.36, cell_hash < 0.16) & (self.sample_concave > 0.04)
+        grille = smoothstep(GRILLE_MARGIN, GRILLE_MARGIN + texel * 1.5, inside) * chosen * gate
+        frame = (smoothstep(GRILLE_MARGIN - texel * 4.5, GRILLE_MARGIN - texel * 3.0, inside) * chosen * gate) * (1 - grille)
+        phase = np.mod(geometry['coord'][0] / GRILLE_PITCH, 1.0)
+        drop = texel / GRILLE_PITCH * 1.5
+        louver = phase * (1 - smoothstep(1 - drop, 1.0, phase))       # пластина наклонена, у края обрыв
+        height += grille * (-GRILLE_DEPTH * (0.35 + 0.65 * louver)) + frame * BOLT_HEIGHT * 0.5
+        self.grille_shadow = grille * smoothstep(0.45, 0.95, louver)
+        # сколы краски: до металла - на толщину краски ниже
+        height -= PAINT_THICKNESS * np.clip(self.wear + self.chip_big, 0, 1) * painted
+        self.height = height * np.where(surface > 0, 1.0, 0.0)
+        print(f'  {self.name}: relief, grille share {np.mean(grille > 0.5):.3f}, bolts {np.mean(self.bolt > 0.5):.4f}')
 
     def base_colors(self, scheme):
         """цвет материала окраски в каждой точке по исходным (повторяющимся) UV."""
@@ -622,6 +702,9 @@ class Part:
         color = color * (1 - 0.55 * self.panel_line[:, None] * panel)
         color = color * (1 + 0.12 * self.panel_bevel[:, None] * panel)
         color = color + (np.array([185, 180, 170]) - color) * (0.35 * self.rivet[:, None] * panel)
+        # рельеф (relief): болты светлее, щели между пластинами решёток тёмные
+        color = color + (np.array([170, 168, 160]) - color) * (0.30 * self.bolt[:, None])
+        color = color * (1 - 0.55 * self.grille_shadow[:, None])
         # краска: сколы до голого металла, светлый кант, царапины
         steel = np.array([150, 148, 142]) * (0.8 + 0.4 * self.grain[:, None] + 0.25)
         primer = np.array([58, 56, 52])
@@ -716,6 +799,27 @@ class Part:
         result = Image.fromarray(np.clip(image, 0, 255).astype(np.uint8), 'RGB')
         result = result.resize((self.resolution // 2, self.resolution // 2), Image.LANCZOS)
         result.save(os.path.join(MODEL_DIR, f'{self.name}_wear.tga'))
+
+    def write_bump(self):
+        """<часть>_bump.tga - наклоны рельефа по осям атласа: r - вдоль u (столбцы), g - вдоль v
+        (строки); 128 - ровно, 128 +- 127 - +-BUMP_RANGE единиц модели на тексель. В <часть>_bump.txt -
+        этот предел в единицах Quake: make_material_pass.py пишет его в шейдер (materialBump),
+        движок наклоняет нормаль в каждом пикселе (tr_glsl.c). Без DETAILED - нет файла."""
+        if not DETAILED:
+            return
+        image = self.to_image(self.height, 1)[..., 0]
+        slope_u = np.zeros_like(image); slope_v = np.zeros_like(image)
+        slope_u[:, 1:-1] = (image[:, 2:] - image[:, :-2]) * 0.5
+        slope_v[1:-1, :] = (image[2:, :] - image[:-2, :]) * 0.5
+        clipped = np.mean((np.abs(slope_u) > BUMP_RANGE) | (np.abs(slope_v) > BUMP_RANGE))
+        red = 128 + 127 * np.clip(slope_u / BUMP_RANGE, -1, 1)
+        green = 128 + 127 * np.clip(slope_v / BUMP_RANGE, -1, 1)
+        pixels = np.stack([red, green, np.full_like(red, 128)], axis=-1)
+        Image.fromarray(np.round(pixels).astype(np.uint8), 'RGB').save(os.path.join(MODEL_DIR, f'{self.name}_bump.tga'))
+        q3_scale = self.document.get('asset', {}).get('extras', {}).get('q3_scale', 1.0)
+        with open(os.path.join(MODEL_DIR, f'{self.name}_bump.txt'), 'w', encoding='ascii') as file:
+            file.write(f'{BUMP_RANGE * q3_scale:.6f}\n')
+        print(f'  {self.name}: bump map {image.shape[1]}x{image.shape[0]}, clipped slopes {clipped:.4f}')
 
     def rewrite_glb(self):
         """новые вершины: пара (вершина атласа, исходная вершина); примитивы индексированные."""
@@ -957,6 +1061,7 @@ def main():
         for scheme in SCHEMES:
             part.write_atlas(scheme, part.compose(scheme))
         part.write_wear()
+        part.write_bump()
     used = set()
     for part in parts:
         for scheme in SCHEMES:

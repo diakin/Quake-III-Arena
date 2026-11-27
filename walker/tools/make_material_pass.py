@@ -20,6 +20,7 @@ models/robotweapons/weapons.jpg (клетки по материалу), UV ор�
 
 Если bake_walker.py записал карту износа <часть>_wear.tga (у K7), маска учитывает и её:
 голый металл сколов блестит как металл, грязь и пыль матовые, масло мокрое.
+Карта рельефа <часть>_bump.tga (у K7) попадает в шейдер части ключом materialBump.
 
 Повторный запуск ничего не меняет (шейдеры с materialPass пропускаются).
 """
@@ -249,11 +250,18 @@ def robot(name, shader_file):
         mask = apply_wear(mask, os.path.join(folder, f'{part}_wear.tga'), numbers)
         mask_name = f'{prefix}/{part}_mask.tga'
         Image.fromarray(mask, 'RGBA').save(os.path.join(DATA, mask_name))
+        # рельеф K7 (bake_walker.py, write_bump): карта наклонов и её предел в единицах Quake
+        bump_line = ''
+        range_path = os.path.join(folder, f'{part}_bump.txt')
+        if os.path.exists(os.path.join(folder, f'{part}_bump.tga')) and os.path.exists(range_path):
+            bump_range = float(open(range_path, encoding='ascii').read().strip())
+            bump_line = f'\tmaterialBump {prefix}/{part}_bump.tga {bump_range:g}\n'
+            os.remove(range_path)       # в данные игры не идёт
         for scheme in schemes:
             pass_name = f'{prefix}/{part}_{scheme}_pass'
             if pass_name not in shaders:
                 text += (f'{pass_name}\n{{\n\tmaterialImages {mask_name} {env or ENV_DEFAULT} '
-                         f'{glow[0]:g} {glow[1]:g} {glow[2]:g} {glow[3]:g}\n'
+                         f'{glow[0]:g} {glow[1]:g} {glow[2]:g} {glow[3]:g}\n' + bump_line +
                          f'\t{{\n\t\tmap {prefix}/{part}_{scheme}.jpg\n\t\trgbGen lightingDiffuse\n\t}}\n}}\n')
             classes = [n for n in parse_shaders(text) if re.match(rf'{prefix}/{part}_(paint|metal|glass|glow)_{scheme}$', n)]
             text = add_material_pass(text, classes, pass_name)
