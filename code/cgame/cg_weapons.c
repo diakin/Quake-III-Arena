@@ -1240,7 +1240,9 @@ void CG_AddRobotWeapons( refEntity_t *parent, centity_t *cent ) {
 		gun.hModel = cgs.media.robotWeaponModels[type];
 		CG_PositionEntityOnTag( &gun, parent, parent->hModel, va( "tag_weapon%i", slot + 1 ) );
 		CG_AddWeaponWithPowerups( &gun, cent->currentState.powerups );
-		if ( cent->currentState.clientNum == cg.snap->ps.clientNum ) {
+		// WALKER: only the own living robot (its entity number is the client number); the
+		// corpse left after a death has the same clientNum and kept the labels over it
+		if ( cent->currentState.number == cg.snap->ps.clientNum && !( cent->currentState.eFlags & EF_DEAD ) ) {
 			vec3_t	rear;
 			VectorMA( gun.origin, -4, gun.axis[0], rear );		// the label is drawn behind the weapon
 			rear[2] += 6;

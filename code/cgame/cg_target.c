@@ -70,6 +70,7 @@ static int CG_WeaponReach( void ) {
 CG_TargetEntity
 
 the robot of a client in the current snapshot, NULL when not there or dead
+(the entity whose number is the client number: a corpse has the clientNum too)
 =================
 */
 static centity_t *CG_TargetEntity( int clientNum ) {
@@ -77,7 +78,7 @@ static centity_t *CG_TargetEntity( int clientNum ) {
 
 	for ( index = 0; index < cg.snap->numEntities; index++ ) {
 		entityState_t	*state = &cg.snap->entities[index];
-		if ( state->eType == ET_PLAYER && state->clientNum == clientNum ) {
+		if ( state->eType == ET_PLAYER && state->number == clientNum ) {
 			return ( state->eFlags & EF_DEAD ) ? NULL : &cg_entities[state->number];
 		}
 	}
@@ -172,21 +173,82 @@ static int CG_TargetCandidates( int *list, float *distances, qboolean cone ) {
 }
 
 
+static qboolean CG_WorldToScreen( const vec3_t point, float *screenX, float *screenY );
+
+/*
+=================
+CG_TargetUnderCrosshair
+
+the nearest visible enemy whose frame (the box drawn around the robot) holds the
+crosshair, -1 when none; up to the distance a target is kept at
+=================
+*/
+static int CG_TargetUnderCrosshair( void ) {
+	int		index, best = -1;
+	float	bestDistance = 0, reach = CG_WeaponReach() * 1.25f;
+	float	crossX = 320 + cg_crosshairX.integer, crossY = 240 + cg_crosshairY.integer;	// as CG_DrawCrosshair
+
+	for ( index = 0; index < cg.snap->numEntities; index++ ) {
+		entityState_t	*state = &cg.snap->entities[index];
+		centity_t		*cent;
+		vec3_t			low, high;
+		float			distance, lowX, lowY, highX, highY, halfWidth;
+
+		if ( state->eType != ET_PLAYER || state->number != state->clientNum || ( state->eFlags & EF_DEAD )
+			|| !CG_TargetEnemy( state->clientNum ) ) {
+			continue;
+		}
+		cent = &cg_entities[state->number];
+		distance = CG_TargetDistance( cent );
+		if ( distance > reach || ( best >= 0 && distance >= bestDistance ) ) {
+			continue;
+		}
+		VectorCopy( cent->lerpOrigin, low );
+		VectorCopy( cent->lerpOrigin, high );
+		low[2] += TARGET_BOX_BOTTOM;
+		high[2] += TARGET_BOX_TOP;
+		if ( !CG_WorldToScreen( low, &lowX, &lowY ) || !CG_WorldToScreen( high, &highX, &highY ) ) {
+			continue;
+		}
+		// the half width on the screen by the height of the box; at least 6 points to hit
+		halfWidth = ( lowY - highY ) * TARGET_BOX_HALF / ( TARGET_BOX_TOP - TARGET_BOX_BOTTOM );
+		if ( halfWidth < 6 ) {
+			halfWidth = 6;
+		}
+		if ( crossX < lowX - halfWidth || crossX > lowX + halfWidth || crossY < highY - 3 || crossY > lowY + 3 ) {
+			continue;
+		}
+		if ( !CG_TargetVisible( cent ) ) {
+			continue;
+		}
+		best = state->clientNum;
+		bestDistance = distance;
+	}
+	return best;
+}
+
 /*
 =================
 CG_TargetUpdate
 
-keeps the target while it is valid, otherwise takes the nearest one
+the enemy under the crosshair takes the frame (27.11.2026); otherwise the target is
+kept while it is valid, and without one the nearest enemy ahead is taken
 =================
 */
 void CG_TargetUpdate( void ) {
 	centity_t	*cent;
 	int			list[MAX_CLIENTS];
 	float		distances[MAX_CLIENTS];
+	int			under;
 
 	if ( !cg.snap || cg.snap->ps.persistant[PERS_TEAM] == TEAM_SPECTATOR || cg.snap->ps.stats[STAT_HEALTH] <= 0 ) {
 		targetClient = -1;
 		return;
+	}
+	under = CG_TargetUnderCrosshair();
+	if ( under >= 0 && under != targetClient ) {
+		targetClient = under;
+		targetSeenTime = cg.time;
 	}
 	if ( targetClient >= 0 ) {
 		cent = CG_TargetEntity( targetClient );
