@@ -541,7 +541,11 @@ Esc -> END BATTLE (TEST) (или команда cmd endbattle) завершае�
                          свет (tr_light.c), тени объёмами при любом cg_shadows (tr_mesh.c,
                          tr_backend.c, tr_shadows.c)
                          Наклон и крен всей модели — uiPlayerOrbit в ui_players.c
-  renderer/tr_init.c     r_ambientScale 0.45, r_directedScale 1.4: модели контрастнее
+  renderer/tr_init.c     r_ambientScale 0.45, r_directedScale 3.0 (до 27.11.2026 - 1.4): модели
+                         контрастнее. При 1.4 солнечная сторона робота получала около 0.64
+                         цвета текстуры (рассеянный свет около 70, солнце около 93 из 255), и
+                         тени частей робота друг на друге (они есть: cg_shadows 2) терялись на
+                         тёмном; теперь солнечная сторона светлая, тени на ней видны
   win32/win_glimp.c      сглаживание краёв (r_ext_multisample 4: WGL_ARB_multisample, при
                          отсутствии — обычный формат); при первом запуске на новой видеокарте
                          id снижал качество текстур (r_picmip 1, bilinear) — убрано
