@@ -24,6 +24,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // executed by a key binding
 
 #include "cg_local.h"
+#include "../ui/keycodes.h"		// WALKER: K_CTRL, K_SHIFT (wk_tune)
 #include "../ui/ui_shared.h"
 #ifdef MISSIONPACK
 extern menuDef_t *menuScoreboard;
@@ -445,12 +446,58 @@ static void CG_Camera_f( void ) {
 */
 
 
+/*
+=================
+CG_Tune_f
+
+WALKER: "wk_tune +1" / "wk_tune -1" (keys = and -, keypad + and -; ui_atoms.c binds them):
+alone the scale of the world (the number at the target grows with +), with Shift the
+speed of all robots, with Ctrl the damage of all weapons. The cvars are saved; on
+somebody else's server they do not change anything there
+=================
+*/
+static float CG_CvarFloat( const char *name ) {
+	char	buffer[32];
+
+	trap_Cvar_VariableStringBuffer( name, buffer, sizeof( buffer ) );
+	return atof( buffer );
+}
+
+static void CG_Tune_f( void ) {
+	int		direction = atoi( CG_Argv( 1 ) ) < 0 ? -1 : 1;
+	float	value;
+
+	if ( !CG_CvarFloat( "sv_running" ) ) {
+		CG_CenterPrint( "only on your own server", SCREEN_HEIGHT * 0.3f, BIGCHAR_WIDTH * 0.6f );
+		return;
+	}
+	if ( trap_Key_IsDown( K_CTRL ) ) {
+		value = CG_CvarFloat( "g_damageScale" ) + 0.1f * direction;
+		value = value < 0.1f ? 0.1f : ( value > 10 ? 10 : value );
+		trap_Cvar_Set( "g_damageScale", va( "%.1f", value ) );
+		CG_CenterPrint( va( "DAMAGE x%.1f", value ), SCREEN_HEIGHT * 0.3f, BIGCHAR_WIDTH * 0.6f );
+	} else if ( trap_Key_IsDown( K_SHIFT ) ) {
+		// 5 % of the stock speed (g_speed 55) a step, 25 to 200 % as in the menu
+		value = CG_CvarFloat( "g_speed" ) + 55 * 0.05f * direction;
+		value = value < 55 * 0.25f ? 55 * 0.25f : ( value > 55 * 2 ? 55 * 2 : value );
+		trap_Cvar_Set( "g_speed", va( "%.2f", value ) );
+		CG_CenterPrint( va( "ROBOT SPEED %i%%", (int)( value / 55 * 100 + 0.5f ) ), SCREEN_HEIGHT * 0.3f, BIGCHAR_WIDTH * 0.6f );
+	} else {
+		// + makes the metres shorter: the same distance shows a bigger number
+		value = CG_CvarFloat( "g_unitsPerMetre" ) - 0.1f * direction;
+		value = value < 2 ? 2 : ( value > 10 ? 10 : value );
+		trap_Cvar_Set( "g_unitsPerMetre", va( "%.1f", value ) );
+		CG_CenterPrint( va( "RANGE: 1 m = %.1f units", value ), SCREEN_HEIGHT * 0.3f, BIGCHAR_WIDTH * 0.6f );
+	}
+}
+
 typedef struct {
 	char	*cmd;
 	void	(*function)(void);
 } consoleCommand_t;
 
 static consoleCommand_t	commands[] = {
+	{ "wk_tune", CG_Tune_f },
 	{ "testgun", CG_TestGun_f },
 	{ "testmodel", CG_TestModel_f },
 	{ "nextframe", CG_TestModelNextFrame_f },

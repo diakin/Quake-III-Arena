@@ -14,6 +14,15 @@ const char *bg_weaponClassNames[WCLASS_COUNT] = { "LIGHT", "MEDIUM", "HEAVY" };
 
 // slot mounts (tag_weapon1.. of the models): forward, left, up from the eye (the view
 // height 26 above the origin); the shot starts at the mount + the weapon length forward
+float	bg_unitsPerMetre = ROBOT_DEFAULT_UNITS_PER_METRE;
+float	bg_damageScale = ROBOT_DEFAULT_DAMAGE_SCALE;
+
+// the limits keep a mistyped cvar from breaking the game
+void BG_SetTuning( float unitsPerMetre, float damageScale ) {
+	bg_unitsPerMetre = unitsPerMetre < 1 ? ROBOT_DEFAULT_UNITS_PER_METRE : ( unitsPerMetre > 20 ? 20 : unitsPerMetre );
+	bg_damageScale = damageScale <= 0 ? ROBOT_DEFAULT_DAMAGE_SCALE : ( damageScale > 10 ? 10 : damageScale );
+}
+
 robotInfo_t bg_robots[ROBOT_COUNT] = {
 	{ "k7", "K7", "Medium walker, two light mounts", "walker",
 		65000, 40, 6000, 40, 3000,
@@ -114,7 +123,7 @@ int BG_RobotSpeed( int type, int level ) {
 }
 
 int BG_WeaponDamage( int weapon, int level ) {
-	return Grow( bg_robotWeapons[weapon].damage, ClampLevel( level, WEAPON_LEVELS ), 8 );
+	return Grow( bg_robotWeapons[weapon].damage, ClampLevel( level, WEAPON_LEVELS ), 8 ) * bg_damageScale;
 }
 
 int BG_WeaponInterval( int weapon, int level ) {

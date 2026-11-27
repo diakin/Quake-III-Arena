@@ -786,6 +786,8 @@ extern	vmCvar_t	g_password;
 extern	vmCvar_t	g_needpass;
 extern	vmCvar_t	g_gravity;
 extern	vmCvar_t	g_speed;
+extern	vmCvar_t	g_unitsPerMetre;
+extern	vmCvar_t	g_damageScale;
 extern	vmCvar_t	g_beaconPoints;
 extern	vmCvar_t	g_beaconDrain;
 extern	vmCvar_t	g_robots;

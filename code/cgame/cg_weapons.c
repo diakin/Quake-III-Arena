@@ -36,7 +36,9 @@ static void CG_MachineGunEjectBrass( centity_t *cent ) {
 	float			waterScale = 1.0f;
 	vec3_t			v[3];
 
-	if ( cg_brassTime.integer <= 0 ) {
+	// WALKER: no shell model in the game data: the renderer drew a missing model as
+	// three coloured axes (red, green and blue strips flying from the guns)
+	if ( cg_brassTime.integer <= 0 || !cgs.media.machinegunBrassModel ) {
 		return;
 	}
 
@@ -108,7 +110,7 @@ static void CG_ShotgunEjectBrass( centity_t *cent ) {
 	vec3_t			v[3];
 	int				i;
 
-	if ( cg_brassTime.integer <= 0 ) {
+	if ( cg_brassTime.integer <= 0 || !cgs.media.shotgunBrassModel ) {		// WALKER: as above
 		return;
 	}
 

@@ -73,6 +73,11 @@ BOTLIB_SRC = be_aas_bspq3.c be_aas_cluster.c be_aas_debug.c be_aas_entity.c \
 
 vpath %.c client qcommon game server win32 renderer jpeg-6 botlib cgame
 
+# WALKER: before the rules that use it: a prerequisite list is expanded when make reads the
+# rule, and below the DLL rules HEADERS was still empty there (a changed header did not
+# rebuild the DLL objects, 27.11.2026)
+HEADERS = $(wildcard */*.h)
+
 ENGINE_SRC = $(CLIENT_SRC) $(QCOMMON_SRC) $(GAME_SRC) $(SERVER_SRC) $(WIN32_SRC) \
 	$(RENDERER_SRC) $(JPEG_SRC)
 ENGINE_OBJS = $(addprefix $(BUILD_DIR)/,$(ENGINE_SRC:.c=.o))
@@ -130,7 +135,6 @@ qvm:
 	$(MAKE) -f Makefile.qvm
 
 # any header change rebuilds everything: slower, but never leaves stale objects
-HEADERS = $(wildcard */*.h)
 
 $(TARGET): $(ENGINE_OBJS) $(BOTLIB_OBJS) $(RES)
 	$(CC) $(LDFLAGS) -o $@ $(ENGINE_OBJS) $(BOTLIB_OBJS) $(RES) $(LIBS)

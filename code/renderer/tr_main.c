@@ -1523,6 +1523,11 @@ void R_AddEntitySurfaces (void) {
 					if ( (ent->e.renderfx & RF_THIRD_PERSON) && !tr.viewParms.isPortal) {
 						break;
 					}
+					// WALKER: a missing model is drawn as an axis only with r_nullModelAxis 1
+					// (the Quake shells, missing in the game data, flew as coloured strips)
+					if ( !r_nullModelAxis->integer ) {
+						break;
+					}
 					shader = R_GetShaderByHandle( ent->e.customShader );
 					R_AddDrawSurf( &entitySurface, tr.defaultShader, 0, 0 );
 					break;

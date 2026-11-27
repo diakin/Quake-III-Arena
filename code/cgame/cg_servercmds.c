@@ -160,6 +160,8 @@ void CG_ParseServerinfo( void ) {
 	trap_Cvar_Set("g_redTeam", cgs.redTeam);
 	Q_strncpyz( cgs.blueTeam, Info_ValueForKey( info, "g_blueTeam" ), sizeof(cgs.blueTeam) );
 	trap_Cvar_Set("g_blueTeam", cgs.blueTeam);
+	// WALKER: the distances and the damage by the numbers of the server
+	BG_SetTuning( atof( Info_ValueForKey( info, "g_unitsPerMetre" ) ), atof( Info_ValueForKey( info, "g_damageScale" ) ) );
 }
 
 /*

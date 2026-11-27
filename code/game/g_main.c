@@ -50,6 +50,8 @@ vmCvar_t	g_maxclients;
 vmCvar_t	g_maxGameClients;
 vmCvar_t	g_dedicated;
 vmCvar_t	g_speed;
+vmCvar_t	g_unitsPerMetre;	// WALKER: scale of the world (bg_robots.h), keys + and -
+vmCvar_t	g_damageScale;		// WALKER: all weapon damage x this, Ctrl + and Ctrl -
 vmCvar_t	g_beaconPoints;		// WALKER: beacon capture, points of each team at the start
 vmCvar_t	g_beaconDrain;		// points per second per beacon of difference
 vmCvar_t	g_robots;			// robots in each player's hangar
@@ -148,6 +150,9 @@ static cvarTable_t		gameCvarTable[] = {
 	// WALKER: the speed of all robots (55 = 100 %, each robot keeps its own relative to the
 	// others: ps.speed = km/h * g_speed / 38); menu GAME OPTIONS -> Robot Speed, saved
 	{ &g_speed, "g_speed", "55", CVAR_ARCHIVE, 0, qtrue  },
+	// in serverinfo: the clients show the distances and the damage by the server's numbers
+	{ &g_unitsPerMetre, "g_unitsPerMetre", "4.5", CVAR_ARCHIVE | CVAR_SERVERINFO, 0, qfalse },
+	{ &g_damageScale, "g_damageScale", "1.7", CVAR_ARCHIVE | CVAR_SERVERINFO, 0, qfalse },
 	{ &g_beaconPoints, "g_beaconPoints", "1000", CVAR_SERVERINFO, 0, qfalse },
 	{ &g_beaconDrain, "g_beaconDrain", "2", 0, 0, qfalse },
 	{ &g_robots, "g_robots", "5", CVAR_SERVERINFO, 0, qfalse },
@@ -1758,6 +1763,9 @@ int start, end;
 	level.framenum++;
 	level.previousTime = level.time;
 	level.time = levelTime;
+
+	// WALKER: the scale and the damage can change in the battle (wk_tune)
+	BG_SetTuning( g_unitsPerMetre.value, g_damageScale.value );
 	msec = level.time - level.previousTime;
 
 	// get any cvar changes

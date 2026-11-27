@@ -26,10 +26,23 @@ This file is part of WALKER, based on the Quake III Arena source code
 #define	WEAPON_LEVELS			12
 #define	ROBOT_HEALTH_SCALE		10		// structure and shield in the game: real value / 10
 #define	ROBOT_HANGAR_SIZE		5		// bays of a hangar, robots a player takes into a battle
-#define	ROBOT_UNITS_PER_METRE	5		// scale of the world: a robot of 60 units is 12 m tall, as
-										// War Robots looks at the same distance (27.11.2026)
-#define	ROBOT_SPEED_UNITS		39.6f	// km/h that move a robot at g_speed units per second:
-										// g_speed 55 = 39.6 km/h = 11 m/s = 55 units at 5 units per metre
+// scale of the world, units per metre: weapon ranges and shell speeds (metres, m/s in
+// the tables) are multiplied by it, the target distance is divided by it. 5 on 27.11.2026
+// (a robot of 60 units 12 m tall, as War Robots looks at the same distance), 4.5 after the
+// first games: the numbers at the target came out a little small. Set by every module
+// from g_unitsPerMetre (game: the cvar; cgame: serverinfo; ui: the cvar), keys + and -
+// in the battle (cg_consolecmds.c wk_tune)
+#define	ROBOT_DEFAULT_UNITS_PER_METRE	4.5f
+extern float	bg_unitsPerMetre;
+#define	ROBOT_UNITS_PER_METRE	bg_unitsPerMetre
+// all weapon damage multiplied by it (BG_WeaponDamage); g_damageScale, Ctrl + and Ctrl -
+#define	ROBOT_DEFAULT_DAMAGE_SCALE		1.7f
+extern float	bg_damageScale;
+void	BG_SetTuning( float unitsPerMetre, float damageScale );
+#define	ROBOT_SPEED_UNITS		39.6f	// km/h that move a robot at g_speed units per second
+										// (g_speed 55 = 39.6 km/h = 55 units per second; chosen at 5
+										// units per metre; the speed does not follow the scale above:
+										// it has its own keys, Shift + and Shift -)
 #define	ROBOT_MAX_SLOTS			3		// weapon slots of a robot (tag_weapon1 .. tag_weapon3)
 
 typedef enum {

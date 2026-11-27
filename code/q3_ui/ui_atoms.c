@@ -1087,6 +1087,22 @@ UI_Init
 void UI_Init( void ) {
 	UI_RegisterCvars();
 
+	// WALKER: keys = and -, keypad + and -: wk_tune in the battle (cg_consolecmds.c: the scale,
+	// with Shift the speed, with Ctrl the damage). Taken only when free or bound to the Quake
+	// sizeup / sizedown (the size of the view, not used in WALKER)
+	{
+		static const int	keys[4] = { '=', K_KP_PLUS, '-', K_KP_MINUS };
+		char				binding[64];
+		int					index;
+
+		for ( index = 0 ; index < 4 ; index++ ) {
+			trap_Key_GetBindingBuf( keys[index], binding, sizeof( binding ) );
+			if ( !binding[0] || !Q_stricmp( binding, "sizeup" ) || !Q_stricmp( binding, "sizedown" ) ) {
+				trap_Key_SetBinding( keys[index], index < 2 ? "wk_tune +1" : "wk_tune -1" );
+			}
+		}
+	}
+
 	UI_InitGameinfo();
 
 	// cache redundant calulations
@@ -1231,6 +1247,9 @@ void UI_Refresh( int realtime )
 	if ( !( trap_Key_GetCatcher() & KEYCATCH_UI ) ) {
 		return;
 	}
+
+	// WALKER: the hangar shows the damage with g_damageScale (BG_WeaponDamage)
+	BG_SetTuning( trap_Cvar_VariableValue( "g_unitsPerMetre" ), trap_Cvar_VariableValue( "g_damageScale" ) );
 
 	UI_UpdateCvars();
 

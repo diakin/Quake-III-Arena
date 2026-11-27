@@ -127,6 +127,7 @@ cvar_t	*r_mirrorDistance;
 cvar_t	*r_mirrorEntities;
 cvar_t	*r_sunShadows;
 cvar_t	*r_lodDistance;
+cvar_t	*r_nullModelAxis;
 cvar_t	*r_lodBand;
 cvar_t	*r_simpleModels;
 cvar_t	*r_portalOnly;
@@ -1021,6 +1022,7 @@ void R_Register( void )
 	// WALKER: models built in two detail levels (the ruined walls) use the far one
 	// beyond this distance from their bounds, and always in the water reflection
 	r_lodDistance = ri.Cvar_Get ("r_lodDistance", "900", CVAR_ARCHIVE);
+	r_nullModelAxis = ri.Cvar_Get ("r_nullModelAxis", "0", CVAR_CHEAT );
 	r_lodBand = ri.Cvar_Get ("r_lodBand", "700", CVAR_ARCHIVE);
 	// WALKER: the simple levels gave about 1 % once the detailed ones came from video
 	// memory (benchmark 26.11.2026), and the simple walls looked lit through
