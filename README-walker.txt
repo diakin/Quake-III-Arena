@@ -741,6 +741,12 @@ Esc -> END BATTLE (TEST) (или команда cmd endbattle) завершае�
                          игра берёт их из g_unitsPerMetre / g_damageScale каждый кадр, cgame — из
                          serverinfo, меню — из cvar (урон в ангаре). wk_tune: клавиши = - и KP_PLUS
                          KP_MINUS, с Shift — g_speed, с Ctrl — g_damageScale
+  game/g_combat.c        урона по своей команде нет ни в одном командном режиме (27.11.2026), что
+                         бы ни стояло в g_friendlyFire; свой же взрыв по себе урон наносит, как
+                         раньше
+  q3_ui/ui_startserver.c пункта Friendly Fire в START SERVER нет, g_friendlyfire ставится в 0: в
+                         командном бою он был включён по умолчанию (ui_team_friendly "1"), а выбор
+                         сохранялся под опечаткой Quake "ui_team_friendlt" и не запоминался
   cgame/cg_weapons.c     гильзы Quake не вылетают, если модели гильзы нет (её нет в данных игры)
   renderer/tr_main.c     модель, которой нет, рисуется осями (красная, зелёная, синяя линии) только
                          при r_nullModelAxis 1 (защищён sv_cheats): так летели гильзы из орудий

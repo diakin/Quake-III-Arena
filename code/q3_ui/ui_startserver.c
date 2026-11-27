@@ -810,7 +810,7 @@ static void ServerOptions_Start( void ) {
 	trap_Cvar_SetValue ("timelimit", Com_Clamp( 0, timelimit, timelimit ) );
 	trap_Cvar_SetValue ("fraglimit", Com_Clamp( 0, fraglimit, fraglimit ) );
 	trap_Cvar_SetValue ("capturelimit", Com_Clamp( 0, flaglimit, flaglimit ) );
-	trap_Cvar_SetValue( "g_friendlyfire", friendlyfire );
+	trap_Cvar_SetValue( "g_friendlyfire", 0 );		// WALKER: no damage to the own team
 	trap_Cvar_SetValue( "sv_pure", pure );
 	// WALKER: bots come only from the slots chosen here; without this the
 	// server would add random bots up to bot_minplayers on its own
@@ -1346,7 +1346,8 @@ static void ServerOptions_MenuInit( qboolean multiplayer ) {
 	s_serveroptions.timelimit.field.widthInChars = 3;
 	s_serveroptions.timelimit.field.maxchars     = 3;
 
-	if( s_serveroptions.gametype >= GT_TEAM ) {
+	// WALKER: no Friendly Fire item: the game never damages the own team (g_combat.c)
+	if( 0 ) {
 		y += BIGCHAR_HEIGHT+2;
 		s_serveroptions.friendlyfire.generic.type     = MTYPE_RADIOBUTTON;
 		s_serveroptions.friendlyfire.generic.flags    = QMF_PULSEIFFOCUS|QMF_SMALLFONT;
@@ -1502,9 +1503,7 @@ static void ServerOptions_MenuInit( qboolean multiplayer ) {
 		Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.flaglimit );
 	}
 	Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.timelimit );
-	if( s_serveroptions.gametype >= GT_TEAM ) {
-		Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.friendlyfire );
-	}
+	// WALKER: the Friendly Fire item is not shown (see above)
 	Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.pure );
 	if( s_serveroptions.multiplayer ) {
 		Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.dedicated );

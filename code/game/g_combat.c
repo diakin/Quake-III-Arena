@@ -941,9 +941,10 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 #else	
 		if ( targ != attacker && OnSameTeam (targ, attacker)  ) {
 #endif
-			if ( !g_friendlyFire.integer ) {
-				return;
-			}
+			// WALKER: no damage to the own team in any team mode (27.11.2026), whatever
+			// g_friendlyFire says: the START SERVER menu switched it on in a team battle
+			// (ui_team_friendly "1", and the choice was saved under "ui_team_friendlt")
+			return;
 		}
 #ifdef MISSIONPACK
 		if (mod == MOD_PROXIMITY_MINE) {
