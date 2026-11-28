@@ -129,12 +129,17 @@ int BG_RobotSpeed( int type, int level ) {
 }
 
 int BG_WeaponDamage( int weapon, int level ) {
-	return Grow( bg_robotWeapons[weapon].damage, ClampLevel( level, WEAPON_LEVELS ), 8 ) * bg_damageScale;
+	// +8 % a level, and +3 % a level that were the rate of fire before 28.11.2026 (see below)
+	int		rateShare = 100 + 3 * ( ClampLevel( level, WEAPON_LEVELS ) - 1 );
+
+	return Grow( bg_robotWeapons[weapon].damage, ClampLevel( level, WEAPON_LEVELS ), 8 ) * bg_damageScale * rateShare / 100;
 }
 
 int BG_WeaponInterval( int weapon, int level ) {
-	// each level fires 3 % more often
-	return bg_robotWeapons[weapon].interval * 100 / ( 100 + 3 * ( ClampLevel( level, WEAPON_LEVELS ) - 1 ) );
+	// WALKER (28.11.2026): the same at every level: the level gives damage instead of the
+	// rate of fire (the damage per second is the same), so two guns of one type fire
+	// together; with 3 % a level they drifted apart and the shots were heard double
+	return bg_robotWeapons[weapon].interval;
 }
 
 qboolean BG_WeaponFits( int robot, int slot, int weapon ) {

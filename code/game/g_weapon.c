@@ -157,6 +157,7 @@ void SnapVectorTowards( vec3_t v, vec3_t to ) {
 #define	MACHINEGUN_TEAM_DAMAGE	5		// wimpier MG in teamplay
 
 static float	bulletRange = 8192 * 16;	// WALKER: range of the robot gun (FireWeapon)
+static int		bulletShotTime;				// WALKER: when the robot shot was due, for the impacts
 
 void Bullet_Fire (gentity_t *ent, float spread, int damage ) {
 	trace_t		tr;
@@ -204,6 +205,7 @@ void Bullet_Fire (gentity_t *ent, float spread, int damage ) {
 			tent->s.eventParm = DirToByte( tr.plane.normal );
 		}
 		tent->s.otherEntityNum = ent->s.number;
+		tent->s.time = bulletShotTime;	// WALKER: cgame plays the impact with the shot sound
 
 		if ( traceEnt->takedamage) {
 #ifdef MISSIONPACK
@@ -1083,8 +1085,10 @@ void G_RobotFireWeapon( gentity_t *ent, int slot, int weapon, int weaponLevel, i
 	switch ( info->fire ) {
 	case WFIRE_BULLET:
 		bulletRange = range;
+		bulletShotTime = shotTime;
 		Bullet_Fire( ent, info->spread, damage );
 		bulletRange = 8192 * 16;
+		bulletShotTime = 0;
 		break;
 	case WFIRE_SHELL:
 	case WFIRE_PLASMA:

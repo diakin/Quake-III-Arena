@@ -1307,20 +1307,131 @@ void CG_AddRobotWeapons( refEntity_t *parent, centity_t *cent ) {
 }
 
 
-static void CG_QueueFireSound( centity_t *shooter, entityState_t *es );
+/*
+=============
+Delayed shots
+
+WALKER (28.11.2026): the shot events come with the snapshots, every 50 msec (sv_fps
+20), so the shots of a burst were heard at the snapshot times: with OSA (125 msec)
+80 to 240 msec apart. The server puts the time the shot was due into the shot event
+and into the impact events of its bullets (es->time); the sound of the shot and the
+impacts play at that time plus an offset kept for the robot, so the shots are heard
+an interval apart and the impacts (ricochets, tracers) with their shot, not before
+it - played at once, they came up to 50 msec before the delayed shot sound and the
+shots were heard double. The offset is the lateness of the first shot of a burst, at
+least one snapshot, and grows when a shot comes later than that. The hit beep of the
+player waits for the player's own shot sound too. The flash at the muzzle shows at
+once. Two guns of one type firing together give one sound
+=============
+*/
+#define SHOT_QUEUE			64
+#define SHOT_JITTER			50			// msec: one snapshot at sv_fps 20
+#define SHOT_BURST			400			// msec between shots that start a new burst
+#define SHOT_SOUND_MERGE	30			// msec: guns of one type this close give one sound
+
+typedef enum {
+	SHOT_FREE,
+	SHOT_SOUND,							// the sound of a shot
+	SHOT_HIT_WALL,						// EV_BULLET_HIT_WALL
+	SHOT_HIT_FLESH,						// EV_BULLET_HIT_FLESH
+	SHOT_LOCAL_SOUND					// the hit beep of the player
+} shotKind_t;
+
+typedef struct {
+	shotKind_t		kind;
+	int				time;				// cg.time to play at
+	sfxHandle_t		sfx;
+	entityState_t	state;
+} delayedShot_t;
+
+static delayedShot_t	delayedShots[SHOT_QUEUE];
+static int				ownShotTime;		// cg.time the last own shot sound plays at
+
+/*
+the cg.time to play a shot (or an impact of it) of the robot at; due - server time
+the shot was due
+*/
+static int CG_ShotTime( int shooterNum, int due ) {
+	centity_t	*shooter = &cg_entities[shooterNum];
+	int			late = cg.time - due;
+	int			playTime;
+
+	// the slots of a robot share the offset: a new burst only after all of them were silent
+	if ( due - shooter->pe.fireSoundDue > SHOT_BURST || due < shooter->pe.fireSoundDue - 1000 ) {
+		shooter->pe.fireSoundOffset = late > SHOT_JITTER ? late : SHOT_JITTER;
+		shooter->pe.fireSoundDue = due;
+	} else if ( late > shooter->pe.fireSoundOffset ) {
+		shooter->pe.fireSoundOffset = late;
+	}
+	if ( due > shooter->pe.fireSoundDue ) {
+		shooter->pe.fireSoundDue = due;
+	}
+	playTime = due + shooter->pe.fireSoundOffset;
+	if ( playTime < cg.time ) {
+		playTime = cg.time;
+	}
+	if ( shooterNum == cg.snap->ps.clientNum && playTime > ownShotTime ) {
+		ownShotTime = playTime;
+	}
+	return playTime;
+}
+
+static void CG_PlayShot( shotKind_t kind, sfxHandle_t sfx, entityState_t *es ) {
+	vec3_t	dir;
+
+	switch ( kind ) {
+	case SHOT_SOUND:
+		trap_S_StartSound( es->pos.trBase, es->otherEntityNum, CHAN_WEAPON, sfx );
+		break;
+	case SHOT_HIT_WALL:
+		ByteToDir( es->eventParm, dir );
+		CG_Bullet( es->pos.trBase, es->otherEntityNum, dir, qfalse, ENTITYNUM_WORLD );
+		break;
+	case SHOT_HIT_FLESH:
+		VectorClear( dir );
+		CG_Bullet( es->pos.trBase, es->otherEntityNum, dir, qtrue, es->eventParm );
+		break;
+	case SHOT_LOCAL_SOUND:
+		trap_S_StartLocalSound( sfx, CHAN_LOCAL_SOUND );
+		break;
+	default:
+		break;
+	}
+}
+
+static void CG_DelayShot( shotKind_t kind, int playTime, sfxHandle_t sfx, entityState_t *es ) {
+	int		index;
+
+	if ( playTime > cg.time ) {
+		for ( index = 0; index < SHOT_QUEUE; index++ ) {
+			if ( delayedShots[index].kind == SHOT_FREE ) {
+				delayedShots[index].kind = kind;
+				delayedShots[index].time = playTime;
+				delayedShots[index].sfx = sfx;
+				if ( es ) {
+					delayedShots[index].state = *es;
+				}
+				return;
+			}
+		}
+	}
+	CG_PlayShot( kind, sfx, es );		// its time has come, or the queue is full
+}
+
 
 /*
 =============
 CG_RobotFire
 
-WALKER: EV_ROBOT_FIRE, a weapon in a slot of a robot fired: flash, sound, and
-the start of its tracer
+WALKER: EV_ROBOT_FIRE, a weapon in a slot of a robot fired: flash at once; the sound
+and the tracer with the impact play at the shot time (see Delayed shots)
 =============
 */
 void CG_RobotFire( entityState_t *es ) {
 	centity_t	*shooter;
 	int			slot = es->eventParm;
 	int			type = es->weapon;
+	int			playTime;
 
 	if ( es->otherEntityNum < 0 || es->otherEntityNum >= MAX_GENTITIES || slot < 0 || slot >= ROBOT_MAX_SLOTS
 		|| type < 0 || type >= RWEAPON_COUNT ) {
@@ -1339,69 +1450,43 @@ void CG_RobotFire( entityState_t *es ) {
 		trap_S_StartSound( es->pos.trBase, es->otherEntityNum, CHAN_WEAPON, cgs.media.robotWeaponSounds[type] );
 		return;
 	}
-	CG_QueueFireSound( shooter, es );
+	playTime = CG_ShotTime( es->otherEntityNum, es->time );
+	if ( abs( playTime - shooter->pe.fireSoundTime[type] ) < SHOT_SOUND_MERGE ) {
+		return;		// the other gun of this type fired with this one
+	}
+	shooter->pe.fireSoundTime[type] = playTime;
+	CG_DelayShot( SHOT_SOUND, playTime, cgs.media.robotWeaponSounds[type], es );
 }
 
 
 /*
 =============
-CG_QueueFireSound
+CG_BulletImpact
 
-WALKER (28.11.2026): the shot events come with the snapshots, every 50 msec (sv_fps
-20), so the shots of a burst were heard at the snapshot times: with OSA (125 msec)
-150, 100, 150, 100 msec apart. The server puts the time the shot was due into the
-event (es->time, G_RobotFire); the sound plays at that time plus an offset kept
-for the burst, so the shots are heard exactly an interval apart. The offset is the
-lateness of the first shot, at least a snapshot; a later shot that comes later
-than that moves the rest of the burst
+WALKER: EV_BULLET_HIT_WALL / EV_BULLET_HIT_FLESH: with the shot time of a robot gun
+the tracer and the impact play with the shot sound
 =============
 */
-#define FIRE_SOUND_QUEUE	64
-#define FIRE_SOUND_JITTER	50			// msec: one snapshot at sv_fps 20
-#define FIRE_SOUND_BURST	400			// msec between shots that start a new burst
+void CG_BulletImpact( entityState_t *es, qboolean flesh ) {
+	shotKind_t	kind = flesh ? SHOT_HIT_FLESH : SHOT_HIT_WALL;
 
-typedef struct {
-	int			time;					// cg.time to play at, 0 - free
-	int			entityNum;
-	sfxHandle_t	sfx;
-	vec3_t		origin;
-} fireSound_t;
-
-static fireSound_t	fireSounds[FIRE_SOUND_QUEUE];
-
-static void CG_QueueFireSound( centity_t *shooter, entityState_t *es ) {
-	int		due = es->time;
-	int		late = cg.time - due;
-	int		playTime, index;
-
-	// the slots of a robot share the offset: a new burst only after all of them were silent
-	if ( due - shooter->pe.fireSoundDue > FIRE_SOUND_BURST || due < shooter->pe.fireSoundDue - 1000 ) {
-		shooter->pe.fireSoundOffset = late > FIRE_SOUND_JITTER ? late : FIRE_SOUND_JITTER;
-		shooter->pe.fireSoundDue = due;
-	} else if ( late > shooter->pe.fireSoundOffset ) {
-		shooter->pe.fireSoundOffset = late;
-	}
-	if ( due > shooter->pe.fireSoundDue ) {
-		shooter->pe.fireSoundDue = due;
-	}
-	playTime = due + shooter->pe.fireSoundOffset;
-	if ( playTime <= cg.time ) {
-		trap_S_StartSound( es->pos.trBase, es->otherEntityNum, CHAN_WEAPON, cgs.media.robotWeaponSounds[es->weapon] );
+	if ( !es->time || es->otherEntityNum < 0 || es->otherEntityNum >= MAX_CLIENTS ) {
+		CG_PlayShot( kind, 0, es );
 		return;
 	}
-	for ( index = 0; index < FIRE_SOUND_QUEUE; index++ ) {
-		if ( !fireSounds[index].time ) {
-			break;
-		}
-	}
-	if ( index == FIRE_SOUND_QUEUE ) {
-		trap_S_StartSound( es->pos.trBase, es->otherEntityNum, CHAN_WEAPON, cgs.media.robotWeaponSounds[es->weapon] );
-		return;
-	}
-	fireSounds[index].time = playTime;
-	fireSounds[index].entityNum = es->otherEntityNum;
-	fireSounds[index].sfx = cgs.media.robotWeaponSounds[es->weapon];
-	VectorCopy( es->pos.trBase, fireSounds[index].origin );
+	CG_DelayShot( kind, CG_ShotTime( es->otherEntityNum, es->time ), 0, es );
+}
+
+
+/*
+=============
+CG_HitSound
+
+WALKER: the hit beep of the player plays with the player's own shot sound
+=============
+*/
+void CG_HitSound( sfxHandle_t sfx ) {
+	CG_DelayShot( SHOT_LOCAL_SOUND, ownShotTime, sfx, NULL );
 }
 
 
@@ -1409,25 +1494,28 @@ static void CG_QueueFireSound( centity_t *shooter, entityState_t *es ) {
 =============
 CG_RobotFireSounds
 
-the held back shot sounds whose time has come (every frame, cg_view.c)
+the delayed shots whose time has come (every frame, cg_view.c)
 =============
 */
 void CG_RobotFireSounds( void ) {
 	int		index;
 
-	for ( index = 0; index < FIRE_SOUND_QUEUE; index++ ) {
-		fireSound_t	*sound = &fireSounds[index];
+	if ( ownShotTime - cg.time > 1000 ) {
+		ownShotTime = 0;			// the time went back (a new map, a demo)
+	}
+	for ( index = 0; index < SHOT_QUEUE; index++ ) {
+		delayedShot_t	*shot = &delayedShots[index];
 
-		if ( !sound->time ) {
+		if ( shot->kind == SHOT_FREE ) {
 			continue;
 		}
-		if ( sound->time - cg.time > 1000 ) {
-			sound->time = 0;		// the time went back (a new map, a demo)
+		if ( shot->time - cg.time > 1000 ) {
+			shot->kind = SHOT_FREE;
 			continue;
 		}
-		if ( sound->time <= cg.time ) {
-			trap_S_StartSound( sound->origin, sound->entityNum, CHAN_WEAPON, sound->sfx );
-			sound->time = 0;
+		if ( shot->time <= cg.time ) {
+			CG_PlayShot( shot->kind, shot->sfx, &shot->state );
+			shot->kind = SHOT_FREE;
 		}
 	}
 }

@@ -927,13 +927,12 @@ void CG_EntityEvent( centity_t *cent, vec3_t position ) {
 
 	case EV_BULLET_HIT_WALL:
 		DEBUGNAME("EV_BULLET_HIT_WALL");
-		ByteToDir( es->eventParm, dir );
-		CG_Bullet( es->pos.trBase, es->otherEntityNum, dir, qfalse, ENTITYNUM_WORLD );
+		CG_BulletImpact( es, qfalse );		// WALKER: with the shot sound (cg_weapons.c)
 		break;
 
 	case EV_BULLET_HIT_FLESH:
 		DEBUGNAME("EV_BULLET_HIT_FLESH");
-		CG_Bullet( es->pos.trBase, es->otherEntityNum, dir, qtrue, es->eventParm );
+		CG_BulletImpact( es, qtrue );		// WALKER: with the shot sound (cg_weapons.c)
 		break;
 
 	case EV_SHOTGUN:

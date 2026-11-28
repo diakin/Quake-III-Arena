@@ -176,6 +176,7 @@ typedef struct {
 	int				lastFireTime;
 	int				fireSoundDue;		// server time the last shot was due (EV_ROBOT_FIRE time)
 	int				fireSoundOffset;	// the shot sounds of this burst play at due + offset
+	int				fireSoundTime[RWEAPON_COUNT];	// cg.time of the last shot sound of each type
 } playerEntity_t;
 
 //=================================================
@@ -1413,6 +1414,8 @@ void CG_PlaceWeaponLabel( int slot, const vec3_t origin );
 void CG_DrawWeaponLabels( void );
 void CG_RobotFire( entityState_t *es );
 void CG_RobotFireSounds( void );
+void CG_BulletImpact( entityState_t *es, qboolean flesh );
+void CG_HitSound( sfxHandle_t sfx );
 void CG_DrawWeaponSelect( void );
 
 void CG_OutOfAmmoChange( void );	// should this be in pmove?
