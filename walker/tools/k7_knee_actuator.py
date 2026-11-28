@@ -2,7 +2,7 @@
 
 python3 walker/tools/k7_knee_actuator.py <lower.glb> [out.glb]
 
-По эскизу: на бедре сзади утолщение - короб (камуфляж, как бронеплиты), в нём верхний палец
+По эскизу: на бедре сзади утолщение - обтекатель (камуфляж бедра, сходит в бедро клином), в нём верхний палец
 и верх тёмно-синего корпуса (там подразумевается подвод масла); корпус выходит из низа
 короба, полированный шток (материал chrome: класс polished в bake_walker.py, узкий яркий
 блик) идёт к проушине на голени сзади под коленом. Корпус - узел бедра, шток - узел голени;
@@ -30,7 +30,15 @@ import k7_hydraulics as base
 
 UPPER_PIN = (-0.05, -0.55)          # (y, z) в пространстве бедра: в коробе у тазобедренного шарнира
 LOWER_PIN = (-0.40, -0.25)          # (y, z) в пространстве колена (голени): сзади под коленом
-HOUSING = ((-0.10, -0.22, -0.68), (0.10, 0.09, -0.22))      # короб на бедре (x, y, z): назад с запасом - верх корпуса при наклоне 34° уходит назад
+# обтекатель на бедре (28.11.2026, вместо коробки - смотрелась инородно): профиль (y, z) в
+# пространстве бедра, вытянут по x на +-FAIRING_HALF_WIDTH. Сверху продолжает верх бедра,
+# сзади срезанные углы, низ скошен вперёд-вниз и сходит на заднюю грань бедра - обтекатель
+# сужается в бедро клином. Материал - камуфляж бедра: запекание кладёт на него те же швы и
+# заклёпки. Внутри - верх корпуса цилиндра при любом наклоне (до 34 градусов назад)
+FAIRING = [(0.03, -0.23), (0.08, -0.40), (0.09, -0.60), (0.02, -0.73), (-0.20, -0.73),
+           (-0.27, -0.64), (-0.31, -0.45), (-0.52, -0.23)]
+FAIRING_HALF_WIDTH = 0.13           # бедро +-0.17
+FAIRING_BOTTOM = -0.28              # низ обтекателя под пальцем (y): отсюда виден корпус
 SHIN_REAR = -0.18                   # задняя грань голени (z в пространстве колена)
 BARREL_RADIUS = 0.068
 BARREL_ABOVE = 0.11                 # корпус выше пальца (в коробе)
@@ -108,13 +116,43 @@ def knee_angles(knee_rotation, knee_translation):
     return math.atan2(-down[1], -down[0]), math.atan2(up[1], up[0]), float(np.linalg.norm(down))
 
 
+def fairing(part, profile, half_width):
+    """призма: профиль (y, z) по кругу, вытянутый по x; бока - веером от середины профиля"""
+    profile = [np.array(point, float) for point in profile]
+    centre = sum(profile) / len(profile)
+    low_y, high_y = min(p[0] for p in profile), max(p[0] for p in profile)
+    low_z, high_z = min(p[1] for p in profile), max(p[1] for p in profile)
+
+    def uv(point):
+        return ((point[1] - low_z) / (high_z - low_z), (point[0] - low_y) / (high_y - low_y))
+    for side in (-1, 1):
+        x_value = side * half_width
+        positions = [(x_value, centre[0], centre[1])] + [(x_value, p[0], p[1]) for p in profile]
+        normals = [(side, 0, 0)] * len(positions)
+        uvs = [uv(centre)] + [uv(p) for p in profile]
+        faces = [(0, 1 + index, 1 + (index + 1) % len(profile)) for index in range(len(profile))]
+        part.add(positions, normals, uvs, faces)
+    for index in range(len(profile)):
+        first, second = profile[index], profile[(index + 1) % len(profile)]
+        edge = second - first
+        normal = np.array([edge[1], -edge[0]]); normal /= np.linalg.norm(normal)
+        if np.dot(normal, (first + second) / 2 - centre) < 0:
+            normal = -normal
+        length = np.linalg.norm(edge)
+        positions = [(-half_width, first[0], first[1]), (half_width, first[0], first[1]),
+                     (half_width, second[0], second[1]), (-half_width, second[0], second[1])]
+        normals = [(0, normal[0], normal[1])] * 4
+        uvs = [(0, 0), (1, 0), (1, length), (0, length)]
+        part.add(positions, normals, uvs, [(0, 1, 2), (0, 2, 3)])
+
+
 def build_parts(barrel_below, rod_length):
     parts = {name: {} for name in ('housing', 'barrel', 'rod', 'lower_mount')}
 
     def get(node, material):
         return parts[node].setdefault(material, base.Part())
-    # короб на бедре (в пространстве бедра, узел в начале координат бедра)
-    base.box(get('housing', 'camo_green'), HOUSING[0], HOUSING[1])
+    # обтекатель на бедре (в пространстве бедра, узел в начале координат бедра)
+    fairing(get('housing', 'camo_green'), FAIRING, FAIRING_HALF_WIDTH)
     # корпус: ось -Y от пальца; верх и палец в коробе, у выхода штока тёмная букса
     base.cylinder(get('barrel', 'hydraulic_blue'), 'y', (0, 0, 0), BARREL_RADIUS, BARREL_ABOVE, -(barrel_below - 0.03), (True, False))
     base.cylinder(get('barrel', 'metal_dark'), 'y', (0, 0, 0), BARREL_RADIUS + 0.006, -(barrel_below - 0.03), -barrel_below)
@@ -159,11 +197,10 @@ def main():
     # шток по живым анимациям; в анимациях гибели нога разгибается сильнее, шток выдвигается
     # дальше, но остаётся в корпусе хотя бы на ROD_OVERLAP_DEATH
     shortest, longest = min(lengths), max(live_lengths)
-    hidden = UPPER_PIN[0] - HOUSING[0][1]                     # от пальца до низа короба по Y
+    hidden = UPPER_PIN[0] - FAIRING_BOTTOM                     # от пальца до низа обтекателя по Y
     typical = float(np.median(live_lengths))
-    barrel_below = hidden + BARREL_SHARE * (typical - hidden)
-    if barrel_below > min(live_lengths) - 0.09:
-        raise SystemExit('barrel would reach the shin clevis')
+    # не длиннее, чем позволяет самое короткое расстояние (корпус не доходит до проушины)
+    barrel_below = min(hidden + BARREL_SHARE * (typical - hidden), min(live_lengths) - 0.09)
     rod_length = longest - barrel_below + ROD_OVERLAP
     top_above_pin = rod_length - shortest
     print(f'pin distance {shortest:.3f} .. {longest:.3f}, barrel below the pin {barrel_below:.3f}, '
