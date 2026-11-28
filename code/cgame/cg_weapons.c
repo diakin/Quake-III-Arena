@@ -1321,7 +1321,8 @@ it - played at once, they came up to 50 msec before the delayed shot sound and t
 shots were heard double. The offset is the lateness of the first shot of a burst, at
 least one snapshot, and grows when a shot comes later than that. The hit beep of the
 player waits for the player's own shot sound too. The flash at the muzzle shows at
-once. Two guns of one type firing together give one sound
+once. Two guns of one type firing together give one sound, the pair sound where there
+is one. The player's own shots do not wait: they sound on this computer (Own shots)
 =============
 */
 #define SHOT_QUEUE			64
@@ -1421,6 +1422,115 @@ static void CG_DelayShot( shotKind_t kind, int playTime, sfxHandle_t sfx, entity
 
 /*
 =============
+Own shots
+
+WALKER (28.11.2026): the player's own shots sound and flash on the player's computer,
+at the moment of the command, like the Q3 machine gun did: cgame runs the same slot
+timers as the server (G_RobotFire) on the player's commands. Whether a bullet hits is
+decided on the server only; its impacts and the hit beep come from the server. Two
+guns of one type firing together play the "pair" sound - two shots laid over each
+other, thicker and a little louder
+=============
+*/
+static int		ownShotCmd;					// the last command run
+static int		ownShotServerTime;			// its time
+static int		ownShotSpawn = -1;			// PERS_SPAWN_COUNT: the server clears the timers at a spawn
+static int		ownSlotTime[ROBOT_MAX_SLOTS];
+
+static qboolean CG_OwnShotsLocal( void ) {
+	return cg.snap && !cg.demoPlayback && !( cg.snap->ps.pm_flags & PMF_FOLLOW )
+		&& cg.snap->ps.persistant[PERS_TEAM] != TEAM_SPECTATOR && cg.snap->ps.stats[STAT_FIRE_INTERVAL] < 0;
+}
+
+void CG_PredictOwnShots( void ) {
+	clientInfo_t	*ci;
+	centity_t		*self;
+	usercmd_t		cmd;
+	int				current = trap_GetCurrentCmdNumber();
+	int				cmdNum, slot, type;
+
+	if ( !CG_OwnShotsLocal() ) {
+		ownShotCmd = current;
+		ownShotServerTime = 0;
+		memset( ownSlotTime, 0, sizeof( ownSlotTime ) );
+		return;
+	}
+	if ( cg.snap->ps.persistant[PERS_SPAWN_COUNT] != ownShotSpawn ) {
+		ownShotSpawn = cg.snap->ps.persistant[PERS_SPAWN_COUNT];
+		memset( ownSlotTime, 0, sizeof( ownSlotTime ) );
+	}
+	if ( ownShotCmd > current || current - ownShotCmd >= CMD_BACKUP ) {
+		ownShotCmd = current - 1;
+	}
+	ci = &cgs.clientinfo[cg.snap->ps.clientNum];
+	self = &cg_entities[cg.snap->ps.clientNum];
+	for ( cmdNum = ownShotCmd + 1; cmdNum <= current; cmdNum++ ) {
+		int			msec;
+		qboolean	attacking;
+		int			gunsFired[RWEAPON_COUNT];
+
+		if ( !trap_GetUserCmd( cmdNum, &cmd ) ) {
+			continue;
+		}
+		msec = ownShotServerTime ? cmd.serverTime - ownShotServerTime : 0;
+		if ( msec < 0 ) {
+			msec = 0;
+		} else if ( msec > 200 ) {
+			msec = 200;
+		}
+		ownShotServerTime = cmd.serverTime;
+		attacking = ( cmd.buttons & BUTTON_ATTACK ) && cg.predictedPlayerState.pm_type == PM_NORMAL
+			&& cg.predictedPlayerState.stats[STAT_HEALTH] > 0 && !cg.intermissionStarted;
+		memset( gunsFired, 0, sizeof( gunsFired ) );
+		for ( slot = 0; slot < ROBOT_MAX_SLOTS; slot++ ) {
+			int		interval;
+
+			type = ci->slotWeapons[slot];
+			if ( type < 0 || type >= RWEAPON_COUNT ) {
+				continue;
+			}
+			if ( ownSlotTime[slot] > 0 ) {
+				ownSlotTime[slot] -= msec;
+			}
+			if ( !attacking ) {
+				if ( ownSlotTime[slot] < 0 ) {
+					ownSlotTime[slot] = 0;
+				}
+				continue;
+			}
+			interval = BG_WeaponInterval( type, ci->slotLevels[slot] );
+			if ( interval < 10 ) {
+				interval = 10;
+			}
+			if ( ownSlotTime[slot] <= 0 ) {
+				gunsFired[type]++;
+				self->pe.slotFlashTime[slot] = cg.time;
+				self->muzzleFlashTime = cg.time;
+			}
+			while ( ownSlotTime[slot] <= 0 ) {
+				ownSlotTime[slot] += interval;
+			}
+		}
+		for ( type = 0; type < RWEAPON_COUNT; type++ ) {
+			sfxHandle_t	sfx = cgs.media.robotWeaponSounds[type];
+
+			if ( !gunsFired[type] ) {
+				continue;
+			}
+			if ( gunsFired[type] > 1 && cgs.media.robotWeaponPairSounds[type] ) {
+				sfx = cgs.media.robotWeaponPairSounds[type];
+			}
+			if ( sfx ) {
+				trap_S_StartSound( NULL, cg.snap->ps.clientNum, CHAN_WEAPON, sfx );
+			}
+		}
+	}
+	ownShotCmd = current;
+}
+
+
+/*
+=============
 CG_RobotFire
 
 WALKER: EV_ROBOT_FIRE, a weapon in a slot of a robot fired: flash at once; the sound
@@ -1438,10 +1548,13 @@ void CG_RobotFire( entityState_t *es ) {
 		return;
 	}
 	shooter = &cg_entities[es->otherEntityNum];
-	shooter->pe.slotFlashTime[slot] = cg.time;
-	shooter->muzzleFlashTime = cg.time;
 	VectorCopy( es->pos.trBase, shooter->pe.lastFireOrigin );
 	shooter->pe.lastFireTime = cg.time;
+	if ( es->otherEntityNum == cg.snap->ps.clientNum && CG_OwnShotsLocal() ) {
+		return;		// flash and sound were made on this computer (CG_PredictOwnShots)
+	}
+	shooter->pe.slotFlashTime[slot] = cg.time;
+	shooter->muzzleFlashTime = cg.time;
 	if ( !cgs.media.robotWeaponSounds[type] ) {
 		return;
 	}
@@ -1452,7 +1565,19 @@ void CG_RobotFire( entityState_t *es ) {
 	}
 	playTime = CG_ShotTime( es->otherEntityNum, es->time );
 	if ( abs( playTime - shooter->pe.fireSoundTime[type] ) < SHOT_SOUND_MERGE ) {
-		return;		// the other gun of this type fired with this one
+		// the other gun of this type fired with this one: its sound becomes the pair sound
+		int		index;
+
+		for ( index = 0; index < SHOT_QUEUE && cgs.media.robotWeaponPairSounds[type]; index++ ) {
+			delayedShot_t	*shot = &delayedShots[index];
+
+			if ( shot->kind == SHOT_SOUND && shot->state.otherEntityNum == es->otherEntityNum
+				&& shot->sfx == cgs.media.robotWeaponSounds[type] && abs( shot->time - playTime ) < SHOT_SOUND_MERGE ) {
+				shot->sfx = cgs.media.robotWeaponPairSounds[type];
+				break;
+			}
+		}
+		return;
 	}
 	shooter->pe.fireSoundTime[type] = playTime;
 	CG_DelayShot( SHOT_SOUND, playTime, cgs.media.robotWeaponSounds[type], es );
@@ -1470,7 +1595,9 @@ the tracer and the impact play with the shot sound
 void CG_BulletImpact( entityState_t *es, qboolean flesh ) {
 	shotKind_t	kind = flesh ? SHOT_HIT_FLESH : SHOT_HIT_WALL;
 
-	if ( !es->time || es->otherEntityNum < 0 || es->otherEntityNum >= MAX_CLIENTS ) {
+	// own shots sounded at once on this computer: their impacts come after them anyway
+	if ( !es->time || es->otherEntityNum < 0 || es->otherEntityNum >= MAX_CLIENTS
+		|| ( es->otherEntityNum == cg.snap->ps.clientNum && CG_OwnShotsLocal() ) ) {
 		CG_PlayShot( kind, 0, es );
 		return;
 	}

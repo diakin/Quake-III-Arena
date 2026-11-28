@@ -838,7 +838,9 @@ void CG_DrawActiveFrame( int serverTime, stereoFrame_t stereoView, qboolean demo
 	// warning sounds when powerup is wearing off
 	CG_PowerupTimerSounds();
 
-	// WALKER: the shot sounds held back to keep the burst even (CG_RobotFire)
+	// WALKER: the player's own shots sound here, the others' are held back to keep their
+	// bursts even (cg_weapons.c)
+	CG_PredictOwnShots();
 	CG_RobotFireSounds();
 
 	// update audio positions

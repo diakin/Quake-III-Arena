@@ -1072,6 +1072,16 @@ static void CG_RegisterGraphics( void ) {
 		for ( weapon = 0; weapon < RWEAPON_COUNT; weapon++ ) {
 			cgs.media.robotWeaponModels[weapon] = trap_R_RegisterModel( va( "models/robotweapons/%s.md3", bg_robotWeapons[weapon].id ) );
 			cgs.media.robotWeaponSounds[weapon] = trap_S_RegisterSound( va( "sound/weapons/robot/%s.wav", bg_robotWeapons[weapon].id ), qfalse );
+			// two guns of this type firing together, where there is such a sound
+			{
+				fileHandle_t	file;
+				const char		*name = va( "sound/weapons/robot/%s_pair.wav", bg_robotWeapons[weapon].id );
+
+				if ( trap_FS_FOpenFile( name, &file, FS_READ ) > 0 ) {
+					trap_FS_FCloseFile( file );
+					cgs.media.robotWeaponPairSounds[weapon] = trap_S_RegisterSound( name, qfalse );
+				}
+			}
 		}
 	}
 	cgs.media.wakeMarkShader = trap_R_RegisterShader( "wake" );

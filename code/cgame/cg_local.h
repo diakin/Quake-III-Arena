@@ -764,6 +764,7 @@ typedef struct {
 	qhandle_t	shellShader;		// WALKER: cannon shell of a robot
 	qhandle_t	robotWeaponModels[RWEAPON_COUNT];	// WALKER: weapons in the robot slots
 	sfxHandle_t	robotWeaponSounds[RWEAPON_COUNT];
+	sfxHandle_t	robotWeaponPairSounds[RWEAPON_COUNT];	// two guns of a type together, 0 - none
 	qhandle_t	rocketGlowShader;	// WALKER: light rocket (SHMEL)
 	qhandle_t	rocketFlameShader;	// WALKER: rocket exhaust, rgbGen entity
 	qhandle_t	plasmaBoltShader;	// WALKER: plasma ball (ISKRA)
@@ -1414,6 +1415,7 @@ void CG_PlaceWeaponLabel( int slot, const vec3_t origin );
 void CG_DrawWeaponLabels( void );
 void CG_RobotFire( entityState_t *es );
 void CG_RobotFireSounds( void );
+void CG_PredictOwnShots( void );
 void CG_BulletImpact( entityState_t *es, qboolean flesh );
 void CG_HitSound( sfxHandle_t sfx );
 void CG_DrawWeaponSelect( void );

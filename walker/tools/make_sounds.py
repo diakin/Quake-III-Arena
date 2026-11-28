@@ -442,6 +442,12 @@ def main():
     wind[:fade] *= np.linspace(0, 1, fade) ** 0.5
     wind[-fade:] *= np.linspace(1, 0, fade) ** 0.5
     save('world/wind_loop.wav', wind, 0.5)
+    # залп двух одинаковых лёгких стволов (28.11.2026): два независимых выстрела наложены друг
+    # на друга - звук гуще и немного громче одного. В конце: остальные звуки не меняются
+    def pair(first, second):
+        return first / np.max(np.abs(first)) + second / np.max(np.abs(second))
+    save('weapons/robot/osa_pair.wav', pair(osa_shot, cannon_shot(1)), 0.95)
+    save('weapons/robot/shmel_pair.wav', pair(rocket_pod_shot(), rocket_pod_shot()), 0.9)
     count = sum(len(files) for _, _, files in os.walk(os.path.join(OUT, 'sound')))
     print('sounds:', count)
 
