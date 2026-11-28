@@ -58,6 +58,7 @@ vmCvar_t	g_robots;			// robots in each player's hangar
 vmCvar_t	g_botLevel;			// WALKER: level of the robots of the bots (the ui sets it from the account)
 vmCvar_t	g_botRobots;		// WALKER: robots of each bot
 vmCvar_t	g_testModel;		// WALKER: one model for every robot, for trying a new model
+vmCvar_t	g_mapModel;			// WALKER: the same from the map (worldspawn "testmodel")
 vmCvar_t	g_gravity;
 vmCvar_t	g_cheats;
 vmCvar_t	g_knockback;
@@ -160,6 +161,7 @@ static cvarTable_t		gameCvarTable[] = {
 	{ &g_botLevel, "g_botLevel", "1", 0, 0, qfalse },
 	{ &g_botRobots, "g_botRobots", "1", 0, 0, qfalse },
 	{ &g_testModel, "g_testModel", "", CVAR_SERVERINFO | CVAR_LATCH, 0, qfalse },
+	{ &g_mapModel, "g_mapModel", "", CVAR_SERVERINFO, 0, qfalse },
 	{ &g_gravity, "g_gravity", "800", 0, 0, qtrue  },
 	{ &g_knockback, "g_knockback", "1000", 0, 0, qtrue  },
 	{ &g_quadfactor, "g_quadfactor", "3", 0, 0, qtrue  },

@@ -591,6 +591,12 @@ void SP_worldspawn( void ) {
 	G_SpawnString( "gravity", "800", &s );
 	trap_Cvar_Set( "g_gravity", s );
 
+	// WALKER: a test map gives every robot its model (wk_mechtest: "testmodel" "mech",
+	// 28.11.2026), so the map chosen from the menu shows the robot it was made for
+	G_SpawnString( "testmodel", "", &s );
+	trap_Cvar_Set( "g_mapModel", s );
+	trap_Cvar_Update( &g_mapModel );
+
 	G_SpawnString( "enableDust", "0", &s );
 	trap_Cvar_Set( "g_enableDust", s );
 

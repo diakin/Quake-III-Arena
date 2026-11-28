@@ -76,6 +76,7 @@ WALKER — игра про шагающих роботов на движке Qua
 | `mech_blockout.py` | черновая модель нового робота (картинка с четырьмя видами) |
 | `make_mech_test.py` | черновая модель как модель игрока `mech` для пробы в игре |
 | `make_map_mechtest.py` | тестовая карта `wk_mechtest` в стиле черновой модели |
+| `build_mechtest.sh` | сборка `wk_mechtest.pk3`: модель, карта, навигация |
 | `preview_robot.py` | просмотр запечённого робота без игры |
 | `make_icon.py` | иконка `walker.ico` |
 | `build_all.sh`, `build_qvm.sh` | полная пересборка данных и QVM |
@@ -185,25 +186,19 @@ WALKER — игра про шагающих роботов на движке Qua
   многоугольных торцов — веер от середины и линия только по краю (материал `<группа>_cap`).
 - **Шаг.** Нога короткая (бедро 8,7, голень 10,4 единицы), поэтому шаг короткий (15 единиц), а
   кадров в секунду больше (ходьба 61): ступня в опоре идёт назад со скоростью робота.
-- **Карта** — `make_map_mechtest.py <.../quake*/basewalker>` → `wk_mechtest`: площадка 2048 ×
-  2048 в стенах, ступени 8, 16, 24, 32, 48, пандусы 15° и 30° на площадки, колонны, низкая
-  стена, проходы шириной 96 и 160. Поверхности однотонные, линия по сетке 64 единицы, у каждого
-  вида препятствий свой цвет. Есть навигация ботов.
-- **Запуск**: `Walker.exe +set g_testModel mech +map wk_mechtest`. Cvar `g_testModel` (serverinfo,
-  меняется со следующей картой) даёт эту модель всем роботам и игрокам на сервере, характеристики
-  остаются от своего робота. cgame не откладывает загрузку этой модели (`CG_IsRobotModel`).
-- **Сборка**: модель и карта упакованы в `basewalker/wk_mechtest.pk3`.
-
-  ```
-  python3 walker/tools/make_mech_test.py /tmp/mech_data
-  python3 walker/tools/make_map_mechtest.py /tmp/mechmap/quake3/basewalker
-  cd /tmp/mechmap/quake3/basewalker/maps
-  q3map wk_mechtest.map && q3map -vis wk_mechtest.map && q3map -light -skylight 24 48 wk_mechtest.map
-  bspc -cfg walker/maps/aas_walker.cfg -bsp2aas wk_mechtest.bsp
-  ```
-
-  Затем в pk3 кладутся `maps/*.bsp`, `*.aas`, `textures/mechtest`, `scripts/mechtest.shader`,
-  `scripts/wk_mechtest.arena`, `models/players/mech` и `scripts/walker_mech.shader`.
+- **Карта** — `make_map_mechtest.py <.../quake*/basewalker>` → `wk_mechtest` «Mech test»: площадка
+  2048 × 2048 в стенах, ступени 8, 16, 24, 32, 48, пандусы 15° и 30° на площадки, колонны, низкая
+  стена, проходы шириной 96 и 160, маяки A–E. Поверхности однотонные, линия по сетке 64 единицы,
+  у каждого вида препятствий свой цвет. Есть навигация ботов и картинка для меню.
+- **Запуск.** Карта есть в списке START SERVER и SINGLE PLAYER во всех режимах, включая захват
+  маяков. В worldspawn у неё ключ `"testmodel" "mech"`: игра ставит его в cvar `g_mapModel`
+  (serverinfo), и на этой карте все роботы получают модель `mech`, характеристики остаются от
+  своего робота. Из командной строки: `Walker.exe +map wk_mechtest`. Cvar `g_testModel <модель>`
+  делает то же на любой карте (меняется со следующей картой). cgame не откладывает загрузку этой
+  модели (`CG_IsRobotModel`).
+- **Сборка**: `walker/tools/build_mechtest.sh <q3map> <bspc>` строит модель и карту (BSP, vis,
+  свет, навигация) и пакует всё в `basewalker/wk_mechtest.pk3`. Картинка для меню —
+  `walker/maps/levelshots/wk_mechtest.jpg` (снимок из игры).
 
 Следующие шаги — по согласованию: пропорции и форма кабины, затем модель GLB с анимацией и
 запекание по тому же конвейеру.

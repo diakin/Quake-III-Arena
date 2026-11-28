@@ -2,7 +2,9 @@
 
 python3 walker/tools/make_map_mechtest.py <папка .../quake*/basewalker>
 
-Карта wk_mechtest «Mech test»: ровная площадка 2048 x 2048 единиц в стенах, на ней
+Карта wk_mechtest «Mech test» (в списке карт START SERVER и SINGLE PLAYER во всех режимах,
+есть маяки A-E): на ней все роботы - черновая модель mech (worldspawn "testmodel").
+Ровная площадка 2048 x 2048 единиц в стенах, на ней
 ступени разной высоты, два пандуса на площадки, колонны, низкая стена, два прохода разной
 ширины. Вид - как у черновой модели: однотонные светлые поверхности, тёмная линия по сетке
 64 единицы (текстура 128 пикселей с рамкой, масштаб 0.5), у каждого вида препятствий свой
@@ -136,6 +138,9 @@ def entities():
     for (x_value, y_value, z_value), angle in spawns:
         lines.append(f'{{\n"classname" "info_player_deathmatch"\n"origin" "{x_value} {y_value} {z_value}"\n"angle" "{angle}"\n}}')
     lines.append(f'{{\n"classname" "info_player_intermission"\n"origin" "-700 -700 400"\n"angles" "30 45 0"\n}}')
+    # маяки A-E для захвата маяков: по углам на свободных местах и в центре
+    for letter, (x_value, y_value) in zip('ABCDE', ((-850, -650), (-850, 850), (0, 0), (850, 650), (850, -850))):
+        lines.append(f'{{\n"classname" "team_beacon"\n"origin" "{x_value} {y_value} 8"\n"radius" "150"\n"letter" "{letter}"\n}}')
     return '\n'.join(lines)
 
 
@@ -156,10 +161,12 @@ def main():
     with open(os.path.join(base, 'scripts', 'shaderlist.txt'), 'w') as handle:
         handle.write('mechtest\n')
     with open(os.path.join(base, 'scripts', f'{NAME}.arena'), 'w') as handle:
-        handle.write(f'{{\nmap "{NAME}"\nlongname "Mech test"\nfraglimit 0\ntype "ffa tourney team"\n}}\n')
+        handle.write(f'{{\nmap "{NAME}"\nlongname "Mech test"\nfraglimit "20"\ntimelimit "10"\n'
+                     f'type "ffa tourney team beacons"\nbots "Anvil Bastion Cinder Drake"\n}}\n')
     build()
     with open(os.path.join(base, 'maps', f'{NAME}.map'), 'w') as handle:
-        handle.write('{\n"classname" "worldspawn"\n"message" "Mech test"\n"_minlight" "40"\n')
+        # testmodel: на этой карте все роботы - черновая модель mech (g_spawn.c, g_mapModel)
+        handle.write('{\n"classname" "worldspawn"\n"message" "Mech test"\n"_minlight" "40"\n"testmodel" "mech"\n')
         handle.write('\n'.join(brush.text() for brush in BRUSHES))
         handle.write('\n}\n' + entities() + '\n')
     print(f'{NAME}: {len(BRUSHES)} brushes')

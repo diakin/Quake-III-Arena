@@ -238,23 +238,24 @@ void G_RobotModel( gclient_t *client, char *model, int size ) {
 =================
 G_TestModel
 
-g_testModel mech: every robot and player with that model, keeping the paint (28.11.2026,
-the blockout of a new robot on the test map wk_mechtest); the characteristics stay those
-of the robot
+g_testModel mech, or the map's "testmodel" (g_mapModel): every robot and player with that
+model, keeping the paint (28.11.2026, the blockout of a new robot on the test map
+wk_mechtest); the characteristics stay those of the robot
 =================
 */
 void G_TestModel( char *model, int size ) {
 	const char	*skin = strchr( model, '/' );
 	char		paint[MAX_QPATH];
+	const char	*testModel = g_testModel.string[0] ? g_testModel.string : g_mapModel.string;
 
-	if ( !g_testModel.string[0] ) {
+	if ( !testModel[0] ) {
 		return;
 	}
 	paint[0] = 0;
 	if ( skin ) {
 		Q_strncpyz( paint, skin, sizeof( paint ) );
 	}
-	Com_sprintf( model, size, "%s%s", g_testModel.string, paint );
+	Com_sprintf( model, size, "%s%s", testModel, paint );
 }
 
 

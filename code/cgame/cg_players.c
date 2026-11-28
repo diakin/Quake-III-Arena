@@ -888,6 +888,10 @@ qboolean CG_IsRobotModel( const char *modelName ) {
 	// the model the server gives every robot for a try (g_testModel, serverinfo; 28.11.2026):
 	// not deferred, or the robots kept the previous model until their next death
 	testModel = Info_ValueForKey( CG_ConfigString( CS_SERVERINFO ), "g_testModel" );
+	if ( testModel[0] && !Q_stricmp( modelName, testModel ) ) {
+		return qtrue;
+	}
+	testModel = Info_ValueForKey( CG_ConfigString( CS_SERVERINFO ), "g_mapModel" );
 	return testModel[0] && !Q_stricmp( modelName, testModel );
 }
 

@@ -795,6 +795,7 @@ extern	vmCvar_t	g_robots;
 extern	vmCvar_t	g_botLevel;
 extern	vmCvar_t	g_botRobots;
 extern	vmCvar_t	g_testModel;
+extern	vmCvar_t	g_mapModel;
 extern	vmCvar_t	g_knockback;
 extern	vmCvar_t	g_quadfactor;
 extern	vmCvar_t	g_forcerespawn;
