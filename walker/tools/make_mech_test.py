@@ -8,8 +8,8 @@ lower.glb (таз и ноги с обратной кинематикой, ани
 гибели), upper.glb (корпус), head.glb (кабина), animation.cfg, .skin, шейдеры
 scripts/walker_mech.shader.
 
-Гидроцилиндр колена соединяет бедро и голень: красный корпус на бедре у таза, хромированный
-шток на голени под коленом, оба поворачиваются в каждом кадре (add_actuators).
+Гидроцилиндр колена соединяет бедро и голень: красный корпус на бедре у таза (короткий, шток
+виден), хромированный шток на голени под коленом, оба поворачиваются в каждом кадре (add_actuators).
 
 Вид - как на картинке черновой модели: каждая группа деталей одним светлым цветом, рёбра
 граней тёмной линией того же оттенка. Линия - в текстуре: у четырёхугольной грани углы
@@ -36,7 +36,7 @@ NAME = 'mech'
 GROUND_OFFSET = 1.714                       # земля черновой модели (0) - на 24 единицы ниже точки игрока
 
 GROUP_COLOURS = blockout.GROUP_COLOURS
-GROUP_COLOURS = dict(GROUP_COLOURS, window=(60, 90, 120), barrel=(215, 55, 35), rod=(130, 135, 145))
+GROUP_COLOURS = dict(GROUP_COLOURS, window=(60, 90, 120), barrel=(215, 55, 35), rod=(150, 156, 168))
 
 # шаг ног: ступня в опоре идёт назад со скоростью робота; короткой ноге нужен короткий шаг,
 # поэтому кадров в секунду больше (длина шага = 110 x 0.55 x кадров / кадров в секунду)
@@ -240,8 +240,14 @@ def upper_body():
 # висит на проушине бедра сзади у таза и в каждом кадре смотрит на проушину голени под
 # коленом; хромированный шток висит на проушине голени и смотрит на корпус. При сгибе колена
 # шток выдвигается из корпуса.
+# 28.11.2026: корпус вдвое короче (5.4 -> 2.7), чтобы был виден блестящий шток. Ход штока
+# (проушины расходятся на 4.3..8.4 единицы) больше корпуса, поэтому шток длиннее: при сильном
+# сгибе колена его конец выходит за верхнюю проушину и прячется в шарнире бедра (радиус 2.8).
+# Проушины ближе к оси колена дали бы малый ход, но тогда цилиндр шёл вплотную к бедру и
+# шток не был виден
 UPPER_PIN = np.array([-0.24, 0.0, -0.1])        # в системе бедра, доли единицы модели
 LOWER_PIN = np.array([-0.155, 0.0, -0.22])      # в системе голени
+BARREL_LENGTH = 2.7                             # единиц Quake
 
 
 def quat_rotate(quat, vector):
@@ -291,12 +297,12 @@ def add_actuators(legs):
 
 
 def actuator_parts(actuators, lengths):
-    """корпус перекрывает весь ход штока: шток короче самого короткого расстояния между
-    проушинами, корпус длиннее хода"""
+    """корпус BARREL_LENGTH; шток при самом большом расстоянии между проушинами ещё заходит
+    в корпус на 0.3 единицы"""
     unit = SCALE
     shortest, longest = min(lengths), max(lengths)
-    rod_length = shortest - 0.03 * unit
-    barrel_length = max(0.3 * unit, longest - rod_length + 0.06 * unit)
+    barrel_length = BARREL_LENGTH
+    rod_length = longest - barrel_length + 0.3
     for hip, knee, barrel, rod in actuators:
         barrel.part = robots.Part()
         cylinder(barrel.part, 'barrel', (0, 0, 0.03 * unit), (0, 0, -barrel_length), 0.075 * unit, 10)
@@ -388,6 +394,7 @@ def animation_cfg(fps_of):
 # ---------------------------------------------------------------- материалы
 
 SATURATED = {'barrel'}           # корпус гидроцилиндра - ярко-красный, как на образце
+SHINY = {'rod'}                  # шток блестит
 
 
 def outline_texture(colour, cap=False, size=128, line=4, saturated=False):
@@ -415,7 +422,11 @@ def write_materials(folder, part_materials):
             outline_texture(GROUP_COLOURS[group], material.endswith('_cap'), saturated=group in SATURATED).save(
                 os.path.join(folder, f'{material}.tga'))
             shader = f'models/players/{NAME}/{material}'
-            shaders.append(f'{shader}\n{{\n\t{{\n\t\tmap {shader}.tga\n\t\trgbGen lightingDiffuse\n\t}}\n}}\n')
+            stages = f'\t{{\n\t\tmap {shader}.tga\n\t\trgbGen lightingDiffuse\n\t}}\n'
+            if group in SHINY:      # хромированный шток: блик и отражение неба (карта окружения K7)
+                stages += ('\t{\n\t\tmap models/players/walker/env_shine.jpg\n\t\ttcGen environment\n'
+                           '\t\tblendFunc GL_ONE GL_ONE\n\t\trgbGen const ( 0.8 0.8 0.8 )\n\t}\n')
+            shaders.append(f'{shader}\n{{\n{stages}}}\n')
     # окраски команд и ботов (desert, urban - make_botfiles.py): у пробной модели все одинаковые
     for scheme in robots.SCHEMES + ('desert', 'urban'):
         for part, (materials, tags) in part_materials.items():
