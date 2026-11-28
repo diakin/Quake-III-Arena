@@ -8,8 +8,8 @@ lower.glb (таз и ноги с обратной кинематикой, ани
 гибели), upper.glb (корпус), head.glb (кабина), animation.cfg, .skin, шейдеры
 scripts/walker_mech.shader.
 
-Гидроцилиндр колена соединяет бедро и голень: красный корпус на бедре у таза (короткий, шток
-виден), хромированный шток на голени под коленом, оба поворачиваются в каждом кадре (add_actuators).
+Гидроцилиндр ноги: красный корпус на кронштейне таза сзади, блестящий шток на голени под
+коленом, оба поворачиваются в каждом кадре (add_actuators).
 
 Вид - как на картинке черновой модели: каждая группа деталей одним светлым цветом, рёбра
 граней тёмной линией того же оттенка. Линия - в текстуре: у четырёхугольной грани углы
@@ -144,8 +144,6 @@ def leg_spec():
         part = robots.Part()
         cylinder(part, 'legs', (0, -sign * 0.22 * unit, 0), (0, sign * 0.2 * unit, 0), 0.2 * unit)
         cuboid(part, 'legs', (-0.19 * unit, -0.17 * unit, -thigh), (0.19 * unit, 0.17 * unit, 0))
-        # проушина гидроцилиндра сзади у таза (сам цилиндр - отдельный узел, add_actuators)
-        cuboid(part, 'legs', (-0.27 * unit, -0.05 * unit, -0.16 * unit), (-0.19 * unit, 0.05 * unit, -0.04 * unit))
         return part
 
     def shin_part(sign):
@@ -155,7 +153,7 @@ def leg_spec():
         # бронеплита спереди голени
         cuboid(part, 'legs', (0.13 * unit, -0.21 * unit, -shin * 0.62), (0.21 * unit, 0.21 * unit, -0.06 * unit))
         # проушина штока сзади под коленом
-        cuboid(part, 'legs', (-0.19 * unit, -0.04 * unit, -0.28 * unit), (-0.12 * unit, 0.04 * unit, -0.16 * unit))
+        cuboid(part, 'legs', (-0.19 * unit, -0.04 * unit, -0.31 * unit), (-0.12 * unit, 0.04 * unit, -0.19 * unit))
         return part
 
     def foot_part(sign):
@@ -180,6 +178,11 @@ def leg_spec():
     ring_low = (2.12 - drop - blockout.HIP_Y) * unit
     ring_high = (2.3 - drop - blockout.HIP_Y) * unit
     cylinder(pelvis, 'pelvis', (-0.05 * unit, 0, ring_low), (-0.05 * unit, 0, ring_high), 0.24 * unit, 12)
+    # кронштейны гидроцилиндров: от боков таза назад-вниз к оси ноги
+    for side in (-1, 1):
+        pin_x, pin_z = UPPER_PIN[0] * unit, UPPER_PIN[2] * unit
+        cuboid(pelvis, 'pelvis', (pin_x - 0.05 * unit, min(side * 0.4, side * (blockout.HIP_X + 0.05)) * unit, pin_z - 0.05 * unit),
+               (pin_x + 0.05 * unit, max(side * 0.4, side * (blockout.HIP_X + 0.05)) * unit, pin_z + 0.05 * unit))
     # стопа стоит под щиколоткой: перенос ступни вперёд/назад задаёт походка
     return dict(hip_z=hip_z, hip_y=blockout.HIP_X * unit, torso_z=ring_high, thigh=thigh, shin=shin,
                 ankle_height=ankle_height, knee_forward=True, lift=0.22 * unit, bob=0.04 * unit, sway=0.02,
@@ -236,18 +239,13 @@ def upper_body():
 
 # ---------------------------------------------------------------- гидроцилиндры
 
-# гидроцилиндр колена (28.11.2026): соединяет бедро и голень, как на образце. Красный корпус
-# висит на проушине бедра сзади у таза и в каждом кадре смотрит на проушину голени под
-# коленом; хромированный шток висит на проушине голени и смотрит на корпус. При сгибе колена
-# шток выдвигается из корпуса.
-# 28.11.2026: корпус вдвое короче (5.4 -> 2.7), чтобы был виден блестящий шток. Ход штока
-# (проушины расходятся на 4.3..8.4 единицы) больше корпуса, поэтому шток длиннее: при сильном
-# сгибе колена его конец выходит за верхнюю проушину и прячется в шарнире бедра (радиус 2.8).
-# Проушины ближе к оси колена дали бы малый ход, но тогда цилиндр шёл вплотную к бедру и
-# шток не был виден
-UPPER_PIN = np.array([-0.24, 0.0, -0.1])        # в системе бедра, доли единицы модели
-LOWER_PIN = np.array([-0.155, 0.0, -0.22])      # в системе голени
-BARREL_LENGTH = 2.7                             # единиц Quake
+# гидроцилиндр ноги (28.11.2026, по эскизу): красный корпус висит на кронштейне таза сзади,
+# хромированный шток - на проушине голени под коленом; цилиндр перекрывает тазобедренный и
+# коленный шарниры. Корпус в каждом кадре смотрит на проушину голени, шток - на корпус.
+# Длины - по всем анимациям: шток не длиннее самого короткого расстояния между проушинами (не
+# выходит из корпуса сверху), корпус длиннее хода (шток из него не выпадает)
+UPPER_PIN = np.array([-0.3, 0.0, -0.2])         # в системе таза (y - ось ноги), доли единицы модели
+LOWER_PIN = np.array([-0.15, 0.0, -0.25])       # в системе голени
 
 
 def quat_rotate(quat, vector):
@@ -269,27 +267,30 @@ def quat_from_to(start, end):
 
 
 def add_actuators(legs):
-    """узлы корпуса и штока на каждой ноге; повороты считаются в каждой позе ног"""
-    upper = UPPER_PIN * SCALE
+    """узлы корпуса (на тазе) и штока (на голени) у каждой ноги; повороты - в каждой позе ног"""
     lower = LOWER_PIN * SCALE
     actuators, lengths = [], []
     for hip, knee, ankle, sign in legs.legs:
         side = 'l' if sign > 0 else 'r'
-        barrel = robots.Node(f'barrel_{side}', upper, None, hip)
+        upper = np.array([UPPER_PIN[0] * SCALE, hip.translation[1], UPPER_PIN[2] * SCALE])
+        barrel = robots.Node(f'barrel_{side}', upper, None, legs.pelvis)
         rod = robots.Node(f'rod_{side}', lower, None, knee)
-        actuators.append((hip, knee, barrel, rod))
+        actuators.append((hip, knee, barrel, rod, upper))
     original_pose = legs.pose
+
+    def conjugate(quat):
+        return np.array([quat[0], -quat[1], -quat[2], -quat[3]])
 
     def pose(*arguments, **keywords):
         keys = original_pose(*arguments, **keywords)
-        for hip, knee, barrel, rod in actuators:
+        for hip, knee, barrel, rod, upper in actuators:
+            hip_translation, hip_rotation = keys[id(hip)]
             knee_translation, knee_rotation = keys[id(knee)]
-            lower_in_hip = knee_translation + quat_rotate(knee_rotation, lower)
-            keys[id(barrel)] = (upper, quat_from_to((0, 0, -1), lower_in_hip - upper))
-            inverse = np.array([knee_rotation[0], -knee_rotation[1], -knee_rotation[2], -knee_rotation[3]])
-            upper_in_knee = quat_rotate(inverse, upper - knee_translation)
+            lower_in_pelvis = hip_translation + quat_rotate(hip_rotation, knee_translation + quat_rotate(knee_rotation, lower))
+            keys[id(barrel)] = (upper, quat_from_to((0, 0, -1), lower_in_pelvis - upper))
+            upper_in_knee = quat_rotate(conjugate(knee_rotation), quat_rotate(conjugate(hip_rotation), upper - hip_translation) - knee_translation)
             keys[id(rod)] = (lower, quat_from_to((0, 0, 1), upper_in_knee - lower))
-            lengths.append(float(np.linalg.norm(lower_in_hip - upper)))
+            lengths.append(float(np.linalg.norm(lower_in_pelvis - upper)))
         return keys
 
     legs.pose = pose
@@ -297,17 +298,20 @@ def add_actuators(legs):
 
 
 def actuator_parts(actuators, lengths):
-    """корпус BARREL_LENGTH; шток при самом большом расстоянии между проушинами ещё заходит
-    в корпус на 0.3 единицы"""
-    unit = SCALE
+    """корпус ниже кронштейна - 45% типичного расстояния между проушинами, остальное - видимый шток;
+    шток длиной на 0.3 больше хода, чтобы не выпадал при полном разгибе; при сильном сгибе его конец
+    уходит за кронштейн - корпус продолжается выше оси кронштейна и закрывает его"""
     shortest, longest = min(lengths), max(lengths)
-    barrel_length = BARREL_LENGTH
-    rod_length = longest - barrel_length + 0.3
-    for hip, knee, barrel, rod in actuators:
+    typical = float(np.median(lengths))
+    barrel_below = 0.45 * typical
+    rod_length = longest - barrel_below + 0.3
+    barrel_above = max(0.4, rod_length - shortest + 0.2)
+    barrel_length = barrel_below + barrel_above
+    for hip, knee, barrel, rod, upper in actuators:
         barrel.part = robots.Part()
-        cylinder(barrel.part, 'barrel', (0, 0, 0.03 * unit), (0, 0, -barrel_length), 0.075 * unit, 10)
+        cylinder(barrel.part, 'barrel', (0, 0, barrel_above), (0, 0, -barrel_below), 0.075 * SCALE, 10)
         rod.part = robots.Part()
-        cylinder(rod.part, 'rod', (0, 0, -0.03 * unit), (0, 0, rod_length), 0.038 * unit, 8)
+        cylinder(rod.part, 'rod', (0, 0, -0.4), (0, 0, rod_length), 0.038 * SCALE, 8)
     return shortest, longest, barrel_length, rod_length
 
 
