@@ -38,6 +38,7 @@ ROBOT = os.path.basename(os.path.normpath(MODEL_DIR))
 SHADER_PREFIX = 'models/players/' + ROBOT
 ENV_SHINE = 'models/players/walker/env_shine.jpg'
 ENV_GLINT = 'models/players/walker/env_glint.jpg'
+ENV_STREAK = 'models/players/walker/env_streak.jpg'   # узкий блик полированного штока
 PARTS = {'lower': 1024, 'upper': 1024, 'head': 512}
 # K7 - главный робот: атласы вдвое крупнее (2048), каждая точка - один тексель
 # (столько же выборок, сколько у 1024 с SUPERSAMPLE 2), подробный износ (26.11.2026)
@@ -82,7 +83,8 @@ def team_paint(image, scheme):
 
 
 # материалы K7 и роботов make_robots.py
-PAINTED = {'camo_green', 'camo_dark', 'panel_light', 'marking', 'trim_yellow', 'orange', 'paint', 'accent'}
+PAINTED = {'camo_green', 'camo_dark', 'panel_light', 'marking', 'trim_yellow', 'orange', 'paint', 'accent',
+           'hydraulic_blue'}
 METAL = {'metal_gray', 'metal_dark', 'chrome', 'black', 'metal', 'dark'}
 GLOWING = {'engine_glow', 'light_cyan', 'sensor_purple', 'glow', 'indicator_red', 'indicator_green'}
 GLASS = {'canopy_glass', 'glass'}
@@ -952,6 +954,10 @@ def read_skin(path):
 
 
 def material_class(name):
+    # полированные штоки (28.11.2026): свой шейдер с узким ярким бликом (ENV_STREAK); в общий
+    # проход материалов (make_material_pass.py) не входит, рисуется своими слоями
+    if name in HYDRAULIC:
+        return 'polished'
     if name in GLOWING:
         return 'glow'
     if name in GLASS:
@@ -1045,6 +1051,24 @@ def write_shaders(parts):
 	{{
 		map {atlas}
 		rgbGen wave sin 0.9 0.08 0 0.4
+	}}
+}}
+{base}_polished_{scheme}
+{{
+	{{
+		map {atlas}
+		rgbGen lightingDiffuse
+	}}
+	{{
+		map {ENV_SHINE}
+		tcGen environment
+		blendFunc GL_DST_COLOR GL_ONE
+		rgbGen const ( 0.70 0.70 0.70 )
+	}}
+	{{
+		map {ENV_STREAK}
+		tcGen environment
+		blendFunc GL_ONE GL_ONE
 	}}
 }}""")
     path = os.path.join(DATA_ROOT, 'scripts', f'{ROBOT}_player.shader')

@@ -244,6 +244,8 @@ def robot(name, shader_file):
             if not match or shader not in shaders:
                 continue
             klass = match.group(1)
+            if klass == 'polished':
+                continue        # полированные штоки рисуются своим шейдером (bake_walker.py)
             channels, class_glow, class_env = class_numbers(shaders[shader][2])
             class_of_material[material] = klass
             numbers[klass] = channels
