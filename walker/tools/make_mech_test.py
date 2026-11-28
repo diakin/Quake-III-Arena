@@ -8,8 +8,8 @@ lower.glb (таз и ноги с обратной кинематикой, ани
 гибели), upper.glb (корпус), head.glb (кабина), animation.cfg, .skin, шейдеры
 scripts/walker_mech.shader.
 
-Гидроцилиндр ноги: красный корпус на кронштейне таза сзади, блестящий шток на голени под
-коленом, оба поворачиваются в каждом кадре (add_actuators).
+Гидроцилиндр колена: верхний конец красного корпуса спрятан в коробе на бедре у таза, блестящий
+шток на голени под коленом, оба поворачиваются в каждом кадре (add_actuators).
 
 Вид - как на картинке черновой модели: каждая группа деталей одним светлым цветом, рёбра
 граней тёмной линией того же оттенка. Линия - в текстуре: у четырёхугольной грани углы
@@ -144,6 +144,8 @@ def leg_spec():
         part = robots.Part()
         cylinder(part, 'legs', (0, -sign * 0.22 * unit, 0), (0, sign * 0.2 * unit, 0), 0.2 * unit)
         cuboid(part, 'legs', (-0.19 * unit, -0.17 * unit, -thigh), (0.19 * unit, 0.17 * unit, 0))
+        # короб гидравлики сзади у тазобедренного шарнира, в нём верхний конец гидроцилиндра
+        cuboid(part, 'legs', tuple(value * unit for value in HOUSING[0]), tuple(value * unit for value in HOUSING[1]))
         return part
 
     def shin_part(sign):
@@ -153,7 +155,7 @@ def leg_spec():
         # бронеплита спереди голени
         cuboid(part, 'legs', (0.13 * unit, -0.21 * unit, -shin * 0.62), (0.21 * unit, 0.21 * unit, -0.06 * unit))
         # проушина штока сзади под коленом
-        cuboid(part, 'legs', (-0.19 * unit, -0.04 * unit, -0.31 * unit), (-0.12 * unit, 0.04 * unit, -0.19 * unit))
+        cuboid(part, 'legs', (-0.23 * unit, -0.04 * unit, -0.36 * unit), (-0.12 * unit, 0.04 * unit, -0.24 * unit))
         return part
 
     def foot_part(sign):
@@ -178,11 +180,6 @@ def leg_spec():
     ring_low = (2.12 - drop - blockout.HIP_Y) * unit
     ring_high = (2.3 - drop - blockout.HIP_Y) * unit
     cylinder(pelvis, 'pelvis', (-0.05 * unit, 0, ring_low), (-0.05 * unit, 0, ring_high), 0.24 * unit, 12)
-    # кронштейны гидроцилиндров: от боков таза назад-вниз к оси ноги
-    for side in (-1, 1):
-        pin_x, pin_z = UPPER_PIN[0] * unit, UPPER_PIN[2] * unit
-        cuboid(pelvis, 'pelvis', (pin_x - 0.05 * unit, min(side * 0.4, side * (blockout.HIP_X + 0.05)) * unit, pin_z - 0.05 * unit),
-               (pin_x + 0.05 * unit, max(side * 0.4, side * (blockout.HIP_X + 0.05)) * unit, pin_z + 0.05 * unit))
     # стопа стоит под щиколоткой: перенос ступни вперёд/назад задаёт походка
     return dict(hip_z=hip_z, hip_y=blockout.HIP_X * unit, torso_z=ring_high, thigh=thigh, shin=shin,
                 ankle_height=ankle_height, knee_forward=True, lift=0.22 * unit, bob=0.04 * unit, sway=0.02,
@@ -239,13 +236,16 @@ def upper_body():
 
 # ---------------------------------------------------------------- гидроцилиндры
 
-# гидроцилиндр ноги (28.11.2026, по эскизу): красный корпус висит на кронштейне таза сзади,
-# хромированный шток - на проушине голени под коленом; цилиндр перекрывает тазобедренный и
-# коленный шарниры. Корпус в каждом кадре смотрит на проушину голени, шток - на корпус.
-# Длины - по всем анимациям: шток не длиннее самого короткого расстояния между проушинами (не
-# выходит из корпуса сверху), корпус длиннее хода (шток из него не выпадает)
-UPPER_PIN = np.array([-0.3, 0.0, -0.2])         # в системе таза (y - ось ноги), доли единицы модели
-LOWER_PIN = np.array([-0.15, 0.0, -0.25])       # в системе голени
+# гидроцилиндр колена (28.11.2026): верхний конец красного корпуса спрятан в коробе на задней
+# стороне бедра у тазобедренного шарнира (там подразумевается подвод масла, как у Казака),
+# хромированный шток - на проушине голени под коленом. Корпус - узел бедра и в каждом кадре
+# смотрит на проушину голени, шток - узел голени и смотрит на корпус. Положения проушин
+# подобраны перебором по анимациям: наименьший разброс расстояния между ними и зазор до бедра,
+# колена и голени во всех позах, кроме смертей
+UPPER_PIN = np.array([-0.4, 0.0, 0.1])          # в системе бедра, доли единицы модели
+LOWER_PIN = np.array([-0.18, 0.0, -0.3])        # в системе голени
+HOUSING = ((-0.52, -0.13, -0.06), (-0.17, 0.13, 0.24))   # короб на бедре: углы (x, y, z)
+DEATH_FRAMES = 15                               # кадров в каждой анимации смерти (они записываются первыми)
 
 
 def quat_rotate(quat, vector):
@@ -267,15 +267,15 @@ def quat_from_to(start, end):
 
 
 def add_actuators(legs):
-    """узлы корпуса (на тазе) и штока (на голени) у каждой ноги; повороты - в каждой позе ног"""
+    """узлы корпуса (на бедре) и штока (на голени) у каждой ноги; повороты - в каждой позе ног"""
+    upper = UPPER_PIN * SCALE
     lower = LOWER_PIN * SCALE
     actuators, lengths = [], []
     for hip, knee, ankle, sign in legs.legs:
         side = 'l' if sign > 0 else 'r'
-        upper = np.array([UPPER_PIN[0] * SCALE, hip.translation[1], UPPER_PIN[2] * SCALE])
-        barrel = robots.Node(f'barrel_{side}', upper, None, legs.pelvis)
+        barrel = robots.Node(f'barrel_{side}', upper, None, hip)
         rod = robots.Node(f'rod_{side}', lower, None, knee)
-        actuators.append((hip, knee, barrel, rod, upper))
+        actuators.append((knee, barrel, rod))
     original_pose = legs.pose
 
     def conjugate(quat):
@@ -283,14 +283,13 @@ def add_actuators(legs):
 
     def pose(*arguments, **keywords):
         keys = original_pose(*arguments, **keywords)
-        for hip, knee, barrel, rod, upper in actuators:
-            hip_translation, hip_rotation = keys[id(hip)]
+        for knee, barrel, rod in actuators:
             knee_translation, knee_rotation = keys[id(knee)]
-            lower_in_pelvis = hip_translation + quat_rotate(hip_rotation, knee_translation + quat_rotate(knee_rotation, lower))
-            keys[id(barrel)] = (upper, quat_from_to((0, 0, -1), lower_in_pelvis - upper))
-            upper_in_knee = quat_rotate(conjugate(knee_rotation), quat_rotate(conjugate(hip_rotation), upper - hip_translation) - knee_translation)
-            keys[id(rod)] = (lower, quat_from_to((0, 0, 1), upper_in_knee - lower))
-            lengths.append(float(np.linalg.norm(lower_in_pelvis - upper)))
+            lower_in_thigh = knee_translation + quat_rotate(knee_rotation, lower)
+            keys[id(barrel)] = (upper, quat_from_to((0, 0, -1), lower_in_thigh - upper))
+            upper_in_shin = quat_rotate(conjugate(knee_rotation), upper - knee_translation)
+            keys[id(rod)] = (lower, quat_from_to((0, 0, 1), upper_in_shin - lower))
+            lengths.append(float(np.linalg.norm(lower_in_thigh - upper)))
         return keys
 
     legs.pose = pose
@@ -298,16 +297,18 @@ def add_actuators(legs):
 
 
 def actuator_parts(actuators, lengths):
-    """корпус ниже кронштейна - 45% типичного расстояния между проушинами, остальное - видимый шток;
-    шток длиной на 0.3 больше хода, чтобы не выпадал при полном разгибе; при сильном сгибе его конец
-    уходит за кронштейн - корпус продолжается выше оси кронштейна и закрывает его"""
+    """видимая часть - от низа короба до проушины голени; корпус занимает 45% её при типичном
+    расстоянии, остальное - шток. Шток на 0.3 длиннее хода, чтобы не выпадал при полном разгибе;
+    при сильном сгибе его конец уходит выше оси - корпус продолжается вверх внутри короба"""
     shortest, longest = min(lengths), max(lengths)
-    typical = float(np.median(lengths))
-    barrel_below = 0.45 * typical
+    # типичное расстояние - по живым позам (стойка, ходьба), без смертей
+    typical = float(np.median(lengths[len(robots.DEATHS) * DEATH_FRAMES * 2:]))
+    hidden = (UPPER_PIN[2] - HOUSING[0][2]) * SCALE
+    barrel_below = hidden + 0.45 * (typical - hidden)
     rod_length = longest - barrel_below + 0.3
     barrel_above = max(0.4, rod_length - shortest + 0.2)
     barrel_length = barrel_below + barrel_above
-    for hip, knee, barrel, rod, upper in actuators:
+    for knee, barrel, rod in actuators:
         barrel.part = robots.Part()
         cylinder(barrel.part, 'barrel', (0, 0, barrel_above), (0, 0, -barrel_below), 0.075 * SCALE, 10)
         rod.part = robots.Part()
@@ -355,7 +356,7 @@ def legs_animations(legs):
         return poses
 
     for index, (forward, tilt) in enumerate(((1, 0), (-1, 0), (0.3, 1))):
-        poses_of[f'BOTH_DEATH{index + 1}'] = death(15, forward, tilt)
+        poses_of[f'BOTH_DEATH{index + 1}'] = death(DEATH_FRAMES, forward, tilt)
         poses_of[f'BOTH_DEAD{index + 1}'] = poses_of[f'BOTH_DEATH{index + 1}'][-1:]
     cycle('LEGS_WALKCR', 15, STRIDE * 0.8, crouch=spec['crouch'])
     cycle('LEGS_WALK', 15, STRIDE)
