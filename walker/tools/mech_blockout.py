@@ -106,7 +106,7 @@ HIP_Y = float(KNEE[0] - THIGH_DIRECTION[0] * THIGH_LENGTH)
 HIP_Z = float(KNEE[1] - THIGH_DIRECTION[1] * THIGH_LENGTH)
 BODY_DROP = 1.95 - HIP_Y        # корпус задан от прежней высоты таза 1.95 и опускается
 COCKPIT_HALF = 0.26             # полуширина кабины (была 0.42)
-TORSO_HALF = 0.3                # полуширина корпуса (была 0.6)
+TORSO_HALF = 0.44               # полуширина корпуса = полуширина таза (было 0.6, потом 0.3)
 
 
 def leg(side):
