@@ -327,8 +327,22 @@ Determine the rotation of the legs reletive
 to the facing dir
 ================
 */
+/*
+WALKER (28.11.2026): mostly sideways - the forward or backward part is less than half the
+sideways one: the legs turn 90 degrees and walk forward (PMF_BACKWARDS_RUN off), whatever
+the sign of that small part
+*/
+static qboolean PM_MostlySideways( void ) {
+	int		sideways = pm->cmd.rightmove < 0 ? -pm->cmd.rightmove : pm->cmd.rightmove;
+	int		along = pm->cmd.forwardmove < 0 ? -pm->cmd.forwardmove : pm->cmd.forwardmove;
+
+	return sideways > 0 && along * 2 < sideways;
+}
+
 static void PM_SetMovementDir( void ) {
-	if ( pm->cmd.forwardmove || pm->cmd.rightmove ) {
+	if ( PM_MostlySideways() ) {
+		pm->ps->movementDir = pm->cmd.rightmove < 0 ? 2 : 6;
+	} else if ( pm->cmd.forwardmove || pm->cmd.rightmove ) {
 		if ( pm->cmd.rightmove == 0 && pm->cmd.forwardmove > 0 ) {
 			pm->ps->movementDir = 0;
 		} else if ( pm->cmd.rightmove < 0 && pm->cmd.forwardmove > 0 ) {
@@ -1937,18 +1951,15 @@ void PmoveSingle (pmove_t *pmove) {
 	}
 
 	// decide if backpedaling animations should be used
-	// WALKER: with a margin. Walking sideways with a little forward or backward in it,
-	// the sign of forwardmove kept flipping and the legs with it (bots facing their enemy,
-	// 28.11.2026); now it takes a backward (forward) part of at least half the sideways one
-	// to switch, in between the legs keep what they do
-	{
-		int		sideways = pm->cmd.rightmove < 0 ? -pm->cmd.rightmove : pm->cmd.rightmove;
-
-		if ( pm->cmd.forwardmove < 0 && -pm->cmd.forwardmove * 2 >= sideways ) {
-			pm->ps->pm_flags |= PMF_BACKWARDS_RUN;
-		} else if ( pm->cmd.forwardmove > 0 && pm->cmd.forwardmove * 2 >= sideways ) {
-			pm->ps->pm_flags &= ~PMF_BACKWARDS_RUN;
-		}
+	// WALKER: backwards only with a backward part of at least half the sideways one.
+	// Walking sideways with a little forward or backward in it, the sign of forwardmove kept
+	// flipping and the legs with it (bots facing their enemy); mostly sideways the legs walk
+	// forward turned 90 degrees (PM_SetMovementDir). Before 28.11.2026 in between the legs
+	// kept the last gait, so a strafe after walking back went on with the backward steps
+	if ( pm->cmd.forwardmove < 0 && !PM_MostlySideways() ) {
+		pm->ps->pm_flags |= PMF_BACKWARDS_RUN;
+	} else {
+		pm->ps->pm_flags &= ~PMF_BACKWARDS_RUN;
 	}
 
 	if ( pm->ps->pm_type >= PM_DEAD ) {
