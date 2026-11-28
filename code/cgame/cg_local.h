@@ -174,6 +174,8 @@ typedef struct {
 	int				slotFlashTime[ROBOT_MAX_SLOTS];
 	vec3_t			lastFireOrigin;		// muzzle of the last shot: tracers start there
 	int				lastFireTime;
+	int				fireSoundDue;		// server time the last shot was due (EV_ROBOT_FIRE time)
+	int				fireSoundOffset;	// the shot sounds of this burst play at due + offset
 } playerEntity_t;
 
 //=================================================
@@ -1410,6 +1412,7 @@ void CG_DrawTarget( void );
 void CG_PlaceWeaponLabel( int slot, const vec3_t origin );
 void CG_DrawWeaponLabels( void );
 void CG_RobotFire( entityState_t *es );
+void CG_RobotFireSounds( void );
 void CG_DrawWeaponSelect( void );
 
 void CG_OutOfAmmoChange( void );	// should this be in pmove?

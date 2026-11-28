@@ -12,7 +12,7 @@ OUT = sys.argv[1]
 RATE = 22050
 rng = np.random.default_rng(26)
 step_rng = np.random.default_rng(2611)      # шаги (28.11.2026): свой генератор, остальные звуки прежние
-STEP_GAIN = 0.45                            # шаги вдвое тише выстрелов (было 0.9 - гремели)
+STEP_GAIN = 0.7                             # шаги (было 0.9 - гремели, 0.45 - слишком тихо)
 
 
 def save(path, samples, gain=0.9):
@@ -85,14 +85,20 @@ def reverb(samples, room=0.18, wet=0.25, generator=None):
 
 # ---------------------------------------------------------------- оружие
 def cannon_shot(variant):
+    """OSA и TOPOR (28.11.2026): глухой сухой выстрел. Было: треск 1,8-9 кГц, гул и удар,
+    затухающие 120-160 мс, щелчок затвора через 70 мс и хвост реверберации 0,5 с - на 200 мс
+    звук был всего на 21 дБ тише начала, и в очереди (125 мс) выстрелы накладывались, как эхо.
+    Стало: треск ниже (0,8-3 кГц) и тише, гул и удар затухают за 40-50 мс, щелчка нет,
+    реверберации почти нет, всё выше 2,5 кГц срезано. Генератор случайных чисел расходуется
+    как раньше: остальные звуки не меняются."""
     seconds = 0.55
-    crack = band(noise(seconds), 1800, 9000) * envelope(seconds, 0.001, 0.025)
-    body = band(noise(seconds), 90, 900) * envelope(seconds, 0.002, 0.12)
+    crack = band(noise(seconds), 800, 3000) * envelope(seconds, 0.001, 0.02)
+    body = band(noise(seconds), 70, 700) * envelope(seconds, 0.002, 0.04)
     t = time(seconds)
-    boom = np.sin(2 * np.pi * (70 + 40 * np.exp(-t * 30) + variant * 3) * t) * envelope(seconds, 0.002, 0.16)
-    clack = resonator(seconds, [1450 + variant * 40, 2300, 3700], 0.02) * envelope(seconds, 0.0, 0.03)
-    clack = np.roll(clack, int(0.07 * RATE))
-    return reverb(mix(crack * 0.7, body * 0.9, boom * 1.2, clack * 0.25), 0.25, 0.3)
+    boom = np.sin(2 * np.pi * (60 + 35 * np.exp(-t * 30) + variant * 3) * t) * envelope(seconds, 0.002, 0.05)
+    resonator(seconds, [1450 + variant * 40, 2300, 3700], 0.02)     # прежний щелчок затвора: не звучит
+    dry = band(mix(crack * 0.35, body * 0.9, boom * 1.3), 30, 2500)
+    return reverb(dry, 0.25, 0.05)
 
 
 def ricochet(variant):

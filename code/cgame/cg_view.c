@@ -838,6 +838,9 @@ void CG_DrawActiveFrame( int serverTime, stereoFrame_t stereoView, qboolean demo
 	// warning sounds when powerup is wearing off
 	CG_PowerupTimerSounds();
 
+	// WALKER: the shot sounds held back to keep the burst even (CG_RobotFire)
+	CG_RobotFireSounds();
+
 	// update audio positions
 	trap_S_Respatialize( cg.snap->ps.clientNum, cg.refdef.vieworg, cg.refdef.viewaxis, inwater );
 

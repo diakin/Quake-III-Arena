@@ -1032,10 +1032,11 @@ WALKER: one shot of the weapon in a slot of the robot (g_robots.c, G_RobotFire).
 The shot starts at the muzzle of the slot (bg_robots.c, slotOffset) and goes to
 the point the player aims at: the crosshair in third person (AimAtCrosshair),
 otherwise the point along the view at the range of the weapon. A temporary
-entity EV_ROBOT_FIRE tells the clients which slot fired (flash, sound).
+entity EV_ROBOT_FIRE tells the clients which slot fired (flash, sound) and when
+the shot was due (shotTime).
 ===============
 */
-void G_RobotFireWeapon( gentity_t *ent, int slot, int weapon, int weaponLevel ) {
+void G_RobotFireWeapon( gentity_t *ent, int slot, int weapon, int weaponLevel, int shotTime ) {
 	const robotWeaponInfo_t	*info = &bg_robotWeapons[weapon];
 	const robotInfo_t		*robot = &bg_robots[G_RobotCurrent( ent->client )->type];
 	const float				*offset = robot->slotOffset[slot];
@@ -1077,6 +1078,7 @@ void G_RobotFireWeapon( gentity_t *ent, int slot, int weapon, int weaponLevel ) 
 	tent->s.otherEntityNum = ent->s.number;
 	tent->s.eventParm = slot;
 	tent->s.weapon = weapon;
+	tent->s.time = shotTime;		// WALKER: when the shot was due: cgame keeps the burst even
 
 	switch ( info->fire ) {
 	case WFIRE_BULLET:

@@ -379,7 +379,9 @@ void G_RobotFire( gentity_t *ent, int msec ) {
 			continue;
 		}
 		while ( client->slotTime[slot] <= 0 ) {
-			G_RobotFireWeapon( ent, slot, weapon->type, weapon->level );
+			// the shot was due slotTime msec before the end of this command: the server runs
+			// the bots once a frame (50 msec), so several shots may come at once
+			G_RobotFireWeapon( ent, slot, weapon->type, weapon->level, client->ps.commandTime + client->slotTime[slot] );
 			client->slotTime[slot] += BG_WeaponInterval( weapon->type, weapon->level );
 		}
 	}

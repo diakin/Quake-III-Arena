@@ -628,7 +628,7 @@ void			G_RobotThink( gentity_t *ent, int msec );
 void			G_RobotRewards( void );
 
 // g_weapon.c (WALKER)
-void			G_RobotFireWeapon( gentity_t *ent, int slot, int weapon, int weaponLevel );
+void			G_RobotFireWeapon( gentity_t *ent, int slot, int weapon, int weaponLevel, int shotTime );
 
 // g_beacons.c (WALKER)
 //
