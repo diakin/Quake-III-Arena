@@ -48,7 +48,7 @@ WALKER — игра про шагающих роботов на движке Qua
 - `Walker.exe`, `WalkerBench.exe`;
 - `basewalker/pak0.pk3` и карты;
 - `basewalker/qagamex86.dll`, `basewalker/cgamex86.dll`;
-- `README-walker.txt`.
+- `README-walker.txt`, `BALANCE.md`.
 
 Если раньше запускалась старая версия, нужно удалить `basewalker\q3config.cfg`: в нём
 сохраняются старые настройки.
@@ -463,8 +463,7 @@ bspc -cfg walker/maps/aas_walker.cfg -bsp2aas wk_islands.bsp    # навигац
 
 ## 11. Звук
 
-Все звуки синтезирует `make_sounds.py`, кроме шагов по воде (запись). Авторы записей перечислены
-в `SOUND-CREDITS.txt`.
+Все звуки синтезирует `make_sounds.py`, кроме шагов по воде: их режет из записи `import_splash.py`.
 
 | Звук | Решение |
 |---|---|
