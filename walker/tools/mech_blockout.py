@@ -2,10 +2,10 @@
 
 python3 walker/tools/mech_blockout.py <out.png>
 
-Компоновка: два ноги с коленом вперёд и бронированной голенью, широкий таз на двух
-шарнирах, поворотный погон, над ним корпус: спереди угловатая кабина (короб со
-срезанной верхней передней гранью, окна на скосе), сзади отсек оборудования. Справа
-спаренная пушка, слева ракетный блок. Бокового крыла нет.
+Компоновка: две ноги с коленом вперёд и бронированной голенью, широкий таз на двух
+шарнирах, поворотный погон, над ним узкий корпус: спереди угловатая кабина (короб со
+срезанной верхней передней гранью, одно окно на скосе), сзади отсек оборудования.
+Оружия нет - оно съёмное. Бокового крыла нет.
 
 Единицы - как у K7 (метры модели), y вверх, z вперёд, x влево (вид спереди: левая
 сторона робота справа на картинке). Земля y = 0.
@@ -105,6 +105,8 @@ KNEE = tuple(np.array(ANKLE) - SHIN_DIRECTION * SHIN_LENGTH)
 HIP_Y = float(KNEE[0] - THIGH_DIRECTION[0] * THIGH_LENGTH)
 HIP_Z = float(KNEE[1] - THIGH_DIRECTION[1] * THIGH_LENGTH)
 BODY_DROP = 1.95 - HIP_Y        # корпус задан от прежней высоты таза 1.95 и опускается
+COCKPIT_HALF = 0.26             # полуширина кабины (была 0.42)
+TORSO_HALF = 0.3                # полуширина корпуса (была 0.6)
 
 
 def leg(side):
@@ -137,39 +139,28 @@ def build():
     # таз: короб со скосами спереди и сзади снизу, шарниры ног по бокам
     profile_prism('pelvis', -0.44, 0.44, [(-0.38, 1.82), (-0.22, 1.7), (0.24, 1.7), (0.42, 1.86), (0.42, 2.12), (-0.38, 2.12)])
     # погон
-    cylinder('pelvis', (0, 2.12, -0.05), (0, 2.3, -0.05), 0.3, 12)
-    # корпус: средний отсек
-    cuboid('torso', (-0.6, 2.3, -0.7), (0.6, 3.02, 0.32))
-    # отсек оборудования сзади: короб с панелями
-    cuboid('torso', (-0.5, 2.42, -1.02), (0.5, 2.96, -0.7))
-    cuboid('torso', (-0.42, 2.5, -1.06), (0.42, 2.88, -1.02))
+    cylinder('pelvis', (0, 2.12, -0.05), (0, 2.3, -0.05), 0.24, 12)
+    # корпус (28.11.2026: вместе с кабиной уже - по ширине нижней части кабины), средний отсек
+    cuboid('torso', (-TORSO_HALF, 2.3, -0.7), (TORSO_HALF, 3.02, 0.32))
+    # отсек оборудования сзади: короб с панелью
+    cuboid('torso', (-TORSO_HALF + 0.04, 2.42, -1.02), (TORSO_HALF - 0.04, 2.96, -0.7))
+    cuboid('torso', (-TORSO_HALF + 0.1, 2.5, -1.06), (TORSO_HALF - 0.1, 2.88, -1.02))
     # кабина: короб со срезанной верхней передней гранью (как на эскизе) и малым скосом снизу
-    profile_prism('cockpit', -0.42, 0.42, [(0.32, 2.3), (0.82, 2.3), (1.0, 2.4), (1.0, 2.58), (0.56, 2.96), (0.32, 2.96)])
-    # окна на скосе: две трапеции чуть над поверхностью, между ними стойка
+    profile_prism('cockpit', -COCKPIT_HALF, COCKPIT_HALF, [(0.32, 2.3), (0.82, 2.3), (1.0, 2.4), (1.0, 2.58), (0.56, 2.96), (0.32, 2.96)])
+    # одно окно на скосе: трапеция чуть над поверхностью
     slope_low = np.array([1.0, 2.58]); slope_high = np.array([0.56, 2.96])
     normal = np.array([slope_high[1] - slope_low[1], -(slope_high[0] - slope_low[0])]); normal /= np.linalg.norm(normal)
     def on_slope(share, lift):
         point = slope_low + (slope_high - slope_low) * share + normal * lift
         return point[1], point[0]          # y, z
-    for side in (-1, 1):
-        y_low, z_low = on_slope(0.15, 0.012); y_high, z_high = on_slope(0.8, 0.012)
-        inner = side * 0.04; outer_low = side * 0.36; outer_high = side * 0.3
-        add('cockpit', [(inner, y_low, z_low), (outer_low, y_low, z_low), (outer_high, y_high, z_high), (inner, y_high, z_high)], [[0, 1, 2, 3]])
+    y_low, z_low = on_slope(0.15, 0.012); y_high, z_high = on_slope(0.8, 0.012)
+    low_half, high_half = COCKPIT_HALF - 0.05, COCKPIT_HALF - 0.09
+    add('cockpit', [(-low_half, y_low, z_low), (low_half, y_low, z_low), (high_half, y_high, z_high), (-high_half, y_high, z_high)], [[0, 1, 2, 3]])
     # фары и мачта сверху
     for side in (-1, 1):
-        cylinder('torso', (side * 0.3, 3.02, -0.55), (side * 0.3, 3.1, -0.55), 0.05, 8)
-    cylinder('torso', (-0.45, 3.02, -0.4), (-0.45, 3.45, -0.4), 0.012, 6)
-    # справа (x < 0): спаренная пушка на опоре
-    cuboid('weapons', (-1.0, 2.5, -0.3), (-0.62, 2.98, 0.4))
-    for barrel_y in (2.84, 2.64):
-        cylinder('weapons', (-0.81, barrel_y, 0.4), (-0.81, barrel_y, 0.62), 0.09, 10)
-        cylinder('weapons', (-0.81, barrel_y, 0.62), (-0.81, barrel_y, 1.62), 0.045, 10)
-        cylinder('weapons', (-0.81, barrel_y, 1.62), (-0.81, barrel_y, 1.8), 0.065, 10)
-    # слева (x > 0): ракетный блок, спереди решётка из шести труб
-    cuboid('weapons', (0.62, 2.48, -0.45), (1.12, 3.0, 0.5))
-    for row, tube_y in enumerate((2.66, 2.83)):
-        for tube_x in (0.74, 0.87, 1.0):
-            cylinder('weapons', (tube_x, tube_y, 0.5), (tube_x, tube_y, 0.53), 0.05, 8)
+        cylinder('torso', (side * (TORSO_HALF - 0.1), 3.02, -0.55), (side * (TORSO_HALF - 0.1), 3.1, -0.55), 0.05, 8)
+    cylinder('torso', (-(TORSO_HALF - 0.08), 3.02, -0.3), (-(TORSO_HALF - 0.08), 3.45, -0.3), 0.012, 6)
+    # оружия нет: оно съёмное, ставится в слоты отдельными моделями
     for solid in SOLIDS[first_body:]:
         solid.vertices[:, 1] -= BODY_DROP
 
@@ -251,7 +242,10 @@ def main():
         image.paste(panel, (box[0], box[1]))
     draw = ImageDraw.Draw(image)
     legend_x = 10
+    used_groups = {solid.group for solid in SOLIDS}
     for group, colour in GROUP_COLOURS.items():
+        if group not in used_groups:
+            continue
         draw.rectangle((legend_x, height - 35, legend_x + 14, height - 21), fill=colour)
         draw.text((legend_x + 20, height - 34), group, fill=(30, 30, 30))
         legend_x += 130
