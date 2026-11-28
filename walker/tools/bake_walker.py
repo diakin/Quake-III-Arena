@@ -37,6 +37,7 @@ DATA_ROOT = os.path.normpath(os.path.join(MODEL_DIR, '..', '..', '..'))
 ROBOT = os.path.basename(os.path.normpath(MODEL_DIR))
 SHADER_PREFIX = 'models/players/' + ROBOT
 ENV_SHINE = 'models/players/walker/env_shine.jpg'
+ENV_GLINT = 'models/players/walker/env_glint.jpg'
 PARTS = {'lower': 1024, 'upper': 1024, 'head': 512}
 # K7 - главный робот: атласы вдвое крупнее (2048), каждая точка - один тексель
 # (столько же выборок, сколько у 1024 с SUPERSAMPLE 2), подробный износ (26.11.2026)
@@ -85,10 +86,11 @@ PAINTED = {'camo_green', 'camo_dark', 'panel_light', 'marking', 'trim_yellow', '
 METAL = {'metal_gray', 'metal_dark', 'chrome', 'black', 'metal', 'dark'}
 GLOWING = {'engine_glow', 'light_cyan', 'sensor_purple', 'glow', 'indicator_red', 'indicator_green'}
 GLASS = {'canopy_glass', 'glass'}
-# стекло кабины (28.11.2026): тонированное, чуть прозрачное - сквозь него видно то, что
-# за ним (blend), отражение окружения и блик от источника света поверх
-GLASS_OPACITY = 0.65
-GLASS_REFLECTION = 0.25
+# стекло кабины (28.11.2026): тонированное, прозрачное - сквозь него видно кабину (blend);
+# поверх слабое отражение окружения и яркий точечный блик (env_glint.jpg - точка солнца
+# на чёрном, по карте окружения: на мелкой сетке стекла он остаётся точкой)
+GLASS_OPACITY = 0.45
+GLASS_REFLECTION = 0.12
 HYDRAULIC = {'chrome'}      # блестящие штоки гидравлики: с них течёт масло
 
 # ================================================================ GLB
@@ -1033,11 +1035,9 @@ def write_shaders(parts):
 		rgbGen const ( {GLASS_REFLECTION} {GLASS_REFLECTION} {GLASS_REFLECTION} )
 	}}
 	{{
-		map {ENV_SHINE}
+		map {ENV_GLINT}
 		tcGen environment
-		blendFunc GL_SRC_ALPHA GL_ONE
-		rgbGen const ( 0.90 0.90 0.90 )
-		alphaGen lightingSpecular
+		blendFunc GL_ONE GL_ONE
 	}}
 }}
 {base}_glow_{scheme}

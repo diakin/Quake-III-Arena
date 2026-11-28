@@ -220,6 +220,15 @@ def model_shaders():
     level = np.clip(0.15 + 0.55 * sky + 0.9 * sun, 0, 1)
     image = np.stack([level * 235, level * 240, level * 250], axis=-1)
     Image.fromarray(image.astype(np.uint8)).save(os.path.join(target, 'env_shine.jpg'), quality=92)
+    # блик стекла кабины (28.11.2026): на чёрном только точка, маленькая и резкая, с узким
+    # ореолом (складывается со стеклом: чёрное - ничего). Чуть выше середины карты: так
+    # колпак, смотрящий вперёд и вверх, ловит её с обычных углов
+    size = 256
+    y, x = np.mgrid[0:size, 0:size] / (size - 1)
+    distance = ((x - 0.45) ** 2 + (y - 0.22) ** 2)
+    level = np.clip(np.exp(-distance / 0.0003) + 0.3 * np.exp(-distance / 0.003), 0, 1)
+    image = np.stack([level * 255, level * 252, level * 245], axis=-1)
+    Image.fromarray(image.astype(np.uint8)).save(os.path.join(target, 'env_glint.jpg'), quality=95)
 
 
 def main():
