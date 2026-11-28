@@ -85,6 +85,10 @@ PAINTED = {'camo_green', 'camo_dark', 'panel_light', 'marking', 'trim_yellow', '
 METAL = {'metal_gray', 'metal_dark', 'chrome', 'black', 'metal', 'dark'}
 GLOWING = {'engine_glow', 'light_cyan', 'sensor_purple', 'glow'}
 GLASS = {'canopy_glass', 'glass'}
+# стекло кабины (28.11.2026): тонированное, чуть прозрачное - сквозь него видно то, что
+# за ним (blend), отражение окружения и блик от источника света поверх
+GLASS_OPACITY = 0.85
+GLASS_REFLECTION = 0.25
 HYDRAULIC = {'chrome'}      # блестящие штоки гидравлики: с них течёт масло
 
 # ================================================================ GLB
@@ -1018,13 +1022,22 @@ def write_shaders(parts):
 {{
 	{{
 		map {atlas}
+		blendFunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA
 		rgbGen lightingDiffuse
+		alphaGen const {GLASS_OPACITY}
 	}}
 	{{
 		map {ENV_SHINE}
 		tcGen environment
 		blendFunc GL_ONE GL_ONE
-		rgbGen const ( 0.35 0.35 0.35 )
+		rgbGen const ( {GLASS_REFLECTION} {GLASS_REFLECTION} {GLASS_REFLECTION} )
+	}}
+	{{
+		map {ENV_SHINE}
+		tcGen environment
+		blendFunc GL_SRC_ALPHA GL_ONE
+		rgbGen const ( 0.90 0.90 0.90 )
+		alphaGen lightingSpecular
 	}}
 }}
 {base}_glow_{scheme}

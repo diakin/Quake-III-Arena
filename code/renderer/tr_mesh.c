@@ -441,8 +441,11 @@ void R_AddMD3Surfaces( trRefEntity_t *ent ) {
 		}
 
 		// WALKER: all material classes of the part in one pass (tr_glsl.c); the shader of
-		// the part sorts the same for every class, so the classes go into one batch
-		if ( shader->materialPass && !ent->e.customShader && GLSL_MaterialAvailable() && r_vbo->integer ) {
+		// the part sorts the same for every class, so the classes go into one batch. A
+		// blended class (the tinted glass of the canopy, 28.11.2026) keeps its own shader:
+		// the pass is opaque, and the glass has to be drawn after the parts behind it
+		if ( shader->materialPass && shader->sort == SS_OPAQUE && !ent->e.customShader
+			&& GLSL_MaterialAvailable() && r_vbo->integer ) {
 			shader = shader->materialPass;
 		}
 
