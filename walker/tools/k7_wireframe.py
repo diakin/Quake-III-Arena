@@ -13,7 +13,7 @@ LEGS_IDLE и TORSO_STAND. Оружия нет (модели орудий отд�
 которого одна грань смотрит на зрителя, другая от него). Видимость - по буферу глубины:
 грани со светлой заливкой цвета группы, видимые рёбра - цветом группы, невидимые - тонким
 светло-серым. Группы: ноги, таз, корпус, кабина, гидравлика (цилиндры голеностопа:
-узлы ankle_actuator_*, материалы chrome и hydraulic_blue).
+узлы knee_actuator_*, материалы chrome и hydraulic_blue).
 
 Единицы - единицы модели (1 = 14 единиц Quake = 2.8 м при 5 единицах Quake на метр),
 y вверх, z вперёд, x влево.
@@ -72,7 +72,7 @@ def world_matrices(document, binary, clip):
 
 def node_group(document, parent, index, part, material):
     names = [node.get('name', '') for node in document['nodes']]
-    if material in HYDRAULIC_MATERIALS or names[index].startswith('ankle_actuator'):
+    if material in HYDRAULIC_MATERIALS or names[index].startswith(('ankle_actuator', 'knee_actuator')):
         return 'hydraulics'
     if part == 'upper':
         return 'torso'

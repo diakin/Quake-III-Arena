@@ -1,47 +1,44 @@
-"""Один гидроцилиндр голеностопа K7 посередине ноги (WALKER, 28.11.2026).
+"""Гидроцилиндр колена K7: соединяет бедро и голень (WALKER, 28.11.2026).
 
-python3 walker/tools/k7_ankle_actuator.py <lower.glb> [out.glb]
+python3 walker/tools/k7_knee_actuator.py <lower.glb> [out.glb]
 
-Было (k7_hydraulics.py): по два тонких цилиндра на ногу сзади по углам голени, верхние
-проушины на рычагах у оси колена. Стало, по просьбе: один цилиндр на ногу, посередине за
-голенью, шток толще:
+По эскизу: на бедре сзади утолщение - короб (камуфляж, как бронеплиты), в нём верхний палец
+и верх тёмно-синего корпуса (там подразумевается подвод масла); корпус выходит из низа
+короба, полированный шток (материал chrome: класс polished в bake_walker.py, узкий яркий
+блик) идёт к проушине на голени сзади под коленом. Корпус - узел бедра, шток - узел голени;
+в каждом ключе анимации корпус поворачивается к проушине, шток - к пальцу в коробе.
 
-  - на голени сзади утолщение - короб (камуфляж, как бронеплиты), в нём верхний палец и
-    верхний конец корпуса: там подразумевается подвод масла;
-  - тёмно-синий корпус выходит из низа короба и в каждом кадре смотрит на нижний палец;
-  - полированный шток (материал chrome: класс polished в bake_walker.py, узкий яркий блик)
-    висит на нижнем пальце и смотрит на корпус, уходя в него;
-  - нижний палец на вилке, стоящей на шпоре пятки (деталь ступни сзади посередине).
+До этого (тот же день) один цилиндр голеностопа шёл от короба на голени к пятке, раньше -
+два тонких по углам голени (k7_hydraulics.py); их узлы (hydraulic_*, ankle_actuator_*,
+knee_actuator_*) и анимация удаляются, повторный запуск ставит цилиндр заново.
 
-Короб стоит ниже места, через которое при сгибе колена проходит низ корпуса бедра: в живых
-анимациях кроме приседа бедро опускается за голенью до y = -0.31 (бег), верх короба -0.34.
-При приседе (LEGS_WALKCR до -0.70, LEGS_IDLECR до -0.56) и в анимациях гибели бедро
-заходит в короб - это допущено.
+Где пальцы (перебор по анимациям): колено K7 смотрит вперёд, сзади его угол закрывается
+при сгибе (в живых анимациях 45-120 градусов), и цилиндр между серединой бедра и голенью
+сжимался бы почти до нуля. Поэтому верхний палец высоко у тазобедренного шарнира и далеко
+за бедром, нижний - под коленом: расстояние меняется от 0.58 до 1.01. Проушина голени
+ниже места, через которое при сгибе проходит низ бедра (до -0.31 при беге). Короб не
+достаёт до низа корпуса робота (зазор 0.12 при махе ноги). Без приседа цилиндр ничего не
+касается; в приседе шток заходит в низ бедра до 0.55 единицы Quake, в гибели больше.
 
-Пальцы как можно дальше назад (перебор по анимациям): при беге ступня сгибается до -67
-градусов, пятка уходит под голень, и шток у нижнего заднего угла голени заходит в неё
-самое большее на 0.6 единицы Quake (бег), в приседе на 1.3, в остальных живых анимациях
-не касается.
-
-Длины по всем анимациям: шток при самом длинном расстоянии между пальцами в корпусе хотя бы
-на ROD_OVERLAP, при самом коротком его верх остаётся в корпусе выше пальца (в коробе).
-Старые узлы hydraulic_* (k7_hydraulics.py) и их анимация удаляются; повторный запуск
-снова ставит новый цилиндр (узлы ankle_actuator_* тоже удаляются).
+Длины по живым анимациям: шток при самом длинном расстоянии в корпусе хотя бы на
+ROD_OVERLAP, при самом коротком его верх остаётся в корпусе выше пальца (в коробе); в
+анимациях гибели шток остаётся в корпусе хотя бы на ROD_OVERLAP_DEATH.
 """
 import sys, math
 import numpy as np
 import k7_hydraulics as base
 
-UPPER_PIN = (-0.45, -0.33)          # (y, z) в пространстве колена: в коробе за голенью
-LOWER_PIN = (-0.18, -0.48)          # (y, z) в пространстве голеностопа: над задним концом шпоры
-HOUSING = ((-0.10, -0.58, -0.49), (0.10, -0.34, -0.15))     # короб на голени (x, y, z)
+UPPER_PIN = (-0.05, -0.55)          # (y, z) в пространстве бедра: в коробе у тазобедренного шарнира
+LOWER_PIN = (-0.40, -0.25)          # (y, z) в пространстве колена (голени): сзади под коленом
+HOUSING = ((-0.10, -0.22, -0.68), (0.10, 0.09, -0.22))      # короб на бедре (x, y, z): назад с запасом - верх корпуса при наклоне 34° уходит назад
+SHIN_REAR = -0.18                   # задняя грань голени (z в пространстве колена)
 BARREL_RADIUS = 0.068
-BARREL_ABOVE = 0.09                 # корпус выше пальца (в коробе)
-BARREL_VISIBLE = 0.28               # корпус ниже короба
-ROD_RADIUS = 0.042                  # было 0.03
+BARREL_ABOVE = 0.11                 # корпус выше пальца (в коробе)
+BARREL_SHARE = 0.45                 # доля корпуса в видимой части при обычном расстоянии
+ROD_RADIUS = 0.042
 ROD_OVERLAP = 0.13                  # в живых анимациях
 ROD_OVERLAP_DEATH = 0.05
-REMOVE_PREFIXES = ('hydraulic_', 'ankle_actuator_')
+REMOVE_PREFIXES = ('hydraulic_', 'ankle_actuator_', 'knee_actuator_')
 
 
 def strip(document):
@@ -91,30 +88,50 @@ def blue_material(document):
     return len(document['materials']) - 1
 
 
+def rotate_x(angle, vector):
+    y_value, z_value = vector
+    return np.array([y_value * math.cos(angle) - z_value * math.sin(angle), y_value * math.sin(angle) + z_value * math.cos(angle)])
+
+
+def knee_angles(knee_rotation, knee_translation):
+    """поворот корпуса (ось -Y на проушину голени), штока (ось +Y на палец в коробе) и
+    расстояние между ними; колено поворачивается только вокруг X"""
+    qx, qy, qz, qw = knee_rotation
+    if abs(qy) > 1e-5 or abs(qz) > 1e-5:
+        raise SystemExit('knee rotation not about X')
+    angle = 2 * math.atan2(qx, qw)
+    offset = np.array([knee_translation[1], knee_translation[2]])
+    lower_in_thigh = offset + rotate_x(angle, LOWER_PIN)
+    down = lower_in_thigh - np.array(UPPER_PIN)
+    upper_in_shin = rotate_x(-angle, np.array(UPPER_PIN) - offset)
+    up = upper_in_shin - np.array(LOWER_PIN)
+    return math.atan2(-down[1], -down[0]), math.atan2(up[1], up[0]), float(np.linalg.norm(down))
+
+
 def build_parts(barrel_below, rod_length):
     parts = {name: {} for name in ('housing', 'barrel', 'rod', 'lower_mount')}
 
     def get(node, material):
         return parts[node].setdefault(material, base.Part())
-    # короб на голени (в пространстве колена, узел в начале координат колена)
+    # короб на бедре (в пространстве бедра, узел в начале координат бедра)
     base.box(get('housing', 'camo_green'), HOUSING[0], HOUSING[1])
     # корпус: ось -Y от пальца; верх и палец в коробе, у выхода штока тёмная букса
     base.cylinder(get('barrel', 'hydraulic_blue'), 'y', (0, 0, 0), BARREL_RADIUS, BARREL_ABOVE, -(barrel_below - 0.03), (True, False))
     base.cylinder(get('barrel', 'metal_dark'), 'y', (0, 0, 0), BARREL_RADIUS + 0.006, -(barrel_below - 0.03), -barrel_below)
     base.cylinder(get('barrel', 'metal_dark'), 'x', (0, 0, 0), 0.03, -0.09, 0.09)     # палец (в коробе)
-    # шток: проушина, наконечник, полированный шток
+    # шток: проушина, наконечник, полированный шток (16 граней: блик по карте окружения
+    # считается в вершинах, на 10 гранях узкая полоса блика ложилась бы ломаной)
     base.cylinder(get('rod', 'metal_dark'), 'x', (0, 0, 0), 0.05, -0.03, 0.03)
     base.cylinder(get('rod', 'metal_dark'), 'y', (0, 0, 0), 0.05, 0.035, 0.11, (False, True))
-    # шток круглее (16 граней): блик по карте окружения считается в вершинах, на 10 гранях
-    # узкая полоса блика ложилась бы ломаной
     segments, base.SEGMENTS = base.SEGMENTS, 16
     base.cylinder(get('rod', 'chrome'), 'y', (0, 0, 0), ROD_RADIUS, 0.11, rod_length, (False, True))
     base.SEGMENTS = segments
-    # нижняя вилка на шпоре пятки (верх шпоры на 0.05 ниже пальца): подошва, две щеки, палец
-    base.box(get('lower_mount', 'metal_dark'), (-0.07, -0.065, -0.07), (0.07, -0.04, 0.07))
+    # проушина на задней грани голени: подошва (заходит в грань), две щеки, палец
+    face = SHIN_REAR - LOWER_PIN[1]                 # грань голени от пальца по z (+)
+    base.box(get('lower_mount', 'metal_dark'), (-0.07, -0.07, face - 0.01), (0.07, 0.07, face + 0.02))
     for sign in (-1, 1):
         low, high = sorted((sign * 0.034, sign * 0.048))
-        base.box(get('lower_mount', 'metal_dark'), (low, -0.05, -0.055), (high, 0.055, 0.055))
+        base.box(get('lower_mount', 'metal_dark'), (low, -0.055, -0.055), (high, 0.055, face))
     base.cylinder(get('lower_mount', 'metal_gray'), 'x', (0, 0, 0), 0.018, -0.052, 0.052)
     return parts
 
@@ -124,19 +141,18 @@ def main():
     target = sys.argv[2] if len(sys.argv) > 2 else source
     document, binary = base.read_glb(source)
     removed = strip(document)
-    base.UPPER_PIN, base.LOWER_PIN = UPPER_PIN, LOWER_PIN      # углы и длины считает k7_hydraulics
     names = [node.get('name', '') for node in document['nodes']]
+    hips = {'L': names.index('hip_L'), 'R': names.index('hip_R')}
     knees = {'L': names.index('knee_L'), 'R': names.index('knee_R')}
-    ankles = {'L': names.index('ankle_L'), 'R': names.index('ankle_R')}
 
     lengths, live_lengths = [], []
     for animation in document['animations']:
         channels = {(channel['target']['node'], channel['target']['path']): channel for channel in animation['channels']}
         for side in 'LR':
-            rotation = base.accessor(document, binary, animation['samplers'][channels[(ankles[side], 'rotation')]['sampler']]['output'])
-            translation = base.accessor(document, binary, animation['samplers'][channels[(ankles[side], 'translation')]['sampler']]['output'])
+            rotation = base.accessor(document, binary, animation['samplers'][channels[(knees[side], 'rotation')]['sampler']]['output'])
+            translation = base.accessor(document, binary, animation['samplers'][channels[(knees[side], 'translation')]['sampler']]['output'])
             for key in range(len(rotation)):
-                length = base.angles(rotation[key], translation[min(key, len(translation) - 1)])[2]
+                length = knee_angles(rotation[key], translation[min(key, len(translation) - 1)])[2]
                 lengths.append(length)
                 if not animation['name'].startswith('BOTH_'):
                     live_lengths.append(length)
@@ -144,7 +160,10 @@ def main():
     # дальше, но остаётся в корпусе хотя бы на ROD_OVERLAP_DEATH
     shortest, longest = min(lengths), max(live_lengths)
     hidden = UPPER_PIN[0] - HOUSING[0][1]                     # от пальца до низа короба по Y
-    barrel_below = hidden + BARREL_VISIBLE
+    typical = float(np.median(live_lengths))
+    barrel_below = hidden + BARREL_SHARE * (typical - hidden)
+    if barrel_below > min(live_lengths) - 0.09:
+        raise SystemExit('barrel would reach the shin clevis')
     rod_length = longest - barrel_below + ROD_OVERLAP
     top_above_pin = rod_length - shortest
     print(f'pin distance {shortest:.3f} .. {longest:.3f}, barrel below the pin {barrel_below:.3f}, '
@@ -161,8 +180,8 @@ def main():
     parts = build_parts(barrel_below, rod_length)
     new_nodes, animated = [], []
     for side in 'LR':
-        for part_name, parent, origin in (('housing', knees[side], (0.0, 0.0)), ('barrel', knees[side], UPPER_PIN),
-                                          ('lower_mount', ankles[side], LOWER_PIN), ('rod', ankles[side], LOWER_PIN)):
+        for part_name, parent, origin in (('housing', hips[side], (0.0, 0.0)), ('barrel', hips[side], UPPER_PIN),
+                                          ('lower_mount', knees[side], LOWER_PIN), ('rod', knees[side], LOWER_PIN)):
             primitives = []
             for material, part in parts[part_name].items():
                 primitives.append({
@@ -172,11 +191,11 @@ def main():
                         'TEXCOORD_0': base.add_accessor(document, binary, np.array(part.uvs, np.float32), 'VEC2', 34962)},
                     'indices': base.add_accessor(document, binary, np.array(part.indices, np.uint16), 'SCALAR', 34963),
                     'material': material_index[material]})
-            document['meshes'].append({'name': f'ankle_actuator_{part_name}', 'primitives': primitives})
-            node = {'name': f'ankle_actuator_{part_name}_{side}', 'mesh': len(document['meshes']) - 1,
+            document['meshes'].append({'name': f'knee_actuator_{part_name}', 'primitives': primitives})
+            node = {'name': f'knee_actuator_{part_name}_{side}', 'mesh': len(document['meshes']) - 1,
                     'translation': [0.0, origin[0], origin[1]]}
-            rest = document['nodes'][ankles[side]]
-            barrel_angle, rod_angle, _ = base.angles(rest.get('rotation', [0, 0, 0, 1]), rest.get('translation', [0, 0, 0]))
+            rest = document['nodes'][knees[side]]
+            barrel_angle, rod_angle, _ = knee_angles(rest.get('rotation', [0, 0, 0, 1]), rest.get('translation', [0, 0, 0]))
             if part_name in ('barrel', 'rod'):
                 node['rotation'] = base.quat_x(barrel_angle if part_name == 'barrel' else rod_angle)
             document['nodes'].append(node)
@@ -187,13 +206,13 @@ def main():
     for animation in document['animations']:
         channels = {(channel['target']['node'], channel['target']['path']): channel for channel in animation['channels']}
         for side, node_index, part_name in animated:
-            rotation_sampler = animation['samplers'][channels[(ankles[side], 'rotation')]['sampler']]
-            translation_sampler = animation['samplers'][channels[(ankles[side], 'translation')]['sampler']]
+            rotation_sampler = animation['samplers'][channels[(knees[side], 'rotation')]['sampler']]
+            translation_sampler = animation['samplers'][channels[(knees[side], 'translation')]['sampler']]
             rotation = base.accessor(document, binary, rotation_sampler['output'])
             translation = base.accessor(document, binary, translation_sampler['output'])
             values = []
             for key in range(len(rotation)):
-                barrel_angle, rod_angle, _ = base.angles(rotation[key], translation[min(key, len(translation) - 1)])
+                barrel_angle, rod_angle, _ = knee_angles(rotation[key], translation[min(key, len(translation) - 1)])
                 values.append(base.quat_x(barrel_angle if part_name == 'barrel' else rod_angle))
             output = base.add_accessor(document, binary, np.array(values, np.float32), 'VEC4')
             animation['samplers'].append({'input': rotation_sampler['input'], 'output': output,
