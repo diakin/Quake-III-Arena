@@ -57,9 +57,9 @@ static char		s_backgroundLoop[MAX_QPATH];
 
 // WALKER (28.11.2026): the volume falls as 1 / (1 + d / SOUND_FALLOFF)^2 beyond the full
 // volume range instead of linearly (Q3: silent at 1330 units, then 0.0003: 3400 units =
-// 680 m, heard from everywhere). At 1 m = 5 units: 50 m - 35%, 100 m - 14%, 200 m - 5%,
-// 300 m - 2%, below 1% (about 470 m) - silent
-#define		SOUND_FALLOFF		250.0f
+// 680 m). At 1 m = 5 units: 50 m - 70%, 100 m - 46%, 200 m - 24%, 300 m - 14%,
+// 500 m - 7%, 1000 m - 2%; below 1% silent (250 gave 35% at 50 m - too quiet)
+#define		SOUND_FALLOFF		871.0f
 #define		SOUND_SILENT		0.01f
 
 channel_t   s_channels[MAX_CHANNELS];

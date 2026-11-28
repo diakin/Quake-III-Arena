@@ -23,6 +23,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // cg_weapons.c -- events and effects dealing with weapons
 #include "cg_local.h"
 
+// WALKER (28.11.2026): bullet sounds only close by (1 m = 5 units): ricochets within 40 m,
+// the whoosh when the bullet passes within 20 m
+#define WALKER_RICOCHET_RANGE	200
+#define WALKER_TRACER_RANGE		100
+
 /*
 ==========================
 CG_MachineGunEjectBrass
@@ -2044,9 +2049,19 @@ void CG_MissileHitWall( int weapon, int clientNum, vec3_t origin, vec3_t dir, im
 		shader = cgs.media.bulletExplosionShader;
 		mark = cgs.media.bulletMarkShader;
 
-		// WALKER: no ricochet sound (28.11.2026): the whistles of the bullets of OSA and
-		// TOPOR hitting the ground were heard from everywhere on the map
+		// WALKER: ricochets only near the listener (28.11.2026): the whistles of the
+		// bullets of OSA and TOPOR hitting the ground were heard from everywhere
 		sfx = 0;
+		if ( Distance( origin, cg.refdef.vieworg ) < WALKER_RICOCHET_RANGE ) {
+			r = rand() & 3;
+			if ( r == 0 ) {
+				sfx = cgs.media.sfx_ric1;
+			} else if ( r == 1 ) {
+				sfx = cgs.media.sfx_ric2;
+			} else {
+				sfx = cgs.media.sfx_ric3;
+			}
+		}
 
 		radius = 3;		// WALKER: was 8; the bullets of OSA and TOPOR
 		break;
@@ -2259,6 +2274,8 @@ void CG_Tracer( vec3_t source, vec3_t dest ) {
 	vec3_t		line;
 	float		len, begin, end;
 	vec3_t		start, finish;
+	float		along;
+	vec3_t		nearest;
 
 	// tracer
 	VectorSubtract( dest, source, forward );
@@ -2338,8 +2355,17 @@ void CG_Tracer( vec3_t source, vec3_t dest ) {
 	trap_R_AddPolyToScene( cgs.media.tracerShader, 4, verts );
 
 
-	// WALKER: no tracer whoosh (28.11.2026): it played at the middle of every tracer, far
-	// from the shooter, and was heard from everywhere on the map
+	// WALKER: the whoosh only when the bullet passes by the listener (28.11.2026), at the
+	// nearest point of its path; Q3 played it at the middle of every tracer, so it was heard
+	// from everywhere on the map
+	VectorSubtract( cg.refdef.vieworg, source, line );
+	along = DotProduct( line, forward );
+	if ( along > 100 && along < len ) {
+		VectorMA( source, along, forward, nearest );
+		if ( Distance( nearest, cg.refdef.vieworg ) < WALKER_TRACER_RANGE ) {
+			trap_S_StartSound( nearest, ENTITYNUM_WORLD, CHAN_AUTO, cgs.media.tracerSound );
+		}
+	}
 
 }
 

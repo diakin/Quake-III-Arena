@@ -11,6 +11,7 @@ from scipy import signal
 OUT = sys.argv[1]
 RATE = 22050
 rng = np.random.default_rng(26)
+step_rng = np.random.default_rng(2611)      # шаги (28.11.2026): свой генератор, остальные звуки прежние
 
 
 def save(path, samples, gain=0.9):
@@ -52,12 +53,12 @@ def envelope(seconds, attack, decay, curve=4.0):
     return rise * fall
 
 
-def resonator(seconds, frequencies, decay, amplitudes=None):
+def resonator(seconds, frequencies, decay, amplitudes=None, generator=None):
     t = time(seconds)
     result = np.zeros_like(t)
     for index, frequency in enumerate(frequencies):
         amplitude = 1.0 if amplitudes is None else amplitudes[index]
-        result += amplitude * np.sin(2 * np.pi * frequency * t + rng.random() * 6) * np.exp(-t / (decay * (1 - index * 0.08)))
+        result += amplitude * np.sin(2 * np.pi * frequency * t + (generator or rng).random() * 6) * np.exp(-t / (decay * (1 - index * 0.08)))
     return result
 
 
@@ -72,9 +73,9 @@ def mix(*parts):
     return sum(pad(part, length / RATE) for part in parts)
 
 
-def reverb(samples, room=0.18, wet=0.25):
+def reverb(samples, room=0.18, wet=0.25, generator=None):
     impulse_length = int(room * 2 * RATE)
-    impulse = rng.normal(0, 1, impulse_length) * np.exp(-np.arange(impulse_length) / (room * RATE / 3))
+    impulse = (generator or rng).normal(0, 1, impulse_length) * np.exp(-np.arange(impulse_length) / (room * RATE / 3))
     impulse = band(impulse, 200, 6000)
     tail = signal.fftconvolve(samples, impulse)[:len(samples) + impulse_length]
     tail = tail / (np.max(np.abs(tail)) or 1) * np.max(np.abs(samples))
@@ -200,15 +201,47 @@ def rocket_pod_shot():
 
 # ---------------------------------------------------------------- робот
 def stomp(variant, metallic=1.0):
+    """Шаг робота (28.11.2026): глухой низкий удар без звона, под ногой хрустит галька и
+    шуршит песок, с лёгким скрипом трущихся камешков. metallic > 1 - по металлу: добавляется
+    приглушённый металлический отзвук. Случайность - из step_rng; основной генератор
+    расходуется как прежним шагом, поэтому остальные звуки не меняются."""
     seconds = 0.9
+    old_length = int(seconds * RATE)
+    rng.normal(0, 1, old_length)
+    rng.random(3)
+    rng.normal(0, 1, old_length)
+    rng.normal(0, 1, int(0.3 * 2 * RATE))
     t = time(seconds)
-    thud = np.sin(2 * np.pi * (38 + variant * 3 + 30 * np.exp(-t * 25)) * t) * envelope(seconds, 0.004, 0.22)
-    impact = band(noise(seconds), 60, 600, 3) * envelope(seconds, 0.002, 0.1)
-    clank = resonator(seconds, [310 + variant * 20, 780 + variant * 35, 1650], 0.12, [0.6, 0.4, 0.25]) * metallic
-    clank *= envelope(seconds, 0.001, 0.2)
-    hiss = band(noise(seconds), 2500, 9000) * np.exp(-((t - 0.28 - variant * 0.02) / 0.09) ** 2) * 0.12
-    servo = np.sin(2 * np.pi * (180 + 60 * t) * t) * np.exp(-((t - 0.45) / 0.12) ** 2) * 0.06
-    return reverb(mix(thud * 1.4, impact * 0.8, clank * 0.35, hiss, servo), 0.3, 0.25)
+    raw = step_rng.normal(0, 1, len(t))
+    thud = np.sin(2 * np.pi * (33 + variant * 2 + 22 * np.exp(-t * 18)) * t) * envelope(seconds, 0.006, 0.3)
+    impact = band(raw, 30, 280, 3) * envelope(seconds, 0.004, 0.14)
+    # хруст гальки: короткие щелчки зёрен, гуще в начале шага
+    crunch = np.zeros_like(t)
+    grains = 70 + variant * 8
+    for _ in range(grains):
+        start = int((0.008 + step_rng.exponential(0.06)) * RATE)
+        if start >= len(t) - 200:
+            continue
+        click_length = int(step_rng.uniform(0.002, 0.006) * RATE)
+        click = step_rng.normal(0, 1, click_length) * np.exp(-np.arange(click_length) / (click_length / 4))
+        crunch[start:start + click_length] += click * step_rng.uniform(0.2, 1.0) * np.exp(-start / RATE / 0.12)
+    crunch = band(crunch, 900, 4500)
+    # шорох песка
+    sand = band(raw, 500, 2200) * np.exp(-((t - 0.06) / 0.07) ** 2)
+    # скрип: камешки трутся под весом робота, прерывистые толчки около 160 Гц
+    creak = np.zeros_like(t)
+    position = 0.07 + variant * 0.01
+    while position < 0.2:
+        start = int(position * RATE)
+        pulse = resonator(0.02, [820 + variant * 40, 1450], 0.004, generator=step_rng)
+        creak[start:start + len(pulse)] += pulse[:len(creak) - start] * np.exp(-((position - 0.13) / 0.05) ** 2)
+        position += (1 / 160) * step_rng.uniform(0.7, 1.3)
+    clank = np.zeros_like(t)
+    if metallic > 1:
+        clank = np.sin(2 * np.pi * (240 + variant * 15) * t) * np.exp(-t / 0.08) * (metallic - 1)
+    body = band(mix(thud * 1.5, impact, clank * 0.3), 20, 1200)
+    sound = mix(body, crunch * 0.45, sand * 0.12, creak * 0.1)
+    return reverb(sound, 0.25, 0.18, step_rng)
 
 
 def bubble(seconds, frequency, rise):
