@@ -139,7 +139,7 @@ def explosion(seconds=1.8, low=40):
 
 # ---------------------------------------------------------------- оружие роботов (слоты)
 def light_gun_shot(variant):
-    """OSA: короткий сухой выстрел лёгкого пулемёта."""
+    """Короткий сухой выстрел (OSA до 28.11.2026, звучал как треск); не сохраняется."""
     seconds = 0.25
     crack = band(noise(seconds), 2500, 10000) * envelope(seconds, 0.0005, 0.012)
     body = band(noise(seconds), 300, 2500) * envelope(seconds, 0.001, 0.05)
@@ -307,7 +307,13 @@ def chime(notes, step=0.11, tail=0.35):
 
 def main():
     for index in range(1, 5):
-        save(f'weapons/machinegun/machgf{index}b.wav', cannon_shot(index))
+        shot = cannon_shot(index)
+        save(f'weapons/machinegun/machgf{index}b.wav', shot)
+        if index == 1:
+            # OSA - the shot of the K7 machine gun before the weapon slots (24.11.2026):
+            # deep, with the boom below 200 Hz; the short dry 300-10000 Hz shot given to
+            # OSA with the slots sounded like a crackle (28.11.2026)
+            osa_shot = shot
         save(f'player/footsteps/mech{index}.wav', stomp(index))
         for alias in ('step', 'boot', 'flesh', 'energy'):
             save(f'player/footsteps/{alias}{index}.wav', stomp(index), 0.8)
@@ -318,7 +324,8 @@ def main():
         save(f'weapons/machinegun/ric{index}.wav', ricochet(index))
     save('weapons/machinegun/buletby1.wav', bullet_by(), 0.6)
     save('weapons/rocket/rocklf1a.wav', rocket_launch())
-    save('weapons/robot/osa.wav', light_gun_shot(1), 0.6)
+    save('weapons/robot/osa.wav', osa_shot)
+    light_gun_shot(1)  # not saved: it keeps the random noise of the sounds below as before
     save('weapons/robot/shmel.wav', rocket_pod_shot(), 0.8)
     save('weapons/robot/topor.wav', cannon_shot(2), 0.8)
     save('weapons/robot/iskra.wav', plasma_shot(), 0.7)
