@@ -73,8 +73,11 @@ typedef enum {
 	ROBOT_K7,
 	ROBOT_STRIZH,
 	ROBOT_MOLOT,
+	ROBOT_MECH,			// WALKER 28.11.2026: blockout of a new robot (make_mech_test.py), for trying it
 	ROBOT_COUNT
 } robotType_t;
+
+#define	ROBOT_STOCK_COUNT		ROBOT_MECH		// robots the bots get: not the blockout
 
 typedef struct {
 	const char	*id;			// in accounts and in the userinfo

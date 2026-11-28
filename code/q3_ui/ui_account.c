@@ -114,6 +114,40 @@ static accountRobot_t *Account_AddRobot( account_t *account, int type, int level
 
 /*
 =================
+Account_EnsureRobot
+
+WALKER, for testing: a robot of this type in the hangar; a full hangar gives up its last
+bay (that robot's weapons stay with the pilot). Returns qtrue when the hangar changed
+=================
+*/
+static qboolean Account_EnsureRobot( account_t *account, int type ) {
+	accountRobot_t	*robot;
+	int				index, slot;
+
+	for ( index = 0; index < account->numRobots; index++ ) {
+		if ( account->robots[index].type == type ) {
+			return qfalse;
+		}
+	}
+	if ( account->numRobots < ROBOT_HANGAR_SIZE ) {
+		return Account_AddRobot( account, type, 1, 1 ) != NULL;
+	}
+	robot = &account->robots[ROBOT_HANGAR_SIZE - 1];
+	memset( robot, 0, sizeof( *robot ) );
+	robot->type = type;
+	robot->level = 1;
+	for ( slot = 0; slot < ROBOT_MAX_SLOTS; slot++ ) {
+		robot->slots[slot] = -1;
+		if ( slot < bg_robots[type].numSlots ) {
+			robot->slots[slot] = Account_AddWeapon( account, bg_robots[type].defaultWeapon[slot], 1 );
+		}
+	}
+	return qtrue;
+}
+
+
+/*
+=================
 Account_New
 =================
 */
@@ -507,10 +541,15 @@ void UI_AccountUpdate( void ) {
 	// ui_testHangar 0 turns it off, robots already given stay
 	if ( trap_Cvar_VariableValue( "ui_testHangar" ) && uiAccount.numRobots < ROBOT_HANGAR_SIZE ) {
 		while ( uiAccount.numRobots < ROBOT_HANGAR_SIZE ) {
-			if ( !Account_AddRobot( &uiAccount, uiAccount.numRobots % ROBOT_COUNT, 1, 1 ) ) {
+			if ( !Account_AddRobot( &uiAccount, uiAccount.numRobots % ROBOT_STOCK_COUNT, 1, 1 ) ) {
 				break;
 			}
 		}
+		changed = qtrue;
+	}
+	// WALKER, for testing (28.11.2026): the blockout robot MECH in the hangar; a full test
+	// hangar gives up its last bay for it
+	if ( trap_Cvar_VariableValue( "ui_testHangar" ) && Account_EnsureRobot( &uiAccount, ROBOT_MECH ) ) {
 		changed = qtrue;
 	}
 	for ( index = 0; index < uiAccount.numRobots; index++ ) {

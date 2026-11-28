@@ -179,7 +179,7 @@ static void G_RobotGiveBot( gentity_t *ent ) {
 		battleRobot_t		*robot = &client->pers.robots[index];
 		const robotInfo_t	*info;
 
-		robot->type = rand() % ROBOT_COUNT;
+		robot->type = rand() % ROBOT_STOCK_COUNT;	// WALKER: not the blockout robot
 		robot->level = robotLevel;
 		info = &bg_robots[robot->type];
 		for ( slot = 0; slot < ROBOT_MAX_SLOTS; slot++ ) {

@@ -8,6 +8,9 @@ lower.glb (таз и ноги с обратной кинематикой, ани
 гибели), upper.glb (корпус), head.glb (кабина), animation.cfg, .skin, шейдеры
 scripts/walker_mech.shader.
 
+Гидроцилиндр колена соединяет бедро и голень: красный корпус на бедре у таза, хромированный
+шток на голени под коленом, оба поворачиваются в каждом кадре (add_actuators).
+
 Вид - как на картинке черновой модели: каждая группа деталей одним светлым цветом, рёбра
 граней тёмной линией того же оттенка. Линия - в текстуре: у четырёхугольной грани углы
 текстуры совпадают с углами грани, поэтому рамка текстуры ложится точно по рёбрам; у
@@ -33,7 +36,7 @@ NAME = 'mech'
 GROUND_OFFSET = 1.714                       # земля черновой модели (0) - на 24 единицы ниже точки игрока
 
 GROUP_COLOURS = blockout.GROUP_COLOURS
-GROUP_COLOURS = dict(GROUP_COLOURS, window=(60, 90, 120))
+GROUP_COLOURS = dict(GROUP_COLOURS, window=(60, 90, 120), barrel=(215, 55, 35), rod=(130, 135, 145))
 
 # шаг ног: ступня в опоре идёт назад со скоростью робота; короткой ноге нужен короткий шаг,
 # поэтому кадров в секунду больше (длина шага = 110 x 0.55 x кадров / кадров в секунду)
@@ -141,9 +144,8 @@ def leg_spec():
         part = robots.Part()
         cylinder(part, 'legs', (0, -sign * 0.22 * unit, 0), (0, sign * 0.2 * unit, 0), 0.2 * unit)
         cuboid(part, 'legs', (-0.19 * unit, -0.17 * unit, -thigh), (0.19 * unit, 0.17 * unit, 0))
-        # гидроцилиндр за бедром: корпус и шток
-        cylinder(part, 'hydraulics', (-0.3 * unit, 0, -0.12 * unit), (-0.24 * unit, 0, -thigh * 0.55), 0.07 * unit, 8)
-        cylinder(part, 'hydraulics', (-0.24 * unit, 0, -thigh * 0.55), (-0.17 * unit, 0, -thigh * 0.95), 0.04 * unit, 8)
+        # проушина гидроцилиндра сзади у таза (сам цилиндр - отдельный узел, add_actuators)
+        cuboid(part, 'legs', (-0.27 * unit, -0.05 * unit, -0.16 * unit), (-0.19 * unit, 0.05 * unit, -0.04 * unit))
         return part
 
     def shin_part(sign):
@@ -152,6 +154,8 @@ def leg_spec():
         cuboid(part, 'legs', (-0.12 * unit, -0.13 * unit, -shin), (0.12 * unit, 0.13 * unit, 0))
         # бронеплита спереди голени
         cuboid(part, 'legs', (0.13 * unit, -0.21 * unit, -shin * 0.62), (0.21 * unit, 0.21 * unit, -0.06 * unit))
+        # проушина штока сзади под коленом
+        cuboid(part, 'legs', (-0.19 * unit, -0.04 * unit, -0.28 * unit), (-0.12 * unit, 0.04 * unit, -0.16 * unit))
         return part
 
     def foot_part(sign):
@@ -228,6 +232,77 @@ def upper_body():
     robots.Node('head', (0, 0, 0), cabin, head_root)
     robots.Node('tag_head', (0, 0, 0), None, head_root)
     return root, torso, head_root
+
+
+# ---------------------------------------------------------------- гидроцилиндры
+
+# гидроцилиндр колена (28.11.2026): соединяет бедро и голень, как на образце. Красный корпус
+# висит на проушине бедра сзади у таза и в каждом кадре смотрит на проушину голени под
+# коленом; хромированный шток висит на проушине голени и смотрит на корпус. При сгибе колена
+# шток выдвигается из корпуса.
+UPPER_PIN = np.array([-0.24, 0.0, -0.1])        # в системе бедра, доли единицы модели
+LOWER_PIN = np.array([-0.155, 0.0, -0.22])      # в системе голени
+
+
+def quat_rotate(quat, vector):
+    w_part, x_part, y_part, z_part = quat
+    axis = np.array([x_part, y_part, z_part])
+    vector = np.asarray(vector, float)
+    return vector + 2 * np.cross(axis, np.cross(axis, vector) + w_part * vector)
+
+
+def quat_from_to(start, end):
+    start = np.asarray(start, float) / np.linalg.norm(start)
+    end = np.asarray(end, float) / np.linalg.norm(end)
+    axis = np.cross(start, end)
+    cosine = float(np.dot(start, end))
+    if cosine < -0.9999:
+        return np.array([0.0, 0.0, 1.0, 0.0])
+    quat = np.array([1 + cosine, axis[0], axis[1], axis[2]])
+    return quat / np.linalg.norm(quat)
+
+
+def add_actuators(legs):
+    """узлы корпуса и штока на каждой ноге; повороты считаются в каждой позе ног"""
+    upper = UPPER_PIN * SCALE
+    lower = LOWER_PIN * SCALE
+    actuators, lengths = [], []
+    for hip, knee, ankle, sign in legs.legs:
+        side = 'l' if sign > 0 else 'r'
+        barrel = robots.Node(f'barrel_{side}', upper, None, hip)
+        rod = robots.Node(f'rod_{side}', lower, None, knee)
+        actuators.append((hip, knee, barrel, rod))
+    original_pose = legs.pose
+
+    def pose(*arguments, **keywords):
+        keys = original_pose(*arguments, **keywords)
+        for hip, knee, barrel, rod in actuators:
+            knee_translation, knee_rotation = keys[id(knee)]
+            lower_in_hip = knee_translation + quat_rotate(knee_rotation, lower)
+            keys[id(barrel)] = (upper, quat_from_to((0, 0, -1), lower_in_hip - upper))
+            inverse = np.array([knee_rotation[0], -knee_rotation[1], -knee_rotation[2], -knee_rotation[3]])
+            upper_in_knee = quat_rotate(inverse, upper - knee_translation)
+            keys[id(rod)] = (lower, quat_from_to((0, 0, 1), upper_in_knee - lower))
+            lengths.append(float(np.linalg.norm(lower_in_hip - upper)))
+        return keys
+
+    legs.pose = pose
+    return actuators, lengths
+
+
+def actuator_parts(actuators, lengths):
+    """корпус перекрывает весь ход штока: шток короче самого короткого расстояния между
+    проушинами, корпус длиннее хода"""
+    unit = SCALE
+    shortest, longest = min(lengths), max(lengths)
+    rod_length = shortest - 0.03 * unit
+    barrel_length = max(0.3 * unit, longest - rod_length + 0.06 * unit)
+    for hip, knee, barrel, rod in actuators:
+        barrel.part = robots.Part()
+        cylinder(barrel.part, 'barrel', (0, 0, 0.03 * unit), (0, 0, -barrel_length), 0.075 * unit, 10)
+        rod.part = robots.Part()
+        cylinder(rod.part, 'rod', (0, 0, -0.03 * unit), (0, 0, rod_length), 0.038 * unit, 8)
+    return shortest, longest, barrel_length, rod_length
 
 
 # ---------------------------------------------------------------- анимация ног
@@ -312,12 +387,15 @@ def animation_cfg(fps_of):
 
 # ---------------------------------------------------------------- материалы
 
-def outline_texture(colour, cap=False, size=128, line=4):
+SATURATED = {'barrel'}           # корпус гидроцилиндра - ярко-красный, как на образце
+
+
+def outline_texture(colour, cap=False, size=128, line=4, saturated=False):
     """светлая заливка и тёмная рамка (у торцевого веера - только по краю v = 1)"""
-    fill = tuple(int(255 - (255 - channel) * 0.25) for channel in colour)
+    fill = colour if saturated else tuple(int(255 - (255 - channel) * 0.25) for channel in colour)
     image = Image.new('RGB', (size, size), fill)
     draw = ImageDraw.Draw(image)
-    edge = tuple(int(channel * 0.8) for channel in colour)
+    edge = tuple(int(channel * (0.55 if saturated else 0.8)) for channel in colour)
     if cap:
         draw.rectangle((0, size - line, size - 1, size - 1), fill=edge)
     else:
@@ -334,7 +412,8 @@ def write_materials(folder, part_materials):
                 continue
             written.add(material)
             group = material[:-4] if material.endswith('_cap') else material
-            outline_texture(GROUP_COLOURS[group], material.endswith('_cap')).save(os.path.join(folder, f'{material}.tga'))
+            outline_texture(GROUP_COLOURS[group], material.endswith('_cap'), saturated=group in SATURATED).save(
+                os.path.join(folder, f'{material}.tga'))
             shader = f'models/players/{NAME}/{material}'
             shaders.append(f'{shader}\n{{\n\t{{\n\t\tmap {shader}.tga\n\t\trgbGen lightingDiffuse\n\t}}\n}}\n')
     # окраски команд и ботов (desert, urban - make_botfiles.py): у пробной модели все одинаковые
@@ -353,7 +432,10 @@ def main():
     os.makedirs(folder, exist_ok=True)
     spec = leg_spec()
     legs = robots.Legs(spec)
+    actuators, lengths = add_actuators(legs)
     lower_animations, fps_of = legs_animations(legs)
+    shortest, longest, barrel_length, rod_length = actuator_parts(actuators, lengths)
+    print(f'knee cylinders: pins {shortest:.1f}..{longest:.1f} apart, barrel {barrel_length:.1f}, rod {rod_length:.1f}')
     lower_materials = robots.write_glb(os.path.join(folder, 'lower.glb'), legs.root, lower_animations, SCALE)
     upper_root, torso, head_root = upper_body()
     upper_animations = robots.torso_animations(upper_root, torso)

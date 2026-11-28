@@ -36,6 +36,12 @@ robotInfo_t bg_robots[ROBOT_COUNT] = {
 		125000, 150, 0, 26, 9000,
 		1, { WCLASS_HEAVY, 0, 0 }, { RWEAPON_TARAN, -1, -1 },
 		{ { 0, -16, -3.5f }, { 0, 0, 0 }, { 0, 0, 0 } } },
+	// blockout of a new robot (28.11.2026): the characteristics of K7 for now, the slots on
+	// the sides of the torso (tag_weapon1/2 of models/players/mech)
+	{ "mech", "MECH", "New walker, blockout for testing", "mech",
+		65000, 40, 6000, 40, 3000,
+		2, { WCLASS_LIGHT, WCLASS_LIGHT, 0 }, { RWEAPON_OSA, RWEAPON_OSA, -1 },
+		{ { -1.4f, -6.4f, -17.1f }, { -1.4f, 6.4f, -17.1f }, { 0, 0, 0 } } },
 };
 
 // damage and structure are real values: the game divides them by ROBOT_HEALTH_SCALE
