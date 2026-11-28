@@ -5,4 +5,8 @@ trim_yellow,models/players/walker/trim_yellow
 orange,models/players/walker/orange
 metal_dark,models/players/walker/metal_dark
 sensor_purple,models/players/walker/sensor_purple
+black,models/players/walker/black
+light_cyan,models/players/walker/light_cyan
+indicator_red,models/players/walker/indicator_red
+indicator_green,models/players/walker/indicator_green
 tag_head,

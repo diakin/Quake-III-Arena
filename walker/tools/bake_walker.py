@@ -83,11 +83,11 @@ def team_paint(image, scheme):
 # материалы K7 и роботов make_robots.py
 PAINTED = {'camo_green', 'camo_dark', 'panel_light', 'marking', 'trim_yellow', 'orange', 'paint', 'accent'}
 METAL = {'metal_gray', 'metal_dark', 'chrome', 'black', 'metal', 'dark'}
-GLOWING = {'engine_glow', 'light_cyan', 'sensor_purple', 'glow'}
+GLOWING = {'engine_glow', 'light_cyan', 'sensor_purple', 'glow', 'indicator_red', 'indicator_green'}
 GLASS = {'canopy_glass', 'glass'}
 # стекло кабины (28.11.2026): тонированное, чуть прозрачное - сквозь него видно то, что
 # за ним (blend), отражение окружения и блик от источника света поверх
-GLASS_OPACITY = 0.85
+GLASS_OPACITY = 0.65
 GLASS_REFLECTION = 0.25
 HYDRAULIC = {'chrome'}      # блестящие штоки гидравлики: с них течёт масло
 
