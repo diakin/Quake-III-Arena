@@ -55,9 +55,12 @@ static char		s_backgroundLoop[MAX_QPATH];
 // only begin attenuating sound volumes when outside the FULLVOLUME range
 #define		SOUND_FULLVOLUME	80
 
-// WALKER: 0.0003 (Q3 0.0008): silent at about 3400 units = 680 m at 1 m = 5 units, the
-// weapons reach up to 1000 m (Q3 went silent at 1330 units)
-#define		SOUND_ATTENUATE		0.0003f
+// WALKER (28.11.2026): the volume falls as 1 / (1 + d / SOUND_FALLOFF)^2 beyond the full
+// volume range instead of linearly (Q3: silent at 1330 units, then 0.0003: 3400 units =
+// 680 m, heard from everywhere). At 1 m = 5 units: 50 m - 35%, 100 m - 14%, 200 m - 5%,
+// 300 m - 2%, below 1% (about 470 m) - silent
+#define		SOUND_FALLOFF		250.0f
+#define		SOUND_SILENT		0.01f
 
 channel_t   s_channels[MAX_CHANNELS];
 channel_t   loop_channels[MAX_CHANNELS];
@@ -451,8 +454,7 @@ void S_SpatializeOrigin (vec3_t origin, int master_vol, int *left_vol, int *righ
     vec_t		lscale, rscale, scale;
     vec3_t		source_vec;
     vec3_t		vec;
-
-	const float dist_mult = SOUND_ATTENUATE;
+	float		falloff;
 	
 	// calculate stereo seperation and distance attenuation
 	VectorSubtract(origin, listener_origin, source_vec);
@@ -461,7 +463,11 @@ void S_SpatializeOrigin (vec3_t origin, int master_vol, int *left_vol, int *righ
 	dist -= SOUND_FULLVOLUME;
 	if (dist < 0)
 		dist = 0;			// close enough to be at full volume
-	dist *= dist_mult;		// different attenuation levels
+	falloff = 1.0f / ( 1.0f + dist / SOUND_FALLOFF );
+	falloff *= falloff;
+	if ( falloff < SOUND_SILENT ) {
+		falloff = 0;
+	}
 	
 	VectorRotate( source_vec, listener_axis, vec );
 
@@ -487,12 +493,12 @@ void S_SpatializeOrigin (vec3_t origin, int master_vol, int *left_vol, int *righ
 	}
 
 	// add in distance effect
-	scale = (1.0 - dist) * rscale;
+	scale = falloff * rscale;
 	*right_vol = (master_vol * scale);
 	if (*right_vol < 0)
 		*right_vol = 0;
 
-	scale = (1.0 - dist) * lscale;
+	scale = falloff * lscale;
 	*left_vol = (master_vol * scale);
 	if (*left_vol < 0)
 		*left_vol = 0;

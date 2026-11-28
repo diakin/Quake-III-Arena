@@ -2044,14 +2044,9 @@ void CG_MissileHitWall( int weapon, int clientNum, vec3_t origin, vec3_t dir, im
 		shader = cgs.media.bulletExplosionShader;
 		mark = cgs.media.bulletMarkShader;
 
-		r = rand() & 3;
-		if ( r == 0 ) {
-			sfx = cgs.media.sfx_ric1;
-		} else if ( r == 1 ) {
-			sfx = cgs.media.sfx_ric2;
-		} else {
-			sfx = cgs.media.sfx_ric3;
-		}
+		// WALKER: no ricochet sound (28.11.2026): the whistles of the bullets of OSA and
+		// TOPOR hitting the ground were heard from everywhere on the map
+		sfx = 0;
 
 		radius = 3;		// WALKER: was 8; the bullets of OSA and TOPOR
 		break;
@@ -2264,7 +2259,6 @@ void CG_Tracer( vec3_t source, vec3_t dest ) {
 	vec3_t		line;
 	float		len, begin, end;
 	vec3_t		start, finish;
-	vec3_t		midpoint;
 
 	// tracer
 	VectorSubtract( dest, source, forward );
@@ -2343,12 +2337,9 @@ void CG_Tracer( vec3_t source, vec3_t dest ) {
 
 	trap_R_AddPolyToScene( cgs.media.tracerShader, 4, verts );
 
-	midpoint[0] = ( start[0] + finish[0] ) * 0.5;
-	midpoint[1] = ( start[1] + finish[1] ) * 0.5;
-	midpoint[2] = ( start[2] + finish[2] ) * 0.5;
 
-	// add the tracer sound
-	trap_S_StartSound( midpoint, ENTITYNUM_WORLD, CHAN_AUTO, cgs.media.tracerSound );
+	// WALKER: no tracer whoosh (28.11.2026): it played at the middle of every tracer, far
+	// from the shooter, and was heard from everywhere on the map
 
 }
 

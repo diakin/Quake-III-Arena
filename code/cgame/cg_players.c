@@ -1566,7 +1566,9 @@ Handles seperate torso motion
 static void CG_PlayerAngles( centity_t *cent, vec3_t legs[3], vec3_t torso[3], vec3_t head[3] ) {
 	vec3_t		legsAngles, torsoAngles, headAngles;
 	float		dest;
-	static	int	movementOffsets[8] = { 0, 22, 45, -22, 0, 22, -45, -22 };
+	// WALKER (28.11.2026): sideways the pelvis turns a full 90 degrees and the legs walk
+	// as usual, diagonally 45 (Q3: 45 and 22); backwards diagonally the legs walk back
+	static	int	movementOffsets[8] = { 0, 45, 90, -45, 0, 45, -90, -45 };
 	vec3_t		velocity;
 	float		speed;
 	int			dir, clientNum;
@@ -1599,7 +1601,7 @@ static void CG_PlayerAngles( centity_t *cent, vec3_t legs[3], vec3_t torso[3], v
 		}
 	}
 	legsAngles[YAW] = headAngles[YAW] + movementOffsets[ dir ];
-	torsoAngles[YAW] = headAngles[YAW] + 0.25 * movementOffsets[ dir ];
+	torsoAngles[YAW] = headAngles[YAW];	// WALKER: the torso stays on the aim (Q3: a quarter of the legs turn)
 
 	// torso
 	CG_SwingAngles( torsoAngles[YAW], 25, 90, cg_swingSpeed.value, &cent->pe.torso.yawAngle, &cent->pe.torso.yawing );

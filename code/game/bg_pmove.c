@@ -347,14 +347,9 @@ static void PM_SetMovementDir( void ) {
 			pm->ps->movementDir = 7;
 		}
 	} else {
-		// if they aren't actively going directly sideways,
-		// change the animation to the diagonal so they
-		// don't stop too crooked
-		if ( pm->ps->movementDir == 2 ) {
-			pm->ps->movementDir = 1;
-		} else if ( pm->ps->movementDir == 6 ) {
-			pm->ps->movementDir = 7;
-		} 
+		// WALKER (28.11.2026): standing, the pelvis turns back to the aim (Q3 left the legs
+		// turned 22 degrees after a strafe; with the 90 degree strafe that is 45)
+		pm->ps->movementDir = 0;
 	}
 }
 
