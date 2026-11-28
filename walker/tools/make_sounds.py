@@ -12,6 +12,7 @@ OUT = sys.argv[1]
 RATE = 22050
 rng = np.random.default_rng(26)
 step_rng = np.random.default_rng(2611)      # шаги (28.11.2026): свой генератор, остальные звуки прежние
+STEP_GAIN = 0.45                            # шаги вдвое тише выстрелов (было 0.9 - гремели)
 
 
 def save(path, samples, gain=0.9):
@@ -213,8 +214,10 @@ def stomp(variant, metallic=1.0):
     rng.normal(0, 1, int(0.3 * 2 * RATE))
     t = time(seconds)
     raw = step_rng.normal(0, 1, len(t))
-    thud = np.sin(2 * np.pi * (33 + variant * 2 + 22 * np.exp(-t * 18)) * t) * envelope(seconds, 0.006, 0.3)
-    impact = band(raw, 30, 280, 3) * envelope(seconds, 0.004, 0.14)
+    # мягкая постановка ноги (28.11.2026, вторая правка): нарастание 25 мс вместо 6, короче
+    # гул, без «щелчка» высоты - не похоже на нарочитый топот
+    thud = np.sin(2 * np.pi * (34 + variant * 2 + 8 * np.exp(-t * 12)) * t) * envelope(seconds, 0.025, 0.16)
+    impact = band(raw, 25, 150, 3) * envelope(seconds, 0.02, 0.1)
     # хруст гальки: короткие щелчки зёрен, гуще в начале шага
     crunch = np.zeros_like(t)
     grains = 70 + variant * 8
@@ -239,8 +242,8 @@ def stomp(variant, metallic=1.0):
     clank = np.zeros_like(t)
     if metallic > 1:
         clank = np.sin(2 * np.pi * (240 + variant * 15) * t) * np.exp(-t / 0.08) * (metallic - 1)
-    body = band(mix(thud * 1.5, impact, clank * 0.3), 20, 1200)
-    sound = mix(body, crunch * 0.45, sand * 0.12, creak * 0.1)
+    body = band(mix(thud * 1.5, impact, clank * 0.3), 20, 450)
+    sound = mix(body, crunch * 0.3, sand * 0.08, creak * 0.065)
     return reverb(sound, 0.25, 0.18, step_rng)
 
 
@@ -352,11 +355,11 @@ def main():
             # deep, with the boom below 200 Hz; the short dry 300-10000 Hz shot given to
             # OSA with the slots sounded like a crackle (28.11.2026)
             osa_shot = shot
-        save(f'player/footsteps/mech{index}.wav', stomp(index))
+        save(f'player/footsteps/mech{index}.wav', stomp(index), STEP_GAIN)
         for alias in ('step', 'boot', 'flesh', 'energy'):
-            save(f'player/footsteps/{alias}{index}.wav', stomp(index), 0.8)
-        save(f'player/footsteps/metal{index}.wav', stomp(index, 1.6))
-        save(f'player/footsteps/clank{index}.wav', stomp(index, 1.8))
+            save(f'player/footsteps/{alias}{index}.wav', stomp(index), STEP_GAIN * 0.9)
+        save(f'player/footsteps/metal{index}.wav', stomp(index, 1.6), STEP_GAIN)
+        save(f'player/footsteps/clank{index}.wav', stomp(index, 1.8), STEP_GAIN)
         save(f'player/footsteps/splash{index}.wav', splash(index))
     for index in range(1, 4):
         save(f'weapons/machinegun/ric{index}.wav', ricochet(index))
