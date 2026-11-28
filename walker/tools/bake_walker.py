@@ -51,6 +51,10 @@ AO_RAYS = 40
 AO_DISTANCE = 0.55          # единицы модели (1 единица = 14 единиц Quake)
 SUPERSAMPLE = 1 if DETAILED else 2   # цвет считается в 2x2 точках на тексель (K7: 1)
 FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf'   # надписи-трафареты
+# надписи на заданных местах K7 (часть, строки, точка у поверхности и наружу от неё, ширина в
+# единицах модели): инвентарный номер на месте убранной голубой лампы (k7_side_lamp.py)
+# трафаретом (stencil_text.py: заглавные, жирные узкие, с перемычками), белым по зелёной броне
+FIXED_DECALS = [('upper', ['ИНВ.№', '50-458'], (-1.16, 0.12, -1.085), (-1.0, 0.0, 0.0), 0.22)]
 
 # рельеф K7 (карта наклонов <часть>_bump.tga, 27.11.2026), единицы модели (1 = 14 единиц Quake)
 SEAM_DEPTH = 0.006          # канавка шва
@@ -574,6 +578,44 @@ class Part:
                 placed.append(center)
                 break
         print(f'  {self.name}: decals {len(placed)} of {len(designs)}')
+        if DETAILED:
+            self.fixed_decals(position, normal)
+
+    def fixed_decals(self, position, normal):
+        """надписи FIXED_DECALS: светлая краска, строки по центру, на ближайшей к точке грани,
+        смотрящей наружу"""
+        import stencil_text
+        for part_name, lines, point, facing, width in FIXED_DECALS:
+            if part_name != self.name:
+                continue
+            facing = np.array(facing, float); facing /= np.linalg.norm(facing)
+            facing_samples = np.nonzero(normal @ facing > 0.9)[0]
+            if len(facing_samples) == 0:
+                continue
+            nearest = facing_samples[np.argmin(np.linalg.norm(position[facing_samples] - np.array(point), axis=1))]
+            centre = position[nearest]
+            size = (512, 300)
+            # белая краска прямо по зелёной броне, без подложки (28.11.2026)
+            image = stencil_text.stencil_image(lines, size, color=(234, 232, 224), alpha=240)
+            up = np.array([0.0, 1.0, 0.0]) - facing * facing[1]
+            up /= np.linalg.norm(up)
+            right = np.cross(up, facing)
+            height = width * size[1] / size[0]
+            near = np.array(cKDTree(position).query_ball_point(centre, max(width, height) * 0.75), dtype=np.int64)
+            offset = position[near] - centre
+            local_x = offset @ right / width + 0.5
+            local_y = 0.5 - offset @ up / height
+            keep = ((local_x >= 0) & (local_x <= 1) & (local_y >= 0) & (local_y <= 1)
+                    & (normal[near] @ facing > 0.88) & (np.abs(offset @ facing) < 0.03))
+            inside = near[keep]
+            pixels = np.asarray(image).astype(float)
+            rows = np.clip((local_y[keep] * (size[1] - 1)).astype(int), 0, size[1] - 1)
+            cols = np.clip((local_x[keep] * (size[0] - 1)).astype(int), 0, size[0] - 1)
+            rgba = pixels[rows, cols]
+            alpha = rgba[:, 3] / 255 * (0.85 + 0.15 * fbm(position[inside] * 40.0, 2))
+            self.decal_color[inside] = self.decal_color[inside] * (1 - alpha[:, None]) + rgba[:, :3] * alpha[:, None]
+            self.decal_alpha[inside] = np.maximum(self.decal_alpha[inside], alpha)
+            print(f'  {self.name}: fixed decal {" ".join(lines)!r} at {centre.round(3).tolist()}, {len(inside)} texels')
 
     def panel_masks(self, texel):
         """швы между панелями брони, заклёпки вдоль швов и разный тон соседних панелей.
