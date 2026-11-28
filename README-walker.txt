@@ -504,6 +504,14 @@ Esc -> END BATTLE (TEST) (или команда cmd endbattle) завершае�
                       сверху головы укорочена (входила в углубление), табличка между стёклами убрана.
                       Новые материалы головы: black, light_cyan, indicator_red, indicator_green
                       (текстуры рядом с моделью, строки в head_*.skin; огоньки - класс glow)
+  проба нового робота (28.11.2026, make_mech_test.py, make_map_mechtest.py, g_robots.c,
+                      g_client.c, cg_players.c): черновая модель mech (ноги с обратной кинематикой,
+                      каждая группа деталей своим светлым цветом с тёмными рёбрами) и карта
+                      wk_mechtest (площадка со ступенями, пандусами, колоннами и проходами, линии по
+                      сетке 64), обе в basewalker/wk_mechtest.pk3. Запуск: Walker.exe +set
+                      g_testModel mech +map wk_mechtest - cvar g_testModel (serverinfo) даёт модель
+                      всем роботам, характеристики остаются от своего робота; make_robots.py теперь
+                      можно импортировать (main только при запуске скриптом)
   дюзы K7 (27.11.2026): раскалённый металл, мерцают как угли в костре. make_material_pass.py
                       помечает материалы EMBER (engine_glow) в маске каналом g = 1 в
                       светящихся пикселях; программы материалов (tr_glsl.c, EMBER_GLSL) вместо

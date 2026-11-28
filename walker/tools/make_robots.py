@@ -28,7 +28,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from scipy.spatial import ConvexHull
 
-OUT = sys.argv[1]
+OUT = sys.argv[1] if __name__ == '__main__' else None   # при импорте задаёт вызывающий
 GROUND = -24.0
 STRIDE_SPEED = 110.0          # cg_strideSpeed: при этой скорости анимация идёт в своём темпе
 SCHEMES = ('default', 'red', 'blue')
@@ -970,4 +970,5 @@ def main():
         handle.write('\n'.join(shaders))
 
 
-main()
+if __name__ == '__main__':
+    main()

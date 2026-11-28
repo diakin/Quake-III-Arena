@@ -878,13 +878,17 @@ WALKER: one of the robot models of bg_robots (precached at level load)
 */
 qboolean CG_IsRobotModel( const char *modelName ) {
 	int		index;
+	const char	*testModel;
 
 	for ( index = 0 ; index < ROBOT_COUNT ; index++ ) {
 		if ( !Q_stricmp( modelName, bg_robots[index].model ) ) {
 			return qtrue;
 		}
 	}
-	return qfalse;
+	// the model the server gives every robot for a try (g_testModel, serverinfo; 28.11.2026):
+	// not deferred, or the robots kept the previous model until their next death
+	testModel = Info_ValueForKey( CG_ConfigString( CS_SERVERINFO ), "g_testModel" );
+	return testModel[0] && !Q_stricmp( modelName, testModel );
 }
 
 

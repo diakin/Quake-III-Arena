@@ -799,6 +799,8 @@ void ClientUserinfoChanged( int clientNum ) {
 		G_RobotModel( client, model, sizeof( model ) );
 		G_RobotModel( client, headModel, sizeof( headModel ) );
 	}
+	G_TestModel( model, sizeof( model ) );
+	G_TestModel( headModel, sizeof( headModel ) );
 
 	// bots set their team a few frames later
 	if (g_gametype.integer >= GT_TEAM && g_entities[clientNum].r.svFlags & SVF_BOT) {
